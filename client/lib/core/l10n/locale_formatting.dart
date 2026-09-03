@@ -59,6 +59,24 @@ class LocaleFormatting {
   String dateTime(DateTime value) =>
       intl.DateFormat.yMMMd(_localeName).add_Hm().format(value);
 
+  /// A number rendered with the locale's grouping/decimal separators and
+  /// only as many fraction digits as the value actually has (#624,
+  /// NFR-I18N-1): `62,5` / `999.999.999` in pt, `62.5` / `999,999,999` in
+  /// en.
+  ///
+  /// Use this — not `toString()` — for any number that came from stored
+  /// data and whose scale isn't known up front (an activity's `honey_kg`,
+  /// `honey_supers`, `hives_involved`, `feed_amount`). [decimal] is the
+  /// right call instead when a stat tile wants a FIXED number of decimals
+  /// regardless of the value (the journey statistics card's `0,0 kg`).
+  ///
+  /// The counterpart for numbers the user TYPES is
+  /// `LocalizedNumberInput` (localized_number_input.dart) — this one groups
+  /// thousands, which is correct for display and wrong for an editable
+  /// field.
+  String number(num value) =>
+      intl.NumberFormat.decimalPattern(_localeName).format(value);
+
   /// A plain decimal number using the locale's grouping/decimal separators
   /// (e.g. PT's `1.234,5` vs. EN's `1,234.5`).
   String decimal(num value, {int decimalDigits = 1}) =>

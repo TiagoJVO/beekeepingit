@@ -1,9 +1,11 @@
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/activities/activity_display.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_en.dart';
+import 'package:beekeepingit_client/l10n/gen/app_localizations_pt.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _l10n = AppLocalizationsEn();
+final _ptL10n = AppLocalizationsPt();
 
 Activity _activity({
   String type = 'generic',
@@ -71,7 +73,11 @@ void main() {
         ),
       );
       expect(line, contains('Xarope 1:1'));
-      expect(line, contains('Feed amount: 2.0'));
+      // #624: `2.0` was Dart's `double.toString()` leaking into the UI. The
+      // value is two litres, and `intl` renders exactly the digits it has —
+      // no invented decimal — in every locale.
+      expect(line, contains('Feed amount: 2'));
+      expect(line, isNot(contains('Feed amount: 2.0')));
     });
 
     test('treatment: includes treatment type and localized context label', () {
@@ -297,6 +303,104 @@ void main() {
         memberNames: const {'user-aaaaaaaa': ''},
       );
       expect(text, contains('aaaaaaaa'));
+    });
+  });
+
+  // #624 (NFR-I18N-1, C-2): the DISPLAY half of the separator problem.
+  // Numeric attributes used to be interpolated with `toString()`, so a
+  // Portuguese row read `Mel colhido (kg): 62.5` — an English full stop —
+  // and a large count got no grouping separator in either language. Both the
+  // summary line and the detail rows now go through
+  // `LocaleFormatting.number`, keyed off the `AppLocalizations` locale the
+  // caller already passes, so the list teaches exactly the separator the
+  // form accepts (#623).
+  group('numbers render for the active locale (#624)', () {
+    test('summary line: pt shows a comma decimal separator', () {
+      final line = activitySummaryLine(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'honey_kg': 62.5}),
+      );
+      expect(line, contains('Mel colhido (kg): 62,5'));
+      expect(line, isNot(contains('62.5')));
+    });
+
+    test('summary line: en still shows a full stop', () {
+      final line = activitySummaryLine(
+        _l10n,
+        _activity(type: 'harvest', attributes: {'honey_kg': 62.5}),
+      );
+      expect(line, contains('Honey harvested (kg): 62.5'));
+    });
+
+    test('summary line: a large count is grouped, not run together', () {
+      final line = activitySummaryLine(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'hives_involved': 999999999}),
+      );
+      expect(line, contains('999.999.999'));
+      expect(line, isNot(contains('999999999')));
+    });
+
+    test('summary line: feeding amounts are localized too', () {
+      final line = activitySummaryLine(
+        _ptL10n,
+        _activity(type: 'feeding', attributes: {'feed_amount': 2.5}),
+      );
+      expect(line, contains('2,5'));
+    });
+
+    test('summary line: a whole number gains no spurious decimals', () {
+      final line = activitySummaryLine(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'honey_supers': 4}),
+      );
+      expect(line, contains('Alças de mel colhidas: 4'));
+    });
+
+    test('detail rows: pt renders the decimal with a comma', () {
+      final rows = activityDetailRows(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'honey_kg': 62.5}),
+      );
+      expect(
+        rows.firstWhere((r) => r.label == _ptL10n.activityHoneyKgLabel).value,
+        '62,5',
+      );
+    });
+
+    test('detail rows: en renders the decimal with a full stop', () {
+      final rows = activityDetailRows(
+        _l10n,
+        _activity(type: 'harvest', attributes: {'honey_kg': 62.5}),
+      );
+      expect(
+        rows.firstWhere((r) => r.label == _l10n.activityHoneyKgLabel).value,
+        '62.5',
+      );
+    });
+
+    test('detail rows: a large count is grouped for the locale', () {
+      final rows = activityDetailRows(
+        _ptL10n,
+        _activity(type: 'treatment', attributes: {'hives_involved': 1234}),
+      );
+      expect(
+        rows
+            .firstWhere((r) => r.label == _ptL10n.activityHivesInvolvedLabel)
+            .value,
+        '1.234',
+      );
+    });
+
+    test('detail rows: free text is untouched by number formatting', () {
+      final rows = activityDetailRows(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'lot_batch': '2026-07-A1'}),
+      );
+      expect(
+        rows.firstWhere((r) => r.label == _ptL10n.activityLotBatchLabel).value,
+        '2026-07-A1',
+      );
     });
   });
 }

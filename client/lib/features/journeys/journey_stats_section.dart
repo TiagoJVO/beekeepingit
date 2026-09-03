@@ -122,7 +122,7 @@ class _JourneyStatsBody extends StatelessWidget {
     // apiary, mirroring the average-supers tile's own no-fake-value rule.
     final hivesPlannedText = stats.hivesPlanned == null
         ? l10n.journeyStatsHivesWorkedNoData
-        : '${stats.hivesPlanned}';
+        : locale.number(stats.hivesPlanned!);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,7 +150,7 @@ class _JourneyStatsBody extends StatelessWidget {
             if (isHarvest) ...[
               _StatTile(
                 statKey: 'hives-harvested',
-                value: '${stats.hivesHarvested}',
+                value: locale.number(stats.hivesHarvested),
                 label: l10n.journeyStatsHivesHarvestedLabel,
               ),
               _StatTile(

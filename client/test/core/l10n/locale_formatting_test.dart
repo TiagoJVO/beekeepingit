@@ -49,6 +49,37 @@ void main() {
       },
     );
 
+    // #624: the display half of NFR-I18N-1 — a stored number rendered with
+    // `toString()` shows an English full stop and no grouping in every
+    // locale. `number()` is the "as many decimals as the value has, grouped"
+    // formatter the activity list/detail rows use.
+    test('number: pt renders a decimal with a comma, not a full stop', () {
+      const formatting = LocaleFormatting.forLocale('pt');
+      expect(formatting.number(62.5), '62,5');
+    });
+
+    test('number: en renders the same decimal with a full stop', () {
+      const formatting = LocaleFormatting.forLocale('en');
+      expect(formatting.number(62.5), '62.5');
+    });
+
+    test('number: a whole number keeps no spurious decimals', () {
+      expect(const LocaleFormatting.forLocale('pt').number(4), '4');
+      expect(const LocaleFormatting.forLocale('en').number(4), '4');
+    });
+
+    test('number: large integers are grouped in both locales', () {
+      // Grouping is the locale's own — pt groups with `.`, en with `,`.
+      expect(
+        const LocaleFormatting.forLocale('pt').number(999999999),
+        '999.999.999',
+      );
+      expect(
+        const LocaleFormatting.forLocale('en').number(999999999),
+        '999,999,999',
+      );
+    });
+
     test('dateTime appends a localized time (24h "Hm") to the date', () {
       const formatting = LocaleFormatting.forLocale('en');
       final formatted = formatting.dateTime(date);

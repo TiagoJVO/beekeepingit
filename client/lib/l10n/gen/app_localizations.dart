@@ -164,13 +164,13 @@ abstract class AppLocalizations {
   /// **'Actions'**
   String get actionsMenuLabel;
 
-  /// Hive count subtitle on a list row
+  /// Hive count subtitle on a list row. decimalPattern groups the number for the active locale (#624, NFR-I18N-1) — `999.999.999 colmeias` in pt, `999,999,999 hives` in en, instead of a raw run of digits in both
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
 
-  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  /// Supers counter value badge on the apiary detail screen (#346, D-20). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
@@ -188,13 +188,13 @@ abstract class AppLocalizations {
   /// **'Supers'**
   String get counterTypeSuperLabel;
 
-  /// Empty-hive counter value badge on the apiary detail screen (#392)
+  /// Empty-hive counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}'**
   String emptyHiveCountValue(int count);
 
-  /// Swarm counter value badge on the apiary detail screen (#392)
+  /// Swarm counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}'**
@@ -2519,7 +2519,7 @@ abstract class AppLocalizations {
   /// **'Apiaries visited'**
   String get journeyStatsApiariesVisitedLabel;
 
-  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1)
+  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{done}/{planned}'**
@@ -2555,7 +2555,7 @@ abstract class AppLocalizations {
   /// **'No data yet'**
   String get journeyStatsAverageSupersNoData;
 
-  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done")
+  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done"). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
@@ -2567,7 +2567,7 @@ abstract class AppLocalizations {
   /// **'Hives worked'**
   String get journeyStatsHivesWorkedLabel;
 
-  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or a plain number by the time it reaches this template
+  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or an already-locale-formatted number by the time it reaches this template (#624). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{worked}/{planned}'**
@@ -2705,7 +2705,7 @@ abstract class AppLocalizations {
   /// **'Total feed amount: {amount}'**
   String journeyStatsDetailFeedingSummary(String amount);
 
-  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity
+  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity. Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{treated}/{planned} apiaries treated'**

@@ -46,6 +46,23 @@ void main() {
       );
     });
 
+    // #624 (NFR-I18N-1, C-2): a counter plural embeds a number, and that
+    // number was interpolated raw — `999999999 colmeias`, unreadable and
+    // identical in both languages. The ARB placeholders now carry
+    // `"format": "decimalPattern"`, so `intl` groups them for the active
+    // locale.
+    test('counter plurals group their number for the locale (#624)', () {
+      final en = AppLocalizationsEn();
+      final pt = AppLocalizationsPt();
+      expect(en.hiveCountValue(999999999), '999,999,999 hives');
+      expect(pt.hiveCountValue(999999999), '999.999.999 colmeias');
+      expect(pt.superCountValue(1234), contains('1.234'));
+      expect(pt.emptyHiveCountValue(1234), contains('1.234'));
+      expect(pt.swarmCountValue(1234), contains('1.234'));
+      // Small counts keep reading exactly as before — no stray separator.
+      expect(pt.hiveCountValue(5), '5 colmeias');
+    });
+
     test(
       'the offline sync-error banner drops the "PowerSync" technical term in '
       'both locales (#426)',

@@ -48,10 +48,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String hiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count colmeias',
+      other: '$countString colmeias',
       one: '1 colmeia',
       zero: 'Sem colmeias',
     );
@@ -60,10 +64,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String superCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count alças',
+      other: '$countString alças',
       one: '1 alça',
       zero: 'Sem alças',
     );
@@ -78,10 +86,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String emptyHiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count colmeias vazias',
+      other: '$countString colmeias vazias',
       one: '1 colmeia vazia',
       zero: 'Sem colmeias vazias',
     );
@@ -90,10 +102,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String swarmCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count enxames',
+      other: '$countString enxames',
       one: '1 enxame',
       zero: 'Sem enxames',
     );
@@ -1496,7 +1512,15 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsApiariesVisitedValue(int done, int planned) {
-    return '$done/$planned';
+    final intl.NumberFormat doneNumberFormat = intl.NumberFormat.decimalPattern(
+      localeName,
+    );
+    final String doneString = doneNumberFormat.format(done);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$doneString/$plannedString';
   }
 
   @override
@@ -1518,10 +1542,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsMissingLabel(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Faltam $count apiários',
+      other: 'Faltam $countString apiários',
       one: 'Falta 1 apiário',
       zero: 'Todos os apiários planeados foram visitados',
     );
@@ -1533,7 +1561,11 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsHivesWorkedValue(int worked, String planned) {
-    return '$worked/$planned';
+    final intl.NumberFormat workedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String workedString = workedNumberFormat.format(worked);
+
+    return '$workedString/$planned';
   }
 
   @override
@@ -1607,7 +1639,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsDetailTreatedSummary(int treated, int planned) {
-    return '$treated/$planned apiários tratados';
+    final intl.NumberFormat treatedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String treatedString = treatedNumberFormat.format(treated);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$treatedString/$plannedString apiários tratados';
   }
 
   @override

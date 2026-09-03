@@ -1,7 +1,26 @@
+import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../members/member_display.dart';
 import 'activities_repository.dart';
 import 'activity_types.dart';
+
+/// Renders one attribute value for display (#624, NFR-I18N-1, C-2).
+///
+/// A number goes through `intl` for [l10n]'s own locale — the decimal
+/// separator and thousands grouping the reader expects (`62,5` /
+/// `999.999.999` in pt) — instead of Dart's `toString()`, which is English
+/// in every language and never groups. Everything else (`lot_batch`,
+/// `feed_type`, `notes`, ...) is already a human-readable stored string and
+/// is shown untouched.
+///
+/// Keyed off `l10n.localeName` rather than a `BuildContext` so both callers
+/// keep their current pure-function signatures: they are used from list
+/// rows, the detail screen and plain unit tests alike, and the locale they
+/// should format for is exactly the one their `AppLocalizations` was
+/// resolved for.
+String _attributeText(AppLocalizations l10n, dynamic value) => value is num
+    ? LocaleFormatting.forLocale(l10n.localeName).number(value)
+    : '$value';
 
 /// A short, list-row-sized summary of an activity's own type-specific
 /// attributes (#42/#43) — reuses the SAME field labels the add-activity form
@@ -25,11 +44,11 @@ List<String> _typeSpecificParts(
     case activityTypeHarvest:
       return [
         if (attrs['honey_supers'] != null)
-          '${l10n.activityHoneySupersLabel}: ${attrs['honey_supers']}',
+          '${l10n.activityHoneySupersLabel}: ${_attributeText(l10n, attrs['honey_supers'])}',
         if (attrs['honey_kg'] != null)
-          '${l10n.activityHoneyKgLabel}: ${attrs['honey_kg']}',
+          '${l10n.activityHoneyKgLabel}: ${_attributeText(l10n, attrs['honey_kg'])}',
         if (attrs['hives_involved'] != null)
-          '${l10n.activityHivesInvolvedLabel}: ${attrs['hives_involved']}',
+          '${l10n.activityHivesInvolvedLabel}: ${_attributeText(l10n, attrs['hives_involved'])}',
         if (attrs['lot_batch'] != null)
           '${l10n.activityLotBatchLabel}: ${attrs['lot_batch']}',
       ];
@@ -38,9 +57,9 @@ List<String> _typeSpecificParts(
         if (attrs['feed_type'] != null)
           '${l10n.activityFeedTypeLabel}: ${attrs['feed_type']}',
         if (attrs['feed_amount'] != null)
-          '${l10n.activityFeedAmountLabel}: ${attrs['feed_amount']}',
+          '${l10n.activityFeedAmountLabel}: ${_attributeText(l10n, attrs['feed_amount'])}',
         if (attrs['hives_involved'] != null)
-          '${l10n.activityHivesInvolvedLabel}: ${attrs['hives_involved']}',
+          '${l10n.activityHivesInvolvedLabel}: ${_attributeText(l10n, attrs['hives_involved'])}',
       ];
     case activityTypeTreatment:
       final context = attrs['treatment_context'] as String?;
@@ -51,7 +70,7 @@ List<String> _typeSpecificParts(
         if (attrs['disease'] != null)
           '${l10n.activityDiseaseLabel}: ${attrs['disease']}',
         if (attrs['hives_involved'] != null)
-          '${l10n.activityHivesInvolvedLabel}: ${attrs['hives_involved']}',
+          '${l10n.activityHivesInvolvedLabel}: ${_attributeText(l10n, attrs['hives_involved'])}',
       ];
     default: // activityTypeGeneric, and any unknown future type — nothing
       // beyond notes to summarize, and notes are excluded (see file doc).
@@ -83,7 +102,7 @@ List<({String label, String value})> activityDetailRows(
   void add(String label, String key) {
     final value = attrs[key];
     if (value == null) return;
-    final text = value is String ? value : '$value';
+    final text = value is String ? value : _attributeText(l10n, value);
     if (text.trim().isEmpty) return;
     rows.add((label: label, value: text));
   }
