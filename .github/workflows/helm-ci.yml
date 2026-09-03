@@ -82,6 +82,51 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Negative half of the assertion the loop above makes positively (#556,
+      # NFR-SEC-1). Staging's ACME renewal was wedged for five weeks by a
+      # `400 urn:ietf:params:acme:error:rejectedIdentifier` — the gateway chart's
+      # dev-default `admin.beekeepingit.local` had leaked into the deployed
+      # Certificate's SAN because the gitops repo's values were never given
+      # `gateway.adminHost` (D-27, ADR-0018). `gateway.assertPublicHostnames` now
+      # refuses to render a `.local`/`.localhost` TLS host — or a `global.*Origin`
+      # pointing at one — when cert-manager is on, so a future drift fails here
+      # instead of silently in ACME five weeks later.
+      #
+      # The per-overlay loop ABOVE is the positive half and must stay: prod ships
+      # `certManager.enabled: true` with `*.beekeepingit.example` hosts and has to
+      # keep rendering (`.example` is a reserved TLD, but it's a deliberate
+      # placeholder — the guard only rejects the loopback suffixes). Don't
+      # "simplify" either step away; together they pin both directions.
+      #
+      # The first grep asserts the GUARD'S OWN invariant sentence, not a hostname:
+      # any unrelated helm failure that happens to dump a rendered manifest would
+      # contain `admin.beekeepingit.local` too, and which host is named first
+      # depends on Go's map-key ordering — both make a host-only grep a false
+      # signal. The second grep then confirms the offending host is still named,
+      # with the dot escaped so it can't match an arbitrary character.
+      - name: "helm template (negative: a .local host/origin must fail when cert-manager is on)"
+        if: steps.changes.outputs.helm == 'true'
+        run: |
+          set -euo pipefail
+          # Capture inside the `if` so the EXPECTED non-zero exit doesn't trip `set -e`.
+          if out="$(helm template beekeepingit . --set gateway.certManager.enabled=true 2>&1)"; then
+            echo "::error::helm template rendered base values with certManager.enabled=true, but the base gateway hosts/origins are *.beekeepingit.local — gateway.assertPublicHostnames did not fire."
+            echo "$out"
+            exit 1
+          fi
+          if ! printf '%s' "$out" | grep -q 'refusing to request a public'; then
+            echo "::error::helm template failed as expected, but not with gateway.assertPublicHostnames' message — some other render error is masking the guard."
+            echo "$out"
+            exit 1
+          fi
+          if ! printf '%s' "$out" | grep -q 'beekeepingit\.local'; then
+            echo "::error::the guard fired but did not name the offending hostname; an operator needs the offending key AND value to fix the drift."
+            echo "$out"
+            exit 1
+          fi
+          echo "Guard fired as expected:"
+          echo "$out"
+
       # Unlike the umbrella above, this chart's four vendored dependencies are
       # remote (prometheus-community / grafana / open-telemetry chart repos), so
       # this step DOES need network access — same as any local `helm dependency
