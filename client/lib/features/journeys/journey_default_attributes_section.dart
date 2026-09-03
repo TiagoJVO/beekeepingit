@@ -144,6 +144,8 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
             label: l10n.activityTreatmentTypeLabel,
             value: controller.treatmentType,
             options: treatmentTypes,
+            // Stored value unchanged, rendering localized (#625).
+            optionLabel: (v) => treatmentTypeLabel(l10n, v),
             onChanged: (v) => controller.treatmentType = v,
           ),
           if (requiresDisease)
@@ -154,6 +156,7 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
               label: l10n.activityDiseaseLabel,
               value: controller.disease,
               options: diseaseConditions,
+              optionLabel: (v) => diseaseConditionLabel(l10n, v),
               onChanged: (v) => controller.disease = v,
             ),
         ];
@@ -166,6 +169,7 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
             label: l10n.activityFeedTypeLabel,
             value: controller.feedType,
             options: feedTypes,
+            optionLabel: (v) => feedTypeLabel(l10n, v),
             onChanged: (v) => controller.feedType = v,
           ),
         ];

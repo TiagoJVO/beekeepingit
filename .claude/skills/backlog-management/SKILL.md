@@ -96,7 +96,7 @@ exception is epics themselves: `EPIC-XX — Short Name` (em dash, not a colon).
 
 - **type/** (exactly one): `epic story task feature bug chore spike research docs`
 - **area/**: `activities apiaries journeys ai todos offline-sync auth-identity org-tenancy rbac
-history-audit admin-app import-export maps-geo i18n-a11y infra observability security`
+history-audit admin-app import-export maps-geo i18n-a11y infra observability security settings`
 - **priority/**: `critical high medium low` · **size/**: `xs s m l xl` ·
   **status/**: `needs-triage blocked needs-info ready`
 

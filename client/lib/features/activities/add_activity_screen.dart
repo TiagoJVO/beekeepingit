@@ -995,6 +995,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             value: _feedType,
             options: feedTypes,
             attrKey: 'feed_type',
+            // The stored value stays the wire string; only its rendering is
+            // localized (#625, NFR-I18N-1) — see activity_types.dart.
+            optionLabel: (v) => feedTypeLabel(l10n, v),
             onChanged: (v) => setState(() => _feedType = v),
           ),
           const SizedBox(height: 16),
@@ -1046,6 +1049,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             value: _treatmentType,
             options: treatmentTypes,
             attrKey: 'treatment_type',
+            optionLabel: (v) => treatmentTypeLabel(l10n, v),
             helperText: isDetectionOnly
                 ? l10n.activityTreatmentTypeOptionalForDetectionHint
                 : null,
@@ -1074,6 +1078,10 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                   _disease!,
               ],
               attrKey: 'disease',
+              // An out-of-vocab legacy value falls through to its own raw
+              // text (#625's documented fallback), so the extra option above
+              // still renders exactly what is stored.
+              optionLabel: (v) => diseaseConditionLabel(l10n, v),
               onChanged: (v) => setState(() => _disease = v),
             ),
           ],

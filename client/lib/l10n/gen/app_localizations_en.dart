@@ -1105,6 +1105,55 @@ class AppLocalizationsEn extends AppLocalizations {
       'Detection only (no treatment yet)';
 
   @override
+  String get diseaseConditionVarroosisLabel => 'Varroosis';
+
+  @override
+  String get diseaseConditionAmericanFoulbroodLabel => 'American foulbrood';
+
+  @override
+  String get diseaseConditionEuropeanFoulbroodLabel => 'European foulbrood';
+
+  @override
+  String get diseaseConditionNosemosisLabel => 'Nosemosis';
+
+  @override
+  String get diseaseConditionAcarapisosisLabel => 'Acarapisosis';
+
+  @override
+  String get diseaseConditionSmallHiveBeetleLabel =>
+      'Aethina tumida (small hive beetle)';
+
+  @override
+  String get diseaseConditionTropilaelapsLabel => 'Tropilaelaps spp.';
+
+  @override
+  String get diseaseConditionOtherLabel => 'Other';
+
+  @override
+  String get treatmentTypeApivarAmitrazLabel => 'Apivar/amitraz';
+
+  @override
+  String get treatmentTypeOxalicAcidLabel => 'Oxalic acid';
+
+  @override
+  String get treatmentTypeThymolLabel => 'Thymol';
+
+  @override
+  String get treatmentTypeOtherLabel => 'Other';
+
+  @override
+  String get feedTypeSyrup11Label => '1:1 syrup';
+
+  @override
+  String get feedTypeSyrup21Label => '2:1 syrup';
+
+  @override
+  String get feedTypeCandiLabel => 'Candi (fondant)';
+
+  @override
+  String get feedTypePollenLabel => 'Pollen';
+
+  @override
   String get newActivityTitle => 'Add activity';
 
   @override

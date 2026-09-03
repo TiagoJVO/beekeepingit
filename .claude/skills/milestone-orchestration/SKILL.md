@@ -1,13 +1,14 @@
 ---
 name: milestone-orchestration
 description: >-
-  How to run a fully autonomous multi-agent team against a BeekeepingIT milestone (or D-14 phase)
-  from a single milestone URL — research, plan, TDD, review, and merge to completion without
+  How to run a fully autonomous multi-agent team against a BeekeepingIT milestone from a single
+  milestone URL — research, plan, TDD, review, and merge to completion without
   stopping except for genuine requirement/decision conflicts. Use when asked to drive a milestone
   link to completion, spin up a team of agents for an M<n>, or otherwise run autonomous multi-issue
   execution across this backlog. Captures the non-obvious parts: dependencies are native (sub-issues
-  + blocked-by), never inferred from prose or re-declared in a body; cross-milestone parallelism is
-  already decided in D-14's phase plan and tagged in each milestone's description; the shared local
+  + blocked-by), never inferred from prose or re-declared in a body; sequencing — within a milestone
+  and across milestones alike — comes only from those native links, never from a milestone
+  description; the shared local
   cluster is coordinated via infra/cluster/with-lock.sh, not a bespoke "one owner" scheme; and
   claiming/coordination must stay on native GitHub fields (assignee) — drive execution through this
   repo's own /orch-* commands and agents, never ECC's /epic-* commands or /projects, which write a
@@ -20,9 +21,9 @@ description: >-
 Given only a milestone URL, run a main orchestrating agent that spins up a team of implementer
 agents, sequences them by real dependency, keeps the shared dev cluster from colliding, and merges
 finished work — stopping only when a genuine requirement or decision question comes up. This
-operationalizes **D-14**'s "Recommended build phasing," which names this pattern directly: _"This
-phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow; each
-milestone's GitHub description carries a short phase tag for the same reason."_
+operationalizes **D-14**'s delivery model: milestones are thin, independently pickable per-feature
+slices, and whatever ordering actually binds is expressed as native `blocked-by` links between
+specific stories — _"sequencing is between stories, not epic→epic."_
 
 ## Non-obvious conventions
 
@@ -30,10 +31,14 @@ milestone's GitHub description carries a short phase tag for the same reason."_
   epic→children `sub-issues` are the source of truth (D-14: _"sequencing is between stories, not
   epic→epic"_). Don't scan issue-body prose for "depends on #N" — per **backlog-management**, that
   text is deliberately not there; it lives in the Relationships panel / sub-issues panel instead.
-- **Cross-milestone parallelism is already decided — don't re-derive it from scratch.** D-14's
-  Phase 1–6 plan and each milestone's `description` (a short "Phase N — ..." tag) tell you what
-  else can run alongside the milestone you were pointed at. A run scoped to one milestone link
-  under-uses this — see Step 1.
+- **There is no phase plan — sequencing is native, full stop.** D-14 used to carry a "Recommended
+  build phasing" (Phases 1–6) mirrored as a `Phase N — …` tag in each milestone's `description`;
+  both were **retired 2026-09-03** because the milestones are now largely independent and the
+  static plan had gone stale. Do **not** look for a phase anywhere. Ordering — within a milestone
+  and between milestones alike — comes only from `blocked-by` and sub-issues. A milestone with no
+  open `blocked-by` edges into it is runnable now, whatever its number. If you conclude two
+  milestones genuinely must be ordered, that belongs in a `blocked-by` between the two specific
+  issues that carry the constraint — propose it, don't write it as prose in a description.
 - **The shared local cluster already has a lock.** `infra/cluster/with-lock.sh` (flock-based, keyed
   by cluster name so it's shared across every git worktree) serializes any cluster-mutating command
   automatically. There is no need to invent a single "infra owner" agent — every implementer just
@@ -78,20 +83,22 @@ gh api repos/TiagoJVO/beekeepingit/issues/<epic#>/sub_issues --jq '.[] | {number
 gh api repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by --jq '.[] | {number,title,state}'
 ```
 
-Then check every **open** milestone's `description` for its phase tag — D-14's plan already
-sequenced the whole roadmap:
+Run `blocked_by` for every issue in the milestone, and follow each blocker out — a blocker may
+live in another milestone, which is the only way a cross-milestone constraint is ever expressed.
+A milestone `description` says what the milestone _is_; it never says when to build it, so don't
+mine it for sequencing:
 
 ```bash
 gh api repos/TiagoJVO/beekeepingit/milestones --jq '.[] | {number,title,description}'
 ```
 
-The live milestone `description` is the source of truth for phase and sequencing — read it, don't
-work from a copy. Combine both graphs (native blocked-by within a milestone, phase tag across
-milestones) into one topological ordering of waves.
+Topologically order the issues from those native edges alone. An issue whose `blocked_by` list is
+empty (or fully closed) is runnable now, regardless of milestone number.
 
-**Scope discipline:** default to executing only the milestone you were given. If its phase has
-runnable siblings, say so once in your Step-2 plan log as an offer, but don't silently expand scope
-to other milestones without the user asking — that's a scope decision, not an implementation detail.
+**Scope discipline:** default to executing only the milestone you were given. If neighbouring
+milestones are also unblocked and could run alongside it, say so once in your Step-2 plan log as an
+offer, but don't silently expand scope to other milestones without the user asking — that's a scope
+decision, not an implementation detail.
 
 ## 2. Stage waves and execute
 
@@ -126,7 +133,7 @@ never bypass hooks or CI, never edit a `D-*`/requirement without the user confir
 `mandatory-workflow.md` requires.
 
 After merging, close the issue and re-check Section 1's graph — some unblocks are cross-milestone
-(phase tags), not just same-epic.
+(a `blocked-by` edge pointing out of this milestone), not just same-epic.
 
 ## 5. When to actually stop and ask
 

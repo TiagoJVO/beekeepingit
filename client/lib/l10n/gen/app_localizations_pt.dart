@@ -1113,6 +1113,55 @@ class AppLocalizationsPt extends AppLocalizations {
       'Deteção apenas (sem tratamento ainda)';
 
   @override
+  String get diseaseConditionVarroosisLabel => 'Varroose';
+
+  @override
+  String get diseaseConditionAmericanFoulbroodLabel => 'Loque americana';
+
+  @override
+  String get diseaseConditionEuropeanFoulbroodLabel => 'Loque europeia';
+
+  @override
+  String get diseaseConditionNosemosisLabel => 'Nosemose';
+
+  @override
+  String get diseaseConditionAcarapisosisLabel => 'Acariose';
+
+  @override
+  String get diseaseConditionSmallHiveBeetleLabel =>
+      'Aethina tumida (pequeno besouro da colmeia)';
+
+  @override
+  String get diseaseConditionTropilaelapsLabel => 'Tropilaelaps spp.';
+
+  @override
+  String get diseaseConditionOtherLabel => 'Outro';
+
+  @override
+  String get treatmentTypeApivarAmitrazLabel => 'Apivar/amitraz';
+
+  @override
+  String get treatmentTypeOxalicAcidLabel => 'Ácido oxálico';
+
+  @override
+  String get treatmentTypeThymolLabel => 'Timol';
+
+  @override
+  String get treatmentTypeOtherLabel => 'Outro';
+
+  @override
+  String get feedTypeSyrup11Label => 'Xarope 1:1';
+
+  @override
+  String get feedTypeSyrup21Label => 'Xarope 2:1';
+
+  @override
+  String get feedTypeCandiLabel => 'Candi';
+
+  @override
+  String get feedTypePollenLabel => 'Pólen';
+
+  @override
   String get newActivityTitle => 'Adicionar atividade';
 
   @override
