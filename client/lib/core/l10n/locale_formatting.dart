@@ -16,10 +16,13 @@ import 'package:intl/intl.dart' as intl;
 /// `LocaleFormatting` tests for EN vs. PT output (`test/core/l10n/
 /// locale_formatting_test.dart`).
 ///
-/// Kept deliberately thin: it does not invent a display format policy beyond
-/// "use the device/app locale's conventions", which is what NFR-I18N-1
-/// asks for (e.g. PT's `dd/MM/yyyy` and `,` decimal separator vs. EN's
-/// `M/d/yyyy` and `.` decimal separator).
+/// Kept deliberately thin: numbers simply follow the active locale's
+/// conventions, which is what NFR-I18N-1 asks for (`pt-PT`'s `,` decimal
+/// separator and non-breaking-space grouping vs. `en-GB`'s `.` and `,`).
+///
+/// Dates are the ONE deliberate exception — the app pins a named-month
+/// pattern for both locales rather than taking each locale's default. See
+/// [LocaleFormatting._datePattern] for the reasoning (D-34, #656).
 class LocaleFormatting {
   const LocaleFormatting._(this._localeName);
 
@@ -51,17 +54,42 @@ class LocaleFormatting {
   const factory LocaleFormatting.forLocale(String localeName) =
       LocaleFormatting._;
 
-  /// A medium-length localized date, e.g. `Jul 12, 2026` (en) / `12 de jul.
-  /// de 2026` (pt).
-  String date(DateTime value) =>
-      intl.DateFormat.yMMMd(_localeName).format(value);
+  /// The date pattern this app pins for BOTH locales: day, abbreviated
+  /// MONTH NAME, year — `3 Sept 2026` (en-GB) / `3 set. 2026` (pt-PT).
+  ///
+  /// **This deliberately overrides the locale's own medium-date default**
+  /// (D-34, #656), the one place in this file that does not simply defer to
+  /// CLDR. `DateFormat.yMMMd` for `pt-PT` is CLDR's numeric `d/MM/y`, which
+  /// renders `3/09/2026` — and on a field app read one-handed in gloves, a
+  /// wholly numeric date is the one format a reader can genuinely get wrong:
+  /// `3/09` and `09/03` are the same six characters in a different order,
+  /// while `3 set.` cannot be misread as March. Readability of a date a
+  /// beekeeper acts on beats matching the locale's default here. (Product
+  /// owner, 2026-09-03; recorded in D-34.)
+  ///
+  /// The month NAME is still fully localized — `Sept` vs `set.`, including
+  /// European Portuguese's trailing dot — because only the pattern is
+  /// pinned, not the symbols. What the pattern also fixes is the field
+  /// ORDER (day first), which is correct for both locales the app ships;
+  /// adding a locale that orders differently (e.g. `ja`) means revisiting
+  /// this, not silently inheriting it.
+  static const _datePattern = 'd MMM y';
 
-  /// A localized date + 24-hour time, e.g. `Jul 12, 2026 15:04` (en) / `12
-  /// de jul. de 2026 15:04` (pt) — `add_Hm()` is the skeleton for "hour of
-  /// day (0-23) : minute", so both locales render the same 24h clock rather
-  /// than switching to a 12h AM/PM convention.
+  /// A localized date with a named month, e.g. `3 Sept 2026` (en-GB) /
+  /// `3 set. 2026` (pt-PT). See [_datePattern] for why the pattern is
+  /// pinned rather than taken from the locale.
+  String date(DateTime value) =>
+      intl.DateFormat(_datePattern, _localeName).format(value);
+
+  /// [date] plus a 24-hour time, e.g. `3 Sept 2026 15:04` (en-GB) /
+  /// `3 set. 2026 15:04` (pt-PT).
+  ///
+  /// Built on the same pinned pattern, so a date and a date-with-time can
+  /// never disagree about how the month is written. `add_Hm()` is the
+  /// skeleton for "hour of day (0-23) : minute", so both locales render the
+  /// same 24h clock rather than switching to a 12h AM/PM convention.
   String dateTime(DateTime value) =>
-      intl.DateFormat.yMMMd(_localeName).add_Hm().format(value);
+      intl.DateFormat(_datePattern, _localeName).add_Hm().format(value);
 
   /// A number rendered with the locale's grouping/decimal separators and
   /// only as many fraction digits as the value actually has (#624,

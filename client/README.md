@@ -71,7 +71,7 @@ later without touching feature screens (`NFR-I18N-1`, `#77`/`#78`).
 > **Why the region codes matter.** Generic `pt`/`en` are not neutral: CLDR
 > resolves them to **Brazilian** and **American** conventions (`1.234,5`,
 > `Sep 3, 2026`). `pt-PT` groups thousands with a non-breaking space and
-> `en-GB` puts the day first. Two consequences to know about:
+> `en-GB` puts the day first. Three consequences to know about:
 >
 > - **The offered set is `kSupportedLocales`** (`lib/core/l10n/supported_locales.dart`),
 >   which is what `app.dart` hands `MaterialApp` — **not**
@@ -79,6 +79,11 @@ later without touching feature screens (`NFR-I18N-1`, `#77`/`#78`).
 >   base ARBs `gen-l10n` requires behind each region variant. Widget tests
 >   should pass `kSupportedLocales` too, or they exercise a locale set the app
 >   never uses.
+> - **Dates are the one place the app overrides CLDR.** `LocaleFormatting`
+>   pins `d MMM y` for both locales — `3 set. 2026` / `3 Sept 2026` — rather
+>   than taking each locale's medium default, which for `pt-PT` is the numeric
+>   `d/MM/y`. A named month cannot be misread in the field; `3/09` vs `09/03`
+>   can. Numbers follow CLDR unchanged.
 > - **Anything reading a locale must keep the country** — `toLanguageTag()`,
 >   never `languageCode`.
 

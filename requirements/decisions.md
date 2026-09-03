@@ -920,8 +920,21 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   wrong for the `pt` actually shipped, and its acceptance criterion had to be corrected. Naming the
   region makes the intended conventions checkable instead of arguable.
 - **What this means concretely** (as built in `#656`): `pt-PT` groups thousands with a
-  **non-breaking space** (`1 234,5`) and renders CLDR's numeric medium date (`3/09/2026`);
-  `en-GB` keeps `1,234.5` and puts the day first (`3 Sept 2026`).
+  **non-breaking space** (`1 234,5`); `en-GB` keeps `1,234.5`. Both put the day first in dates.
+- **One deliberate override of CLDR: dates always name the month** (product owner,
+  2026-09-03). CLDR's medium date for `pt-PT` is the numeric `d/MM/y`, so following the locale
+  default would have rendered `3/09/2026`. The app instead **pins the pattern `d MMM y` for both
+  locales** — `3 set. 2026` (pt-PT) / `3 Sept 2026` (en-GB) — in
+  `client/lib/core/l10n/locale_formatting.dart`. Rationale: on a field app read one-handed in
+  gloves, a wholly numeric date is the one form a reader can genuinely get wrong (`3/09` and
+  `09/03` are the same characters reordered), while a named month cannot be misread. Readability
+  of a date a beekeeper acts on outweighs matching the locale's default here.
+  - Only the **pattern** is pinned, never the symbols: the month name stays fully localized,
+    including European Portuguese's trailing dot (`set.`, `jan.`, `dez.`).
+  - It also pins the field **order** (day first), which is right for both locales shipped today.
+    A future locale that orders differently means revisiting this line, not inheriting it.
+  - This is the **only** place the app departs from the active locale's own conventions; numbers
+    follow CLDR unchanged.
 - **Existing profiles are migrated, not stranded.** Every stored `pt`/`en` becomes `pt-PT`/`en-GB`
   — in the database (identity migration `00005`), in the API (a submitted legacy or regional tag is
   normalized before it is stored, so a client running an older cached bundle keeps working), and in

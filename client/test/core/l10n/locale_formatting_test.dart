@@ -30,11 +30,43 @@ void main() {
       expect(formatting.date(date), '12 Jul 2026');
     });
 
-    test('formats a date using European Portuguese conventions (#656)', () {
+    test('formats a date using European Portuguese month names (#656)', () {
       const formatting = LocaleFormatting.forLocale('pt_PT');
-      // CLDR's medium date for pt-PT is numeric `d/MM/y` — unlike generic
-      // (Brazilian) `pt`, which spells the month out as `12 de jul. de 2026`.
-      expect(formatting.date(date), '12/07/2026');
+      // Note the trailing dot: CLDR's abbreviated pt-PT months are
+      // `jan.`/`fev.`/…/`set.`/…/`dez.`, all abbreviated WITH a full stop.
+      expect(formatting.date(date), '12 jul. 2026');
+    });
+
+    test('the month is NAMED, never numeric, in both locales — the pinned '
+        'pattern overriding CLDR (D-34)', () {
+      // CLDR's own medium date for pt-PT is numeric `d/MM/y` → `3/09/2026`.
+      // The app pins `d MMM y` instead, because a numeric date is the one
+      // form a field reader can genuinely misread (`3/09` vs `09/03`).
+      // September is the sharp case: it is the month where en-GB's
+      // abbreviation is four letters, and where a numeric `09` reads as
+      // March under the other ordering.
+      final september = DateTime(2026, 9, 3);
+      expect(
+        const LocaleFormatting.forLocale('pt_PT').date(september),
+        '3 set. 2026',
+      );
+      expect(
+        const LocaleFormatting.forLocale('en_GB').date(september),
+        '3 Sept 2026',
+      );
+      // Every month renders as a name, not digits, in both locales.
+      for (var month = 1; month <= 12; month++) {
+        for (final locale in const ['pt_PT', 'en_GB']) {
+          final formatted = LocaleFormatting.forLocale(
+            locale,
+          ).date(DateTime(2026, month, 15));
+          expect(
+            formatted,
+            matches(RegExp(r'^15 \D')),
+            reason: '$locale month $month must render a name, not a number',
+          );
+        }
+      }
     });
 
     test('formats a decimal with English (.) grouping/decimal separators', () {
@@ -89,6 +121,26 @@ void main() {
       expect(formatted, startsWith('12 Jul 2026'));
       expect(formatted, contains('15:04'));
     });
+
+    test(
+      'dateTime writes the month exactly as date() does, in both locales — a '
+      'timestamp and a date never disagree (D-34)',
+      () {
+        for (final locale in const ['pt_PT', 'en_GB']) {
+          final formatting = LocaleFormatting.forLocale(locale);
+          expect(formatting.dateTime(date), startsWith(formatting.date(date)));
+          expect(formatting.dateTime(date), contains('15:04'));
+        }
+        expect(
+          const LocaleFormatting.forLocale('pt_PT').dateTime(date),
+          '12 jul. 2026 15:04',
+        );
+        expect(
+          const LocaleFormatting.forLocale('en_GB').dateTime(date),
+          '12 Jul 2026 15:04',
+        );
+      },
+    );
   });
 
   group('LocaleFormatting.of (BuildContext)', () {
@@ -123,6 +175,7 @@ void main() {
       (tester) async {
         final pt = await formattingIn(tester, const Locale('pt', 'PT'));
         expect(pt.decimal(1234.5), '1\u00A0234,5');
+        expect(pt.date(DateTime(2026, 9, 3)), '3 set. 2026');
 
         final en = await formattingIn(tester, const Locale('en', 'GB'));
         expect(en.date(DateTime(2026, 9, 3)), '3 Sept 2026');
@@ -137,6 +190,8 @@ void main() {
         // supportedLocales to `pt_PT`, so the formatting must be European.
         final pt = await formattingIn(tester, const Locale('pt'));
         expect(pt.decimal(1234.5), '1\u00A0234,5');
+
+        expect(pt.date(DateTime(2026, 9, 3)), '3 set. 2026');
 
         final en = await formattingIn(tester, const Locale('en'));
         expect(en.date(DateTime(2026, 9, 3)), '3 Sept 2026');
