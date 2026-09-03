@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
@@ -1560,7 +1561,7 @@ void main() {
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: ValueListenableBuilder<bool>(
               valueListenable: showForm,
               builder: (context, show, _) => Scaffold(
@@ -1610,7 +1611,7 @@ void main() {
     // dialog's own behavior, independent of the screen that opens it.
     Widget hostApp() => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
@@ -1745,7 +1746,7 @@ void main() {
         MaterialApp(
           locale: const Locale('pt'),
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
+          supportedLocales: kSupportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
               body: Center(

@@ -124,8 +124,16 @@ tasks:
         template_keys_file="$(mktemp)"
         arb_keys "$template" > "$template_keys_file"
         arb_ok=0
+        # Region-variant ARBs (app_en_GB.arb, app_pt_PT.arb) are deliberately
+        # EMPTY — they carry only `@@locale`, so the generated class knows it
+        # is `en_GB`/`pt_PT` for `intl` formatting, and inherit every string
+        # from their base language (D-34, #656; see client/l10n.yaml). Parity
+        # applies to the base-language files that hold the translations.
         for f in "$d"/lib/l10n/arb/*.arb; do
           [ "$f" = "$template" ] && continue
+          case "$(basename "$f")" in
+            app_*_*.arb) echo "› [dart] $f is a region variant — inherits its base language, skipped"; continue ;;
+          esac
           keys_file="$(mktemp)"
           arb_keys "$f" > "$keys_file"
           missing="$(comm -23 "$template_keys_file" "$keys_file")"

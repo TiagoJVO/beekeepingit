@@ -77,7 +77,7 @@ erDiagram
         text oidc_sub UK "OIDC subject (D-7)"
         text name
         text email
-        text locale "EN/PT (NFR-I18N)"
+        text locale "en-GB or pt-PT (NFR-I18N-1, D-34)"
     }
     ORGANIZATIONS {
         uuid id PK "tenant root"

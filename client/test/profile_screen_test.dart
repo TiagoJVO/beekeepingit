@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/config/app_config.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/platform/external_link_platform.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -116,7 +117,7 @@ Widget _buildScreen(
     ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: ProfileScreen(),
     ),
   );
@@ -277,7 +278,7 @@ void main() {
           ],
           child: MaterialApp.router(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             routerConfig: router,
           ),
         ),
@@ -427,7 +428,7 @@ void main() {
               ApiFieldError(
                 field: 'locale',
                 code: 'unsupported',
-                message: 'locale must be "en" or "pt"',
+                message: 'locale must be one of: en-GB, pt-PT',
               ),
             ],
           );
@@ -451,7 +452,9 @@ void main() {
       // snackbar was suppressed because `_fieldErrors` was non-empty). It
       // must still be visibly surfaced, via the snackbar.
       expect(
-        find.text('Could not save your profile: locale must be "en" or "pt"'),
+        find.text(
+          'Could not save your profile: locale must be one of: en-GB, pt-PT',
+        ),
         findsOneWidget,
       );
     },

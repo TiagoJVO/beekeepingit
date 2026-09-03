@@ -905,6 +905,52 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   now later), EPIC-09 (#10), EPIC-14 (#15), EPIC-08 (#9), `#66`, `#69`, `#71`, `#90`, `#92`, `#294`,
   `#487`.
 
+## D-34 — Supported locales are European Portuguese (`pt-PT`) and British English (`en-GB`); units are metric
+
+- **Decision (product owner, 2026-09-03):** the app supports exactly **two** locales —
+  **European Portuguese (`pt-PT`)** and **British English (`en-GB`)**. The generic `pt` and `en`
+  it shipped until now are **no longer offered, stored or resolvable**. Measurement units are
+  **metric** (kg, L, km, °C) for both, fixed by the domain rather than derived from the locale.
+- **Why the country code is the decision and not a detail.** `pt` and `en` are not neutral
+  identifiers: CLDR (via `intl`) resolves them to **Brazilian** and **American** conventions. The
+  app was therefore rendering `Sep 3, 2026` (American ordering) to its English readers and
+  `1.234,5` (Brazilian grouping) to its Portuguese ones — the wrong conventions for **both** of its
+  intended audiences, in a product whose only market is Portugal (C-2). The ambiguity was already
+  costing work: `#624` was filed asserting a space thousands separator, correct for `pt-PT` and
+  wrong for the `pt` actually shipped, and its acceptance criterion had to be corrected. Naming the
+  region makes the intended conventions checkable instead of arguable.
+- **What this means concretely** (as built in `#656`): `pt-PT` groups thousands with a
+  **non-breaking space** (`1 234,5`); `en-GB` keeps `1,234.5`. Both put the day first in dates.
+- **One deliberate override of CLDR: dates always name the month** (product owner,
+  2026-09-03). CLDR's medium date for `pt-PT` is the numeric `d/MM/y`, so following the locale
+  default would have rendered `3/09/2026`. The app instead **pins the pattern `d MMM y` for both
+  locales** — `3 set. 2026` (pt-PT) / `3 Sept 2026` (en-GB) — in
+  `client/lib/core/l10n/locale_formatting.dart`. Rationale: on a field app read one-handed in
+  gloves, a wholly numeric date is the one form a reader can genuinely get wrong (`3/09` and
+  `09/03` are the same characters reordered), while a named month cannot be misread. Readability
+  of a date a beekeeper acts on outweighs matching the locale's default here.
+  - Only the **pattern** is pinned, never the symbols: the month name stays fully localized,
+    including European Portuguese's trailing dot (`set.`, `jan.`, `dez.`).
+  - It also pins the field **order** (day first), which is right for both locales shipped today.
+    A future locale that orders differently means revisiting this line, not inheriting it.
+  - This is the **only** place the app departs from the active locale's own conventions; numbers
+    follow CLDR unchanged.
+- **Existing profiles are migrated, not stranded.** Every stored `pt`/`en` becomes `pt-PT`/`en-GB`
+  — in the database (identity migration `00005`), in the API (a submitted legacy or regional tag is
+  normalized before it is stored, so a client running an older cached bundle keeps working), and in
+  the client on read. Language choice is preserved; nobody is left on a value the app cannot
+  render, and an unsupported **language** is refused rather than silently answered in English.
+- **Adding a third locale stays easy** (`NFR-I18N-1`'s "designed to add more languages easily
+  later"): a new locale is a new region-qualified ARB pair plus one entry in each of the supported
+  sets. It is deliberately an explicit edit — which locales the product supports is a decision.
+- **Supersedes:** the **"Units & formats"** open question (`open-questions.md`, Tier 4 — a Tier 4
+  clarification that never carried a `Q-*` ID), which asked to confirm metric units and the
+  Portuguese locale defaults for dates/numbers. Both halves are answered here; the entry is
+  removed.
+- **Touches:** `NFR-I18N-1`, Context `C-2`, `FR-ST-1`, `#656`, `#623`/`#624` (whose
+  locale-aware input and display now run under the region locales), `#340`, ADR-0003 (the
+  identity contract's `locale` field), `client/lib/core/l10n/`, `services/identity`.
+
 ---
 
 ## Open Spikes

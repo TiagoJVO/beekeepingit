@@ -616,7 +616,7 @@ void main() {
           ),
         );
         await _goToEditForm(tester, repo: repo);
-        expect(find.text('Aug 1, 2026'), findsOneWidget);
+        expect(find.text('1 Aug 2026'), findsOneWidget);
 
         await _pickDayInDatePicker(
           tester,
@@ -625,8 +625,8 @@ void main() {
         );
 
         // Displayed on the field...
-        expect(find.text('Aug 15, 2026'), findsOneWidget);
-        expect(find.text('Aug 1, 2026'), findsNothing);
+        expect(find.text('15 Aug 2026'), findsOneWidget);
+        expect(find.text('1 Aug 2026'), findsNothing);
 
         // ...and persisted through save.
         await tester.tap(find.byKey(const Key('todo-save-button')));

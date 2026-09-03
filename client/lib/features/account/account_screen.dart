@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -55,7 +56,7 @@ class AccountScreen extends ConsumerStatefulWidget {
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  String _locale = 'en';
+  String _locale = kDefaultLocaleTag;
   bool _saving = false;
   bool _initialized = false;
   Map<String, String> _fieldErrors = {};
@@ -70,7 +71,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _locale = profile.locale;
+    // A stored `pt`/`en` (or anything else the picker doesn't offer) is
+    // mapped onto a supported tag before it reaches the dropdown — #656/D-34.
+    // Without this the field's value wouldn't match any item, which is a
+    // Flutter assertion failure, not a graceful fallback.
+    _locale = canonicalLocaleTag(profile.locale) ?? kDefaultLocaleTag;
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -197,13 +202,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             decoration: InputDecoration(
                               labelText: l10n.profileLocaleLabel,
                             ),
+                            // Endonyms, deliberately untranslated: each
+                            // option must read correctly to a speaker of the
+                            // language it selects. The values are the
+                            // supported BCP 47 tags (D-34) — `en-GB`/`pt-PT`,
+                            // never the generic `en`/`pt`.
                             items: const [
                               DropdownMenuItem(
-                                value: 'en',
+                                value: kDefaultLocaleTag,
                                 child: Text('English'),
                               ),
                               DropdownMenuItem(
-                                value: 'pt',
+                                value: kPortugueseLocaleTag,
                                 child: Text('Português'),
                               ),
                             ],

@@ -4,7 +4,7 @@
 
 Flutter Web PWA (`client/`). Local-first: reads/writes go to on-device SQLite
 (PowerSync), never the REST API directly. State: Riverpod. Routing: go_router.
-i18n EN/PT (`lib/l10n/`), accessibility + gloves-friendly targets. Entry: `lib/main.dart`
+i18n en-GB/pt-PT (`lib/l10n/`, D-34), accessibility + gloves-friendly targets. Entry: `lib/main.dart`
 → `ProviderScope` → `BeekeepingitApp` (`lib/app.dart`) → `MaterialApp.router`.
 
 ## Route tree (lib/routing/app_router.dart, go_router)

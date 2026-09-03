@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/l10n/locale_formatting.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_repository.dart';
@@ -63,7 +64,7 @@ Widget _buildScreen({
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: StockDeclarationsScreen(),
     ),
   );
@@ -183,7 +184,7 @@ void main() {
       expect(find.byKey(const Key('stock-declaration-d1')), findsOneWidget);
       // Localized via LocaleFormatting (DateFormat.yMMMd), not the raw stored
       // YYYY-MM-DD — the regression this assertion exists to catch.
-      expect(find.text('Sep 12, 2026 — 30 hives'), findsOneWidget);
+      expect(find.text('12 Sept 2026 — 30 hives'), findsOneWidget);
       expect(find.text('2 apiaries'), findsOneWidget);
     },
   );
@@ -298,7 +299,7 @@ void _recordFlowTests() {
       await tester.pumpAndSettle();
 
       final today = DateTime.now();
-      final expected = const LocaleFormatting.forLocale('en').date(today);
+      final expected = const LocaleFormatting.forLocale('en_GB').date(today);
       expect(find.text(expected), findsOneWidget);
     });
 

@@ -65,5 +65,3 @@ where there's a sensible one.
 
 - **Q-EXPORT-PII** — Export (FR-IE-1) of activities tied to users may include PII;
   confirm what's allowed under GDPR.
-- **Units & formats** — confirm metric units (kg/L) and Portuguese locale defaults
-  for dates/numbers (aligns with NFR-I18N-1).

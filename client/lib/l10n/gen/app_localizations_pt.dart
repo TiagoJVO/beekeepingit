@@ -2043,3 +2043,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get notificationSyncCompleted =>
       'Todas as alterações foram sincronizadas.';
 }
+
+/// The translations for Portuguese, as used in Portugal (`pt_PT`).
+class AppLocalizationsPtPt extends AppLocalizationsPt {
+  AppLocalizationsPtPt() : super('pt_PT');
+}

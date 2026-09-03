@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/activities/activity_types.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats_section.dart';
@@ -25,7 +26,7 @@ Widget _buildSection({
     child: MaterialApp(
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Scaffold(
         body: JourneyStatsSection(
           journeyId: journeyId,
@@ -75,7 +76,7 @@ Widget _buildSectionWithRouter({
     child: MaterialApp.router(
       routerConfig: router,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
     ),
   );
 }
@@ -208,7 +209,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1.234.567'), findsOneWidget);
+      // European Portuguese groups thousands with a NON-BREAKING SPACE, not
+      // the Brazilian full stop the generic `pt` locale used (#656, D-34).
+      expect(find.text('1\u00A0234\u00A0567'), findsOneWidget);
       expect(find.text('1234567'), findsNothing);
     });
 

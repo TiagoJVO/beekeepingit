@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/todos/todo_filters.dart';
 import 'package:beekeepingit_client/features/todos/todo_list_widgets.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
@@ -71,7 +72,7 @@ Widget _buildBar({
     locale: locale,
     theme: AppTheme.light(),
     localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
+    supportedLocales: kSupportedLocales,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
         context,

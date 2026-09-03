@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/core/validation/sync_op_validator.dart';
 import 'package:beekeepingit_client/features/sync/sync_needs_fix_screen.dart';
@@ -709,7 +710,7 @@ Widget _harness(_FakeRejectedStore store) {
     ],
     child: MaterialApp.router(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       routerConfig: router,
     ),
   );

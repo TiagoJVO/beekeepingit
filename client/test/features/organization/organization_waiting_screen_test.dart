@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_waiting_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -38,7 +39,7 @@ Widget _buildScreen(OrganizationController controller) {
     overrides: [organizationProvider.overrideWith(() => controller)],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       // Watching organizationProvider here stands in for the router, which
       // listens to it in production. Without a listener the provider would
       // auto-dispose between reads and rebuild to null, so a resolved

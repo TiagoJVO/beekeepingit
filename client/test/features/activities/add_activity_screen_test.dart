@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/activities/add_activity_screen.dart';
@@ -2896,7 +2897,7 @@ void main() {
     // DeleteApiaryConfirmDialog group.
     Widget hostApp() => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
@@ -2975,7 +2976,7 @@ void main() {
         MaterialApp(
           locale: const Locale('pt'),
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
+          supportedLocales: kSupportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
               body: Center(

@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -121,7 +122,7 @@ Widget _buildScreen({
     ],
     child: MaterialApp.router(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       routerConfig: router,
     ),
   );
@@ -742,7 +743,7 @@ void main() {
             ],
             child: const MaterialApp(
               localizationsDelegates: AppLocalizations.localizationsDelegates,
-              supportedLocales: AppLocalizations.supportedLocales,
+              supportedLocales: kSupportedLocales,
               home: Scaffold(body: ApiariesListScreen()),
             ),
           ),

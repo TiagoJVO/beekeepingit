@@ -43,7 +43,13 @@ class LocalizedNumberInput {
   /// Reads the active locale off [context] — the same `Localizations` the
   /// generated `AppLocalizations.of(context)` and [LocaleFormatting.of] use.
   factory LocalizedNumberInput.of(BuildContext context) =>
-      LocalizedNumberInput._(Localizations.localeOf(context).languageCode);
+      LocalizedNumberInput._(
+        // The FULL tag (`pt-PT`, not `pt`) — #656/D-34, see
+        // `LocaleFormatting.of`. It also changes which grouping separator
+        // this field accepts: European Portuguese groups thousands with a
+        // NON-BREAKING SPACE, where Brazilian `pt` uses a full stop.
+        Localizations.localeOf(context).toLanguageTag(),
+      );
 
   /// For tests and non-widget code. Unlike dates, `intl`'s NUMBER symbols are
   /// compiled in, so this needs no `initializeDateFormatting()` first.

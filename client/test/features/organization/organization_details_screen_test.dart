@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/organization/organization_details_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -119,7 +120,7 @@ Widget _buildScreen(_FakeOrganizationController controller) {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: OrganizationDetailsScreen(),
     ),
   );
@@ -448,7 +449,7 @@ void main() {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        supportedLocales: AppLocalizations.supportedLocales,
+        supportedLocales: kSupportedLocales,
         home: OrganizationDetailsScreen(),
       ),
     );
@@ -558,7 +559,7 @@ void main() {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: OrganizationDetailsScreen(),
           ),
         ),

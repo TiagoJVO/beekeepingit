@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_en.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_pt.dart';
@@ -19,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('AppLocalizations — direct per-locale instances', () {
     test('English renders plain keys and the ICU plural for every case', () {
-      final en = AppLocalizationsEn();
+      final en = AppLocalizationsEnGb();
       expect(en.appTitle, 'BeekeepingIT');
       expect(en.loginButton, 'Sign in');
       // #363 — the federated action's label is externalized, not a literal.
@@ -32,7 +33,7 @@ void main() {
     });
 
     test('Portuguese renders plain keys and the ICU plural for every case', () {
-      final pt = AppLocalizationsPt();
+      final pt = AppLocalizationsPtPt();
       expect(pt.appTitle, 'BeekeepingIT');
       expect(pt.loginButton, 'Iniciar sessão');
       expect(pt.loginWithGoogleButton, 'Continuar com a Google');
@@ -52,13 +53,18 @@ void main() {
     // `"format": "decimalPattern"`, so `intl` groups them for the active
     // locale.
     test('counter plurals group their number for the locale (#624)', () {
-      final en = AppLocalizationsEn();
-      final pt = AppLocalizationsPt();
+      final en = AppLocalizationsEnGb();
+      final pt = AppLocalizationsPtPt();
+      // #656/D-34: the region classes carry `localeName = 'en_GB'`/`'pt_PT'`,
+      // which is exactly what `intl` reads for these ICU `decimalPattern`
+      // placeholders — so European Portuguese groups with a NON-BREAKING
+      // SPACE here, matching `LocaleFormatting.number`, instead of the
+      // Brazilian full stop the generic `pt` class produced.
       expect(en.hiveCountValue(999999999), '999,999,999 hives');
-      expect(pt.hiveCountValue(999999999), '999.999.999 colmeias');
-      expect(pt.superCountValue(1234), contains('1.234'));
-      expect(pt.emptyHiveCountValue(1234), contains('1.234'));
-      expect(pt.swarmCountValue(1234), contains('1.234'));
+      expect(pt.hiveCountValue(999999999), '999\u00A0999\u00A0999 colmeias');
+      expect(pt.superCountValue(1234), contains('1\u00A0234'));
+      expect(pt.emptyHiveCountValue(1234), contains('1\u00A0234'));
+      expect(pt.swarmCountValue(1234), contains('1\u00A0234'));
       // Small counts keep reading exactly as before — no stray separator.
       expect(pt.hiveCountValue(5), '5 colmeias');
     });
@@ -67,8 +73,8 @@ void main() {
       'the offline sync-error banner drops the "PowerSync" technical term in '
       'both locales (#426)',
       () {
-        final en = AppLocalizationsEn();
-        final pt = AppLocalizationsPt();
+        final en = AppLocalizationsEnGb();
+        final pt = AppLocalizationsPtPt();
         expect(en.offlineBannerErrorMessage, isNot(contains('PowerSync')));
         expect(pt.offlineBannerErrorMessage, isNot(contains('PowerSync')));
         // Still a non-empty, human message (not blanked out).
@@ -77,50 +83,118 @@ void main() {
       },
     );
 
-    test('lookupAppLocalizations resolves en and pt to the matching class', () {
+    test('lookupAppLocalizations resolves the shipped locales to the REGION '
+        'class, which is what carries the pt_PT/en_GB formatting (#656)', () {
+      for (final locale in kSupportedLocales) {
+        expect(
+          lookupAppLocalizations(locale).localeName,
+          locale.toString(),
+          reason: '$locale must not fall back to its base language',
+        );
+      }
       expect(
-        lookupAppLocalizations(const Locale('en')),
-        isA<AppLocalizationsEn>(),
+        lookupAppLocalizations(const Locale('en', 'GB')),
+        isA<AppLocalizationsEnGb>(),
       );
       expect(
-        lookupAppLocalizations(const Locale('pt')),
-        isA<AppLocalizationsPt>(),
+        lookupAppLocalizations(const Locale('pt', 'PT')),
+        isA<AppLocalizationsPtPt>(),
       );
     });
   });
 
   group('AppLocalizations — supportedLocales/delegate wiring', () {
-    test('supportedLocales lists exactly English and Portuguese', () {
-      expect(AppLocalizations.supportedLocales, [
-        const Locale('en'),
-        const Locale('pt'),
+    test('the app offers exactly British English and European Portuguese, and '
+        'no generic locale (D-34, #656)', () {
+      expect(kSupportedLocales, [
+        const Locale('en', 'GB'),
+        const Locale('pt', 'PT'),
       ]);
+      expect(kDefaultLocale, kSupportedLocales.first);
+      expect(kDefaultLocaleTag, kDefaultLocale.toLanguageTag());
+      expect(kPortugueseLocaleTag, const Locale('pt', 'PT').toLanguageTag());
     });
 
-    testWidgets('the widget tree resolves en and pt through Localizations.of', (
-      tester,
-    ) async {
-      for (final locale in AppLocalizations.supportedLocales) {
-        AppLocalizations? resolved;
-        await tester.pumpWidget(
-          MaterialApp(
-            locale: locale,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Builder(
-              builder: (context) {
-                resolved = AppLocalizations.of(context);
-                return Text(resolved!.appTitle);
-              },
+    test(
+      'the GENERATED list is a superset — the base-language ARBs gen-l10n '
+      'requires behind each region variant are loadable but never offered',
+      () {
+        // Documents, rather than hides, why app.dart passes kSupportedLocales
+        // to MaterialApp instead of this list: offering `Locale('en')`/
+        // `Locale('pt')` would let a pt-BR device resolve to Brazilian
+        // conventions, which is exactly what #656 removes.
+        expect(AppLocalizations.supportedLocales, [
+          const Locale('en'),
+          const Locale('en', 'GB'),
+          const Locale('pt'),
+          const Locale('pt', 'PT'),
+        ]);
+        for (final offered in kSupportedLocales) {
+          expect(AppLocalizations.supportedLocales, contains(offered));
+        }
+      },
+    );
+
+    testWidgets(
+      'the widget tree resolves each offered locale through Localizations.of, '
+      'keeping its COUNTRY',
+      (tester) async {
+        for (final locale in kSupportedLocales) {
+          AppLocalizations? resolved;
+          await tester.pumpWidget(
+            MaterialApp(
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: kSupportedLocales,
+              home: Builder(
+                builder: (context) {
+                  resolved = AppLocalizations.of(context);
+                  return Text(resolved!.appTitle);
+                },
+              ),
             ),
-          ),
-        );
-        await tester.pumpAndSettle();
+          );
+          await tester.pumpAndSettle();
 
-        expect(resolved!.localeName, locale.languageCode);
-        expect(find.text('BeekeepingIT'), findsOneWidget);
-      }
-    });
+          // `en_GB`/`pt_PT`, not `en`/`pt` — the localeName the generated
+          // class hands to `intl` for its ICU number formats (#656).
+          expect(resolved!.localeName, locale.toString());
+          expect(find.text('BeekeepingIT'), findsOneWidget);
+        }
+      },
+    );
+
+    testWidgets(
+      'a legacy generic locale still resolves to the country variant we ship '
+      '(#656 migration)',
+      (tester) async {
+        for (final legacy in const [Locale('en'), Locale('pt')]) {
+          AppLocalizations? resolved;
+          await tester.pumpWidget(
+            MaterialApp(
+              locale: legacy,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: kSupportedLocales,
+              home: Builder(
+                builder: (context) {
+                  resolved = AppLocalizations.of(context);
+                  return Text(resolved!.appTitle);
+                },
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            resolved!.localeName,
+            legacy.languageCode == 'pt' ? 'pt_PT' : 'en_GB',
+            reason:
+                'a profile stored before #656 holds "$legacy" and must not '
+                'land on Brazilian/American conventions',
+          );
+        }
+      },
+    );
 
     testWidgets(
       'a plural string renders correctly for the =0, =1 and other ICU cases in both locales',
@@ -128,7 +202,7 @@ void main() {
         Widget hostFor(Locale locale, int count) => MaterialApp(
           locale: locale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
+          supportedLocales: kSupportedLocales,
           home: Builder(
             builder: (context) =>
                 Text(AppLocalizations.of(context).hiveCountValue(count)),
@@ -173,7 +247,7 @@ void main() {
             // to the first entry of supportedLocales, which is English.
             locale: const Locale('fr'),
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: Builder(
               builder: (context) {
                 resolved = AppLocalizations.of(context);
@@ -190,7 +264,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(resolved!.localeName, 'en');
+        expect(resolved!.localeName, 'en_GB');
         expect(find.text('BeekeepingIT'), findsOneWidget);
         expect(find.text('Sign in'), findsOneWidget);
         expect(find.text('2 hives'), findsOneWidget);

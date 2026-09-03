@@ -12,6 +12,7 @@
 // consistent and to extend for a new screen in one place.
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
@@ -97,7 +98,7 @@ Widget _withMaterial(Widget child, {List<Object> overrides = const []}) {
     overrides: overrides.cast(),
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: child,
     ),
   );
@@ -146,7 +147,7 @@ void main() {
           ],
           child: MaterialApp.router(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             routerConfig: router,
           ),
         ),
@@ -300,7 +301,7 @@ void main() {
             ],
             child: MaterialApp.router(
               localizationsDelegates: AppLocalizations.localizationsDelegates,
-              supportedLocales: AppLocalizations.supportedLocales,
+              supportedLocales: kSupportedLocales,
               routerConfig: router,
             ),
           ),
