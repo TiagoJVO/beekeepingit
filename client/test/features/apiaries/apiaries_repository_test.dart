@@ -157,6 +157,22 @@ class FakeLocalStore implements LocalStoreEngine {
     if (normalized.contains('WHERE A.ID = ?')) {
       results = results.where((r) => r['id'] == args[0]).toList();
     }
+    // The defense-in-depth org filter (#658, FR-TEN-2) — mirrors
+    // todos_repository_test.dart's/activities_repository_test.dart's own
+    // FakeLocalStore convention. The bound org id is the LAST argument
+    // either shape binds: watchAll binds it alone, getById/watchById bind
+    // it after the id.
+    if (normalized.contains(
+      'A.ORGANIZATION_ID = ? OR A.ORGANIZATION_ID IS NULL',
+    )) {
+      final orgId = args.last;
+      results = results
+          .where(
+            (r) =>
+                r['organization_id'] == orgId || r['organization_id'] == null,
+          )
+          .toList();
+    }
     if (normalized.contains('ORDER BY A.CREATED_AT DESC, A.NAME')) {
       results.sort((a, b) {
         final byCreated = (b['created_at'] as String).compareTo(
@@ -204,7 +220,7 @@ void main() {
       final id = await repo.create(name: 'Serra Norte', hiveCount: 4);
 
       expect(id, isNotEmpty);
-      final apiary = await repo.getById(id);
+      final apiary = await repo.getById(id, organizationId: 'org-a');
       expect(apiary, isNotNull);
       expect(apiary!.name, 'Serra Norte');
       expect(apiary.hiveCount, 4);
@@ -212,7 +228,7 @@ void main() {
     });
 
     test('getById() returns null for an unknown id', () async {
-      expect(await repo.getById('missing'), isNull);
+      expect(await repo.getById('missing', organizationId: 'org-a'), isNull);
     });
 
     test('update() changes only the given fields, keeping the rest', () async {
@@ -224,7 +240,7 @@ void main() {
 
       await repo.update(id, hiveCount: 5);
 
-      final apiary = await repo.getById(id);
+      final apiary = await repo.getById(id, organizationId: 'org-a');
       expect(apiary!.name, 'Encosta Norte'); // unchanged
       expect(apiary.hiveCount, 5); // updated
       expect(apiary.notes, 'original notes'); // unchanged
@@ -241,7 +257,7 @@ void main() {
 
         await repo.update(id, notesProvided: true);
 
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.notes, isNull);
       },
     );
@@ -255,7 +271,7 @@ void main() {
       final id = await repo.create(name: 'Temp', hiveCount: 0);
       await repo.delete(id);
 
-      expect(await repo.getById(id), isNull);
+      expect(await repo.getById(id, organizationId: 'org-a'), isNull);
     });
 
     test('delete() captures the delete-time LWW stamp on the queued op '
@@ -276,7 +292,9 @@ void main() {
         () async {
           final id = await repo.create(name: 'Serra Norte', hiveCount: 2);
           final names = <String?>[];
-          final sub = repo.watchById(id).listen((a) => names.add(a?.name));
+          final sub = repo
+              .watchById(id, organizationId: 'org-a')
+              .listen((a) => names.add(a?.name));
           addTearDown(sub.cancel);
 
           await pumpEventQueue();
@@ -290,7 +308,9 @@ void main() {
       );
 
       test('emits null for an id that does not exist', () async {
-        final apiary = await repo.watchById('missing').first;
+        final apiary = await repo
+            .watchById('missing', organizationId: 'org-a')
+            .first;
         expect(apiary, isNull);
       });
 
@@ -299,7 +319,9 @@ void main() {
         final id = await repo.create(name: 'Serra Norte', hiveCount: 2);
         final other = await repo.create(name: 'Vale Sul', hiveCount: 1);
         final names = <String?>[];
-        final sub = repo.watchById(id).listen((a) => names.add(a?.name));
+        final sub = repo
+            .watchById(id, organizationId: 'org-a')
+            .listen((a) => names.add(a?.name));
         addTearDown(sub.cancel);
 
         await pumpEventQueue();
@@ -321,9 +343,9 @@ void main() {
       'watchAll() emits the current set and re-emits after a write',
       () async {
         final emissions = <int>[];
-        final sub = repo.watchAll().listen(
-          (rows) => emissions.add(rows.length),
-        );
+        final sub = repo
+            .watchAll(organizationId: 'org-a')
+            .listen((rows) => emissions.add(rows.length));
         addTearDown(sub.cancel);
 
         await pumpEventQueue();
@@ -359,7 +381,7 @@ void main() {
           locationLat: 41.148,
         );
 
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.locationLon, -8.611);
         expect(apiary.locationLat, 41.148);
         expect(apiary.placeLabel, 'Montargil');
@@ -370,7 +392,7 @@ void main() {
     test('create() without location leaves both columns null', () async {
       final id = await repo.create(name: 'Sem Local', hiveCount: 0);
 
-      final apiary = await repo.getById(id);
+      final apiary = await repo.getById(id, organizationId: 'org-a');
       expect(apiary!.locationLon, isNull);
       expect(apiary.locationLat, isNull);
       expect(apiary.hasLocation, isFalse);
@@ -389,7 +411,7 @@ void main() {
           locationProvided: true,
         );
 
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.locationLon, -9.0);
         expect(apiary.locationLat, 41.5);
         expect(apiary.hasLocation, isTrue);
@@ -407,7 +429,7 @@ void main() {
 
       await repo.update(id, locationProvided: true);
 
-      final apiary = await repo.getById(id);
+      final apiary = await repo.getById(id, organizationId: 'org-a');
       expect(apiary!.locationLon, isNull);
       expect(apiary.locationLat, isNull);
       expect(apiary.hasLocation, isFalse);
@@ -425,7 +447,7 @@ void main() {
 
         await repo.update(id, name: 'Encosta Norte');
 
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.name, 'Encosta Norte');
         expect(apiary.locationLon, -9.0);
         expect(apiary.locationLat, 41.5);
@@ -449,13 +471,13 @@ void main() {
           placeLabelProvided: true,
         );
 
-        var apiary = await repo.getById(id);
+        var apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.placeLabel, 'São Domingos');
         expect(apiary.locationLon, -9.0, reason: 'location untouched');
 
         await repo.update(id, placeLabelProvided: true);
 
-        apiary = await repo.getById(id);
+        apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.placeLabel, isNull);
       },
     );
@@ -472,7 +494,7 @@ void main() {
           locationProvided: true,
         );
 
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.name, 'Encosta');
         expect(apiary.notes, isNull);
       },
@@ -483,7 +505,8 @@ void main() {
     test('create() stores no override by default, so the apiary inherits the '
         "organization's number", () async {
       await repo.create(name: 'Encosta Nova');
-      final apiary = (await repo.watchAll().first).single;
+      final apiary =
+          (await repo.watchAll(organizationId: 'org-a').first).single;
       expect(apiary.registrationNumber, isNull);
     });
 
@@ -492,7 +515,10 @@ void main() {
         name: 'Monte Alto',
         registrationNumber: 'PT-654321',
       );
-      expect((await repo.getById(id))!.registrationNumber, 'PT-654321');
+      expect(
+        (await repo.getById(id, organizationId: 'org-a'))!.registrationNumber,
+        'PT-654321',
+      );
     });
 
     test(
@@ -508,7 +534,7 @@ void main() {
           registrationNumber: 'PT-123456',
           registrationNumberProvided: true,
         );
-        final apiary = (await repo.getById(id))!;
+        final apiary = (await repo.getById(id, organizationId: 'org-a'))!;
         expect(apiary.registrationNumber, 'PT-123456');
         expect(apiary.name, 'Encosta Nova');
         expect(apiary.notes, 'shaded');
@@ -524,7 +550,7 @@ void main() {
           registrationNumber: 'PT-123456',
         );
         await repo.update(id, name: 'Renamed');
-        final apiary = (await repo.getById(id))!;
+        final apiary = (await repo.getById(id, organizationId: 'org-a'))!;
         expect(apiary.registrationNumber, 'PT-123456');
         expect(apiary.name, 'Renamed');
       },
@@ -541,7 +567,10 @@ void main() {
         registrationNumber: null,
         registrationNumberProvided: true,
       );
-      expect((await repo.getById(id))!.registrationNumber, isNull);
+      expect(
+        (await repo.getById(id, organizationId: 'org-a'))!.registrationNumber,
+        isNull,
+      );
     });
 
     test('an update that does not change the override writes nothing (no '
@@ -589,7 +618,7 @@ void main() {
         'location_lat': null,
       });
 
-      final apiary = await repo.getById('a1');
+      final apiary = await repo.getById('a1', organizationId: 'org-a');
       expect(apiary, isNotNull);
       expect(apiary!.hiveCount, 0);
     });
@@ -607,7 +636,7 @@ void main() {
         reason: 'one row per (apiary, counter_type) — upsert, not insert',
       );
       expect(store.counterRows.single['value'], 12);
-      expect((await repo.getById(id))!.hiveCount, 12);
+      expect((await repo.getById(id, organizationId: 'org-a'))!.hiveCount, 12);
     });
 
     test(
@@ -652,7 +681,7 @@ void main() {
 
         await repo.delete(id);
 
-        expect(await repo.getById(id), isNull);
+        expect(await repo.getById(id, organizationId: 'org-a'), isNull);
         expect(
           store.counterRows.where((r) => r['apiary_id'] == id),
           hasLength(1),
@@ -672,7 +701,7 @@ void main() {
           isEmpty,
           reason: 'the create form no longer sets any counter',
         );
-        final apiary = await repo.getById(id);
+        final apiary = await repo.getById(id, organizationId: 'org-a');
         expect(apiary!.hiveCount, 0);
       },
     );
@@ -730,7 +759,7 @@ void main() {
 
       await repo.setCounter(id, 'hive', 12);
 
-      expect((await repo.getById(id))!.hiveCount, 12);
+      expect((await repo.getById(id, organizationId: 'org-a'))!.hiveCount, 12);
     });
 
     test('watchCountersFor() emits typed rows, newest-per-type, known types '
@@ -864,6 +893,116 @@ void main() {
       );
       expect(draft.op, 'patch');
       expect(draft.id, 'a1');
+    });
+  });
+
+  group('ApiariesRepository org-scoping (#658, FR-TEN-2)', () {
+    /// Seeds a row straight into the fake store the way the PowerSync
+    /// download stream would — carrying a server-assigned
+    /// `organization_id`, which no local write path ever sets.
+    void seedSyncedRow({
+      required String id,
+      required String name,
+      required String? organizationId,
+      String createdAt = '2026-06-01T00:00:00Z',
+    }) {
+      store.rows.add({
+        'id': id,
+        'organization_id': organizationId,
+        'name': name,
+        'notes': null,
+        'place_label': null,
+        'registration_number': null,
+        'location_lon': null,
+        'location_lat': null,
+        'created_at': createdAt,
+        'updated_at': createdAt,
+      });
+    }
+
+    test('watchAll() returns an empty list when the organization id is null '
+        '(not yet loaded) rather than every locally-present row', () async {
+      seedSyncedRow(id: 'a1', name: 'Serra Norte', organizationId: 'org-a');
+
+      expect(await repo.watchAll(organizationId: null).first, isEmpty);
+    });
+
+    test('watchAll() excludes another organization\'s apiaries — never leaks '
+        'cross-tenant data even if it were somehow present locally', () async {
+      seedSyncedRow(id: 'own', name: 'Serra Norte', organizationId: 'org-a');
+      seedSyncedRow(id: 'foreign', name: 'Vale Sul', organizationId: 'org-b');
+
+      final apiaries = await repo.watchAll(organizationId: 'org-a').first;
+
+      expect(apiaries.map((a) => a.id).toList(), ['own']);
+      expect(
+        apiaries.any((a) => a.name == 'Vale Sul'),
+        isFalse,
+        reason: 'org-a caller must never see org-b\'s apiaries',
+      );
+    });
+
+    test('watchAll() still shows a freshly-created, not-yet-synced local row '
+        '(null organization_id) — offline-first: your own just-added apiary '
+        'must not disappear until it round-trips (FR-OF-1)', () async {
+      await repo.create(name: 'Encosta Nova');
+
+      final apiaries = await repo.watchAll(organizationId: 'org-a').first;
+
+      expect(apiaries, hasLength(1));
+      expect(apiaries.single.name, 'Encosta Nova');
+    });
+
+    test('getById() does not return another organization\'s apiary', () async {
+      seedSyncedRow(id: 'foreign', name: 'Vale Sul', organizationId: 'org-b');
+
+      expect(await repo.getById('foreign', organizationId: 'org-a'), isNull);
+    });
+
+    test('getById() returns the caller\'s own row and a not-yet-synced local '
+        'row', () async {
+      seedSyncedRow(id: 'own', name: 'Serra Norte', organizationId: 'org-a');
+      final localId = await repo.create(name: 'Encosta Nova');
+
+      expect(
+        (await repo.getById('own', organizationId: 'org-a'))!.name,
+        'Serra Norte',
+      );
+      expect(
+        (await repo.getById(localId, organizationId: 'org-a'))!.name,
+        'Encosta Nova',
+      );
+    });
+
+    test('getById() returns null when the organization id is null', () async {
+      seedSyncedRow(id: 'own', name: 'Serra Norte', organizationId: 'org-a');
+
+      expect(await repo.getById('own', organizationId: null), isNull);
+    });
+
+    test('watchById() emits null for another organization\'s apiary — the '
+        'deep-link/detail path is scoped like the list', () async {
+      seedSyncedRow(id: 'foreign', name: 'Vale Sul', organizationId: 'org-b');
+
+      expect(
+        await repo.watchById('foreign', organizationId: 'org-a').first,
+        isNull,
+      );
+    });
+
+    test('watchById() emits null when the organization id is null', () async {
+      seedSyncedRow(id: 'own', name: 'Serra Norte', organizationId: 'org-a');
+
+      expect(await repo.watchById('own', organizationId: null).first, isNull);
+    });
+
+    test('watchById() emits the caller\'s own row', () async {
+      seedSyncedRow(id: 'own', name: 'Serra Norte', organizationId: 'org-a');
+
+      expect(
+        (await repo.watchById('own', organizationId: 'org-a').first)!.name,
+        'Serra Norte',
+      );
     });
   });
 }

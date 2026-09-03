@@ -9,6 +9,7 @@ import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 import '../../core/sync/sync_op_draft.dart';
+import '../organization/organization_repository.dart';
 import 'counter_types.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
@@ -106,17 +107,75 @@ class ApiariesRepository {
       'WHERE hc.apiary_id = a.id AND hc.counter_type = \'$counterTypeHive\' '
       'ORDER BY hc.updated_at DESC LIMIT 1)';
 
-  Stream<List<Apiary>> watchAll() {
+  /// Every apiary in the caller's org, newest-created-first.
+  ///
+  /// Tenancy (FR-TEN-2) is primarily enforced by the org-scoped PowerSync
+  /// Sync Rule; the `organization_id = ? OR organization_id IS NULL` clause
+  /// is a second, defense-in-depth layer — the same convention
+  /// [TodosRepository.watchAll]/[ActivitiesRepository.watchAll]/
+  /// [JourneysRepository.watchAll] already carry, and the one this
+  /// repository was the last local read path in the client to be missing
+  /// (closed by #658, when Home became the landing screen and started
+  /// rendering apiary NAMES the moment a session opens).
+  ///
+  /// It must tolerate a just-created, not-yet-round-tripped local row (whose
+  /// `organization_id` is NULL until sync — [create] never sets it, the
+  /// server derives it from the token) while still excluding any row that
+  /// DOES carry a foreign `organization_id`. That case is not hypothetical
+  /// and needs no Sync-Rule failure to reach: nothing purges the local store
+  /// at LOGIN (the only [LocalStoreEngine.clear] call sites are logout and
+  /// membership loss), so on a shared device a previous user's replicated
+  /// rows are still on disk when the next user — possibly of another org —
+  /// signs in, and offline PowerSync never reconciles the buckets.
+  ///
+  /// [organizationId] is the caller's own org id (organization_repository.
+  /// dart's `organizationProvider`). A null value (no organization loaded
+  /// yet — the onboarding gate should make this unreachable in practice)
+  /// yields an empty stream rather than an unscoped query.
+  Stream<List<Apiary>> watchAll({required String? organizationId}) {
+    if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
           'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
-          'FROM $apiariesTable a ORDER BY a.created_at DESC, a.name',
+          'FROM $apiariesTable a '
+          'WHERE a.organization_id = ? OR a.organization_id IS NULL '
+          'ORDER BY a.created_at DESC, a.name',
+          [organizationId],
         )
         .map((rows) => rows.map(_fromRow).toList());
   }
 
-  Future<Apiary?> getById(String id) async {
+  /// One apiary by id, or null when it doesn't exist **or belongs to another
+  /// organization** — org-scoped exactly like [watchAll], and for the same
+  /// reason (#658): the detail screen this feeds is deep-linkable and is
+  /// linked into straight from Home, so an unscoped by-id read would hand
+  /// back a foreign row that the list itself refuses to show.
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
+    if (organizationId == null) return null;
+    final row = await _store.getOptional(
+      'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
+      'COALESCE($_hiveCountSubquery, 0) AS hive_count '
+      'FROM $apiariesTable a WHERE a.id = ? '
+      'AND (a.organization_id = ? OR a.organization_id IS NULL)',
+      [id, organizationId],
+    );
+    return row == null ? null : _fromRow(row);
+  }
+
+  /// [update]'s own pre-read: the current values it merges its partial edit
+  /// into. Deliberately NOT org-scoped, unlike the public [getById].
+  ///
+  /// This is a write path, not a read path, and scoping only its pre-read
+  /// would be theater: the `UPDATE`/`DELETE` it precedes are themselves
+  /// by-id, and a cross-org write is authoritatively refused server-side
+  /// (the owning service derives `organization_id` from the token and never
+  /// from the payload). It would also have a real cost — an edit issued
+  /// before `organizationProvider` resolved would silently become a no-op
+  /// rather than saving. The foreign row is already unreachable through the
+  /// UI: every screen that can reach an edit gets there through [watchAll]
+  /// or [getById]/[watchById], all three of which exclude it.
+  Future<Apiary?> _currentForWrite(String id) async {
     final row = await _store.getOptional(
       'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
       'COALESCE($_hiveCountSubquery, 0) AS hive_count '
@@ -135,13 +194,18 @@ class ApiariesRepository {
   /// exist — deleted, or a stale deep link — which the caller
   /// (apiary_detail_screen.dart) already handles by bouncing back to the
   /// list.
-  Stream<Apiary?> watchById(String id) {
+  ///
+  /// Org-scoped like [watchAll]/[getById] (#658) — see [getById]'s doc for
+  /// why the by-id reads need the predicate too.
+  Stream<Apiary?> watchById(String id, {required String? organizationId}) {
+    if (organizationId == null) return Stream.value(null);
     return _store
         .watch(
           'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
-          'FROM $apiariesTable a WHERE a.id = ?',
-          [id],
+          'FROM $apiariesTable a WHERE a.id = ? '
+          'AND (a.organization_id = ? OR a.organization_id IS NULL)',
+          [id, organizationId],
         )
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
   }
@@ -303,7 +367,7 @@ class ApiariesRepository {
     double? locationLat,
     bool locationProvided = false,
   }) async {
-    final current = await getById(id);
+    final current = await _currentForWrite(id);
     if (current == null) return;
 
     final newName = name ?? current.name;
@@ -449,10 +513,15 @@ final apiariesRepositoryProvider = FutureProvider<ApiariesRepository>((
   return ApiariesRepository(PowerSyncLocalStore(session.db));
 });
 
-/// Live list of the org's apiaries, straight from local SQLite (offline-first).
+/// Live list of the org's apiaries, straight from local SQLite
+/// (offline-first) — depends on [organizationProvider] so the query is
+/// org-scoped in Dart as well as by the Sync Rule (#658, FR-TEN-2) and
+/// naturally re-scopes if the org context changes. Mirrors
+/// [todosStreamProvider]'s identical shape (todos_repository.dart).
 final apiariesStreamProvider = StreamProvider<List<Apiary>>((ref) async* {
   final repo = await ref.watch(apiariesRepositoryProvider.future);
-  yield* repo.watchAll();
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchAll(organizationId: org?.id);
 });
 
 /// Live counter rows for one apiary (#256) — what the detail screen's
@@ -473,7 +542,8 @@ final apiaryByIdProvider = StreamProvider.autoDispose.family<Apiary?, String>((
   apiaryId,
 ) async* {
   final repo = await ref.watch(apiariesRepositoryProvider.future);
-  yield* repo.watchById(apiaryId);
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchById(apiaryId, organizationId: org?.id);
 });
 
 /// Client-side search over the locally-synced apiary set (FR-AP-6, D-17:

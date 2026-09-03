@@ -90,7 +90,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   bool deleteCalled = false;
 
   @override
-  Future<Apiary?> getById(String id) async {
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
     if (throwOnGetById) throw Exception('boom-load');
     return existing;
   }
@@ -1558,6 +1558,12 @@ void main() {
         ProviderScope(
           overrides: [
             apiariesRepositoryProvider.overrideWith((ref) async => repo),
+            // The edit prefill is org-scoped (#658, FR-TEN-2), so it awaits
+            // organizationProvider — left un-overridden it never resolves
+            // (its logged-out gate) and the form would sit on its spinner.
+            organizationProvider.overrideWith(
+              _ExistingOrganizationController.new,
+            ),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
