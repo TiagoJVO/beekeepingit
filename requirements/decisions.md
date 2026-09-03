@@ -357,9 +357,10 @@ Core technology decisions (2026-06-27). Detail and rationale in
   - **Revised 2026-07-16 (D-25):** M6 was "Import/Export"; Import is split out into its own
     milestone (**M12**), scheduled last, and narrowed to apiaries-only. M6 keeps Export
     (apiaries + activities + journeys, unchanged scope).
-  - **Revised 2026-07-27 (D-33):** M6 is reprioritized out of Phase 2 to **Phase 6, paired with
-    M12** — story-ready but judged non-critical, so it now sits behind the native rollout
-    alongside Import instead of ahead of it.
+  - **Revised 2026-07-27 (D-33):** M6 is reprioritized to sit **behind the native rollout, paired
+    with M12** — story-ready but judged non-critical, so it now sits behind the native rollout
+    alongside Import instead of ahead of it. (Originally worded as "out of Phase 2 into Phase 6";
+    the phase labels are retired per the 2026-09-03 revision below, the substance is unchanged.)
 - **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
   **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
   **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
@@ -379,32 +380,31 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
 
-- **Recommended build phasing (added 2026-07-16, from the story-level dependency graph):** the
-  milestone numbering is a naming order, not a strict build order — the story-level `blocked-by`
-  graph (itself a product of this same 2026-07-16 backlog reorg) supports real parallelism. The
-  actual buildable sequence:
-  - **Phase 1 (start immediately, parallel):** **M3** Activities (build `#38` activity-type model
-    first — nearly everything downstream needs it) ∥ **M5** Todos (no dependency on M3/M4, only
-    needs the already-shipped Apiaries) ∥ **M7** Admin App (a separate web app, zero dependency
-    on M3–M6) ∥ **M8**'s groundwork — the AI provider research spike and EPIC-14's GDPR framework
-    have no code prerequisites and have their own lead time, worth starting early.
-  - **Phase 2 (once M3's `#38`/`#39` land):** **M4** Journeys (`#46`, the journey picker, needs
-    the Activities model).
-  - **Phase 3 (once M5 lands):** **M9** Settings & Notifications (`#82` needs the Todos due-date
-    field).
-  - **Phase 4 (once M3+M4+M5 are far enough along):** **M8**'s core query/write features (need
-    Activities' `#38`, Todos' `#50`/`#51`, and Journeys' `#46`/`#48` for full context-scope
-    coverage).
-  - **Phase 5 (native rollout, deliberately last per D-10):** **M10** Android, then **M11** iOS &
-    on-device AI — no code dependency on M3–M9, but D-10's own rationale ("native only when a
-    feature needs it") argues against front-loading this.
-  - **Phase 6 (explicitly deferred to the very end, D-25; M6 rejoins here per D-33):** **M12**
-    Import (Apiaries) paired with **M6** Export — Export was originally Phase 2 (story-ready as
-    soon as M3/M4 landed) but D-33 reprioritizes it behind the native rollout as non-critical;
-    only its GDPR consent/privacy-policy scope was pulled forward (split from `#90` into `#487`,
-    Phase-1/4 groundwork feeding M8's consent story `#66` directly).
-  - This phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow;
-    each milestone's GitHub description carries a short phase tag for the same reason.
+- **Revised 2026-09-03 (user) — the "Recommended build phasing" guidance is RETIRED.** Until today
+  this decision carried a **"Recommended build phasing"** block (added 2026-07-16): Phases 1–6
+  grouping the milestones into build waves, with each milestone's GitHub description carrying a
+  matching `Phase N — …` tag. **The Phase 1–6 listing is removed from this decision, and the tags
+  are stripped from the milestone descriptions.** Nothing should send a reader to look up a
+  "phase" any more.
+  - **Why it goes:** the phasing was written while the app was being built up from nothing, when
+    the milestones genuinely did have ordering constraints between them. That is no longer the
+    case — the remaining work is largely independent. A static, hand-maintained wave plan
+    therefore stopped describing reality: it keeps asserting gates long after the stories that
+    created them closed, which makes it **stale guidance rather than help**.
+  - **What replaces it:** nothing prose-shaped. Sequencing is derived **solely** from native
+    GitHub **`blocked-by`** relationships between issues, plus the **epic → children sub-issues**
+    panel. That is exactly the **"Dependencies at leaf level"** principle above, now applied
+    without exception. If two milestones genuinely must be ordered, express it as a `blocked-by`
+    between the specific issues that carry the constraint — never as prose in a milestone
+    description, an issue body, or here.
+  - **What is unaffected:** the per-feature milestone model, the cross-cutting **streams**, the
+    `Q-*` scope-gating rule, **D-10**'s PWA → Android → iOS rollout order and **D-4**'s deferrals
+    all stand — those are product/platform decisions, not a dependency graph. Earlier revision
+    notes keep their substance; only their phase _labels_ are dropped (D-33's "Phase 2 → Phase 6"
+    now reads as "behind the native rollout, paired with M12", which is what it always meant).
+  - **Touches:** D-26 and D-33 (both cited the phase plan), the `milestone-orchestration` skill
+    (which read phase tags off milestone descriptions), and the M6/M8/M10/M11/M12 milestone
+    descriptions on GitHub.
 
 ## D-15 — Apiary distance: straight-line (haversine), offline
 
@@ -711,7 +711,7 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   later" already anticipated.
 - **Scope — this decision is the hosting provider only.** It does **not** resolve **Q-DR**
   (backup/DR targets — still open) or **#90** (GDPR data export/erasure UI), both scheduled at
-  **M6 · Export** in the D-14 phase plan. Standing up a Scaleway cluster **ahead of that work**
+  **M6 · Export** (D-14). Standing up a Scaleway cluster **ahead of that work**
   means the first real deployment should be **staging-grade** (the already-scaffolded, currently
   unused `environments/staging.yaml`) — not a `prod` environment holding real user data — until
   DR and GDPR export/erasure land. Also not yet covered: production-grade TLS (currently
@@ -873,9 +873,9 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ## D-33 — M6 Export reprioritized to pair with M12 Import; GDPR consent/privacy-policy split out
 
-- **Decision (user, 2026-07-27):** **M6 Export** moves out of **Phase 2** (D-14's original build
-  phasing) into **Phase 6**, scheduled alongside **M12 Import** at the very end of the rollout,
-  behind the native phase (M10/M11). All of M6's story-level blockers were already closed —
+- **Decision (user, 2026-07-27):** **M6 Export** moves from "as soon as M3/M4 land" to the **very
+  end of the rollout**, scheduled alongside **M12 Import**, behind the native rollout (M10/M11).
+  All of M6's story-level blockers were already closed —
   this is a **priority call, not a dependency gate**: Export is judged non-critical relative to
   Settings/Notifications (M9), the AI Assistant (M8), and the native rollout.
 - **GDPR split (the ripple this reprioritization would otherwise cause):** `#90` ("GDPR:
@@ -893,9 +893,14 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Also deferred with M6 (per the same call):** `#69` (CSV/JSON export), `#71` (GDPR
   data-export tie-in), `#92` (disaster recovery), `#294` (honey-lot export field) — none of these
   block M8, M9, or the native rollout.
-- **Supersedes:** none. **Refines:** D-14's recommended build phasing (Phase 2/6) and its
+- **Supersedes:** none. **Refines:** D-14's milestone ordering for M6 and its
   milestone-of-first-need assignment for `#90`. Does not touch D-25 (Import stays split out into
   its own milestone, still last).
+  - _Note (2026-09-03):_ this decision was originally written in terms of D-14's "Phase 2" →
+    "Phase 6" build phasing, which is now **retired** (see D-14's 2026-09-03 revision). The
+    substance is unchanged and stands: M6 sits at the end of the rollout, paired with M12, behind
+    the native rollout. Any ordering that still genuinely binds belongs in a `blocked-by` link
+    between the specific issues, not in prose.
 - **Touches:** D-14, D-25, D-26 (production-readiness still waits on DR + GDPR export/erasure,
   now later), EPIC-09 (#10), EPIC-14 (#15), EPIC-08 (#9), `#66`, `#69`, `#71`, `#90`, `#92`, `#294`,
   `#487`.
