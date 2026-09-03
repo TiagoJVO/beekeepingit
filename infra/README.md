@@ -307,14 +307,14 @@ credentials, #361), which `scaleway-up.sh` creates when the variables below are 
   local run cannot read them back — which is why the `.env` file exists at all. Treat GitHub as
   the canonical store; the `.env` file is a local working copy.
 
-| Name                                                            | Kind                     | Used for                                                           |
-| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
-| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                             | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)            |
-| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID`        | environment secret       | Scaleway project/org scoping                                       |
-| `CF_API_TOKEN` / `CF_ZONE_ID`                                   | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                      |
-| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`         | environment secret       | out-of-band SMTP relay Secret (optional, #361)                     |
-| `AUTHENTIK_GOOGLE_CLIENT_ID` / `AUTHENTIK_GOOGLE_CLIENT_SECRET` | environment secret       | out-of-band Google federation Secret (optional, #363/#364)         |
-| `APP_HOST` / `AUTH_HOST`                                        | environment **variable** | per-environment public hostnames (scoped to each gate environment) |
+| Name                                                            | Kind                     | Used for                                                                                                                                       |
+| --------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                             | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)                                                                                        |
+| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID`        | environment secret       | Scaleway project/org scoping                                                                                                                   |
+| `CF_API_TOKEN` / `CF_ZONE_ID`                                   | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                                                                                                  |
+| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`         | environment secret       | out-of-band SMTP relay Secret (optional, #361)                                                                                                 |
+| `AUTHENTIK_GOOGLE_CLIENT_ID` / `AUTHENTIK_GOOGLE_CLIENT_SECRET` | environment secret       | out-of-band Google federation Secret (optional, #363/#364)                                                                                     |
+| `APP_HOST` / `AUTH_HOST` / `ADMIN_HOST`                         | environment **variable** | per-environment public hostnames, scoped to each gate environment — `ADMIN_HOST` is **optional** (unset skips the admin host's A record; #556) |
 
 Store the secrets **scoped to the gate environments** (`staging-gate`/`production-gate`), not
 repo-wide: the workflow's `run` job carries the gate environment, so environment secrets resolve
@@ -327,10 +327,18 @@ must not handle the values):
 gh secret set SCW_ACCESS_KEY --env staging-gate    # paste when prompted; repeat for the others
 gh variable set APP_HOST --env staging-gate --body beekeepingit-rc.melargil.pt
 gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargil.pt
+gh variable set ADMIN_HOST --env staging-gate --body admin.beekeepingit-rc.melargil.pt
 ```
 
 (The `staging-gate`/`production-gate` environments are D-27's release-approval gates; create one
 under _Settings → Environments_ first if it doesn't exist yet.)
+
+Setting `ADMIN_HOST` **creates nothing on its own** — the A record is pushed by the next
+`cluster-ops` `up`/`scale-up` run (look for `cloudflare: A admin.… -> <ip>` in the job log). Wait
+for that before adding `gateway.adminHost`/`global.adminOrigin` to the deployed gitops values:
+naming a host that has no A record turns the ACME order's `rejectedIdentifier` rejection into a
+failed HTTP-01 challenge, and one failed authorization invalidates the whole multi-SAN order —
+the app and auth certificates go down with it (#556, ADR-0020).
 
 **Adding another external credential** takes four coordinated edits: a guarded block in
 [`scaleway-up.sh`](cluster/scaleway-up.sh) that creates the Secret, the `run` job's `env:` in

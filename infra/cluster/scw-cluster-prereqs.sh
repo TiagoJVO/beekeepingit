@@ -13,8 +13,8 @@
 # so coming back needs the exact same steps a first-ever bring-up does.
 #
 # Requires app_host/auth_host to already be set by the caller (used only for
-# the optional Cloudflare DNS push) and kubectl/helm/flux already checked on
-# PATH.
+# the optional Cloudflare DNS push), optionally admin_host (empty simply skips
+# that one A record — #556), and kubectl/helm/flux already checked on PATH.
 
 install_cluster_prereqs() {
   # OCI registry, not the classic `https://cloudnative-pg.github.io/charts` Helm
@@ -91,6 +91,31 @@ install_cluster_prereqs() {
     }
     cf_upsert_a "$app_host" "$lb_ip"
     cf_upsert_a "$auth_host" "$lb_ip"
+    # The admin SPA's own origin (#449, ADR-0016) — OPTIONAL, unlike the two
+    # above: `production-gate` has no ADMIN_HOST variable today, so hard-
+    # requiring it would break the next prod bring-up.
+    #
+    # What makes leaving it soft acceptable, stated precisely: with cert-manager
+    # enabled, `gateway.assertPublicHostnames` fails the chart render when
+    # `gateway.adminHost` or `global.adminOrigin` is left at a `.local`/
+    # `.localhost` default, and when `global.adminOrigin` is set while
+    # `gateway.adminHost` is empty (#556). So the values-side mistake that
+    # actually killed staging's ACME renewal is now loud at render time.
+    #
+    # What it does NOT cover: DNS. Nothing here verifies that a configured
+    # host RESOLVES — an unset ADMIN_HOST simply means no admin A record, and
+    # the chart cannot see that. Order therefore matters: create the A record
+    # (this script, via ADMIN_HOST) BEFORE adding `gateway.adminHost` to the
+    # deployed gitops values, or the multi-SAN order trades a rejectedIdentifier
+    # failure for a failed HTTP-01 challenge — and one failed authorization
+    # invalidates the whole order, taking the app/auth certs down with it.
+    # An `if` rather than `[ -n ... ] && cf_upsert_a ...` so a false test as
+    # the last statement can't trip `set -e`.
+    if [ -n "${admin_host:-}" ]; then
+      cf_upsert_a "$admin_host" "$lb_ip"
+    else
+      echo "ADMIN_HOST not set — skipping the admin host's A record"
+    fi
   else
     echo "CF_API_TOKEN not set — skipping the Cloudflare DNS update (point DNS by hand if needed)"
   fi
