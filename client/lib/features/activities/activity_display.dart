@@ -36,7 +36,8 @@ List<String> _typeSpecificParts(
     case activityTypeFeeding:
       return [
         if (attrs['feed_type'] != null)
-          '${l10n.activityFeedTypeLabel}: ${attrs['feed_type']}',
+          '${l10n.activityFeedTypeLabel}: '
+              '${feedTypeLabel(l10n, '${attrs['feed_type']}')}',
         if (attrs['feed_amount'] != null)
           '${l10n.activityFeedAmountLabel}: ${attrs['feed_amount']}',
         if (attrs['hives_involved'] != null)
@@ -46,10 +47,12 @@ List<String> _typeSpecificParts(
       final context = attrs['treatment_context'] as String?;
       return [
         if (attrs['treatment_type'] != null)
-          '${l10n.activityTreatmentTypeLabel}: ${attrs['treatment_type']}',
+          '${l10n.activityTreatmentTypeLabel}: '
+              '${treatmentTypeLabel(l10n, '${attrs['treatment_type']}')}',
         if (context != null) treatmentContextLabel(l10n, context) ?? context,
         if (attrs['disease'] != null)
-          '${l10n.activityDiseaseLabel}: ${attrs['disease']}',
+          '${l10n.activityDiseaseLabel}: '
+              '${diseaseConditionLabel(l10n, '${attrs['disease']}')}',
         if (attrs['hives_involved'] != null)
           '${l10n.activityHivesInvolvedLabel}: ${attrs['hives_involved']}',
       ];
@@ -72,7 +75,9 @@ List<String> _typeSpecificParts(
 /// entirely (no empty rows); `treatment_context` renders its localized label,
 /// not the raw stored token, mirroring the summary line's own treatment
 /// handling. Vocabulary values (`feed_type`, `treatment_type`, `disease`) are
-/// already human-readable stored strings (activity_types.dart), shown as-is.
+/// stored as stable Portuguese-looking wire values and localized at render
+/// time through activity_types.dart's `*Label` helpers (#625, NFR-I18N-1) —
+/// the stored value itself is never rewritten.
 List<({String label, String value})> activityDetailRows(
   AppLocalizations l10n,
   Activity activity,
@@ -80,12 +85,14 @@ List<({String label, String value})> activityDetailRows(
   final attrs = activity.attributes;
   final rows = <({String label, String value})>[];
 
-  void add(String label, String key) {
+  /// [display] localizes a controlled-vocabulary value for rendering; without
+  /// it the stored value is shown verbatim (numbers, free text).
+  void add(String label, String key, [String Function(String)? display]) {
     final value = attrs[key];
     if (value == null) return;
     final text = value is String ? value : '$value';
     if (text.trim().isEmpty) return;
-    rows.add((label: label, value: text));
+    rows.add((label: label, value: display == null ? text : display(text)));
   }
 
   switch (activity.type) {
@@ -95,7 +102,11 @@ List<({String label, String value})> activityDetailRows(
       add(l10n.activityHivesInvolvedLabel, 'hives_involved');
       add(l10n.activityLotBatchLabel, 'lot_batch');
     case activityTypeFeeding:
-      add(l10n.activityFeedTypeLabel, 'feed_type');
+      add(
+        l10n.activityFeedTypeLabel,
+        'feed_type',
+        (v) => feedTypeLabel(l10n, v),
+      );
       add(l10n.activityFeedAmountLabel, 'feed_amount');
       add(l10n.activityHivesInvolvedLabel, 'hives_involved');
     case activityTypeTreatment:
@@ -106,8 +117,16 @@ List<({String label, String value})> activityDetailRows(
           value: treatmentContextLabel(l10n, context) ?? context,
         ));
       }
-      add(l10n.activityTreatmentTypeLabel, 'treatment_type');
-      add(l10n.activityDiseaseLabel, 'disease');
+      add(
+        l10n.activityTreatmentTypeLabel,
+        'treatment_type',
+        (v) => treatmentTypeLabel(l10n, v),
+      );
+      add(
+        l10n.activityDiseaseLabel,
+        'disease',
+        (v) => diseaseConditionLabel(l10n, v),
+      );
       add(l10n.activityHivesInvolvedLabel, 'hives_involved');
     default: // activityTypeGeneric, and any unknown future type
       break;

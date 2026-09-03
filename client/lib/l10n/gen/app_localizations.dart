@@ -1856,6 +1856,102 @@ abstract class AppLocalizations {
   /// **'Detection only (no treatment yet)'**
   String get treatmentContextDetectionOnlyLabel;
 
+  /// Display label for the stored disease value 'Varroose' — render-time only, the stored/wire value is unchanged (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Varroosis'**
+  String get diseaseConditionVarroosisLabel;
+
+  /// Display label for the stored disease value 'Loque americana' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'American foulbrood'**
+  String get diseaseConditionAmericanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Loque europeia' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'European foulbrood'**
+  String get diseaseConditionEuropeanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Nosemose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Nosemosis'**
+  String get diseaseConditionNosemosisLabel;
+
+  /// Display label for the stored disease value 'Acariose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Acarapisosis'**
+  String get diseaseConditionAcarapisosisLabel;
+
+  /// Display label for the stored disease value 'Aethina tumida (pequeno besouro da colmeia)' — the Latin name stays Latin in both languages, only its gloss is translated (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Aethina tumida (small hive beetle)'**
+  String get diseaseConditionSmallHiveBeetleLabel;
+
+  /// Display label for the stored disease value 'Tropilaelaps spp.' — a Latin name, identical in both languages (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Tropilaelaps spp.'**
+  String get diseaseConditionTropilaelapsLabel;
+
+  /// Display label for the stored disease catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get diseaseConditionOtherLabel;
+
+  /// Display label for the stored treatment-product value 'Apivar/amitraz' — a brand plus its active substance, identical in both languages (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Apivar/amitraz'**
+  String get treatmentTypeApivarAmitrazLabel;
+
+  /// Display label for the stored treatment-product value 'Ácido oxálico' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Oxalic acid'**
+  String get treatmentTypeOxalicAcidLabel;
+
+  /// Display label for the stored treatment-product value 'Timol' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Thymol'**
+  String get treatmentTypeThymolLabel;
+
+  /// Display label for the stored treatment-product catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get treatmentTypeOtherLabel;
+
+  /// Display label for the stored feed-type value 'Xarope 1:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'1:1 syrup'**
+  String get feedTypeSyrup11Label;
+
+  /// Display label for the stored feed-type value 'Xarope 2:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'2:1 syrup'**
+  String get feedTypeSyrup21Label;
+
+  /// Display label for the stored feed-type value 'Candi' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Candi (fondant)'**
+  String get feedTypeCandiLabel;
+
+  /// Display label for the stored feed-type value 'Pólen' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Pollen'**
+  String get feedTypePollenLabel;
+
   /// Screen header title for the add-activity form (#39, FR-AC-2)
   ///
   /// In en, this message translates to:

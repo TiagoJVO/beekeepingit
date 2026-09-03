@@ -540,8 +540,15 @@ void main() {
           await tester.tap(diseaseField);
           await tester.pumpAndSettle();
 
-          expect(find.text('Varroose').last, findsOneWidget);
-          expect(find.text('Loque americana').last, findsOneWidget);
+          // #625 (NFR-I18N-1): the options render in the active language —
+          // the stored values ('Varroose', 'Loque americana') are keys, not
+          // display text, and must not leak into an English UI.
+          expect(find.text('Varroosis').last, findsOneWidget);
+          expect(find.text('American foulbrood').last, findsOneWidget);
+          expect(find.text('Varroose'), findsNothing);
+          expect(find.text('Loque americana'), findsNothing);
+          expect(find.text('Outro'), findsNothing);
+          expect(find.text('Other').last, findsOneWidget);
         },
       );
 
@@ -977,7 +984,9 @@ void main() {
         // is chosen, proving detection-only doesn't require a treatment.
         await tester.tap(find.byKey(const Key('activity-disease-field')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Varroose').last);
+        // Picked by its ENGLISH label (#625) — the stored value asserted
+        // below is still the Portuguese wire value.
+        await tester.tap(find.text('Varroosis').last);
         await tester.pumpAndSettle();
 
         final saveButton = find.byKey(const Key('activity-save-button'));
@@ -2088,7 +2097,9 @@ void main() {
 
           expect(find.text('Specific disease/condition'), findsOneWidget);
           expect(find.text('Apivar/amitraz'), findsOneWidget);
-          expect(find.text('Varroose'), findsOneWidget);
+          // Prefilled from the journey's stored 'Varroose', rendered in
+          // English (#625).
+          expect(find.text('Varroosis'), findsOneWidget);
         },
       );
 
