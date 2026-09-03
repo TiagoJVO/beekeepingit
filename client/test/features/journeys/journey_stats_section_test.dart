@@ -184,6 +184,55 @@ void main() {
       );
     });
 
+    // #624: the stats card was already the reference implementation for a
+    // locale-formatted DECIMAL (`0,0 kg`), but its integer tiles still
+    // interpolated raw ints — identical digits in both languages, no
+    // grouping. Every number on the card now goes through `intl`.
+    testWidgets('groups large integer stats for the active locale (#624)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildSection(
+          journeyId: 'j1',
+          locale: const Locale('pt'),
+          stats: Stream.value(
+            _sampleStats(
+              apiariesPlanned: 2,
+              apiariesVisited: 2,
+              hivesHarvested: 1234567,
+              honeyCollectedKg: 12,
+              averageSupersPerHive: 2,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1.234.567'), findsOneWidget);
+      expect(find.text('1234567'), findsNothing);
+    });
+
+    testWidgets('groups the same integer with en separators in English '
+        '(#624)', (tester) async {
+      await tester.pumpWidget(
+        _buildSection(
+          journeyId: 'j1',
+          stats: Stream.value(
+            _sampleStats(
+              apiariesPlanned: 2,
+              apiariesVisited: 2,
+              hivesHarvested: 1234567,
+              honeyCollectedKg: 12,
+              averageSupersPerHive: 2,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1,234,567'), findsOneWidget);
+    });
+
     testWidgets('renders the average-supers-per-hive label in English when the '
         'locale is en, not the Portuguese prototype wording (#382)', (
       tester,
