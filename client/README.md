@@ -87,6 +87,24 @@ later without touching feature screens (`NFR-I18N-1`, `#77`/`#78`).
 > - **Anything reading a locale must keep the country** — `toLanguageTag()`,
 >   never `languageCode`.
 
+**Typing numbers** goes through `LocalizedNumberInput` (`NFR-I18N-1`,
+`FR-AC-1`, `#623`, `#657`), which every numeric form field shares. A grouping
+separator is always followed by exactly three digits and a decimal separator
+by any number, so:
+
+- the active locale's decimal separator always wins (`40,5` → 40.5 in
+  `pt-PT`);
+- a separator that **cannot** mean thousands is read as the decimal point,
+  whichever character it is — `40.5` in `pt-PT` and `40,5` in `en-GB` are both
+  40.5;
+- where the input genuinely could mean thousands, the **locale** decides:
+  `1,234` is 1234 in `en-GB` (its own grouping separator), while `1.234` in
+  `pt-PT` is **rejected** — the dot is neither that locale's decimal nor its
+  grouping character, so there is no rule to break the tie and guessing would
+  be a 1000x error;
+- anything with no coherent reading is still rejected visibly and blocks the
+  save. A number is never silently rewritten into a different one.
+
 Source strings are
 [ARB](https://github.com/google/app-resource-bundle) files under
 `lib/l10n/arb/`; `flutter gen-l10n` (configured by `l10n.yaml`) generates the
