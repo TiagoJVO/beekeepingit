@@ -13,6 +13,61 @@ import 'todo_filters.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
 
+/// Below this available width the status + priority filters stack onto their
+/// own rows instead of sharing one (#626). Two-up at a 375 CSS px phone
+/// viewport leaves each field roughly 155 px, which is not enough for the
+/// longer Portuguese values — `Todas as prioridades` then wrapped and the
+/// dropdown button clipped the second line away, so the filter read `Todas
+/// as`: a dangling article with no ellipsis to signal truncation
+/// (NFR-I18N-1, FR-UX-1). English (`All priorities`) happens to fit, which is
+/// why the cramped row survived review. Above this width both fields have
+/// room, so the bar stays compact — it sits on the app's home screen (D-29)
+/// where vertical space is scarce.
+const double _kStackFiltersBelowWidth = 480;
+
+/// One option of a filter dropdown: the value it selects and the localized
+/// label shown for it.
+typedef _FilterOption<T> = ({T value, String label});
+
+/// One filter dropdown of [TodoFilterBar].
+///
+/// Beyond deduplicating four near-identical fields this centralizes the two
+/// things every filter here needs and `DropdownButtonFormField` does not do
+/// on its own: `isExpanded`, so the button fills its slot, and a
+/// `selectedItemBuilder` that caps the SHOWN selection at one ellipsized
+/// line. Without the latter a value too long for its slot soft-wraps and the
+/// button's fixed height clips the second line, truncating mid-phrase with
+/// no ellipsis (#626). The menu's own items deliberately keep their full,
+/// wrappable text — the dropdown is where the user reads the whole label.
+Widget _filterDropdown<T>({
+  required Key fieldKey,
+  required String label,
+  required T value,
+  required List<_FilterOption<T>> options,
+  required ValueChanged<T?> onChanged,
+}) {
+  return DropdownButtonFormField<T>(
+    key: fieldKey,
+    initialValue: value,
+    isExpanded: true,
+    decoration: InputDecoration(labelText: label, isDense: true),
+    selectedItemBuilder: (context) => [
+      for (final option in options)
+        Text(
+          option.label,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+        ),
+    ],
+    items: [
+      for (final option in options)
+        DropdownMenuItem<T>(value: option.value, child: Text(option.label)),
+    ],
+    onChanged: onChanged,
+  );
+}
+
 /// The status/priority/due-date filter bar + sort controls for the main
 /// Todos tab (#53, FR-TD-1) — mirrors activity_list_widgets.dart's own
 /// `ActivityFilterBar` (same combinable-filters UX), extended with a third
@@ -77,165 +132,145 @@ class TodoFilterBar extends StatelessWidget {
         BrandDimens.gutter,
         4,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<TodoStatusFilter>(
-                  key: const Key('todo-filter-status-field'),
-                  initialValue: status,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoFilterStatusLabel,
-                    isDense: true,
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: TodoStatusFilter.all,
-                      child: Text(l10n.todoFilterStatusAll),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoStatusFilter.open,
-                      child: Text(l10n.todoFilterStatusOpen),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoStatusFilter.overdue,
-                      child: Text(l10n.todoFilterStatusOverdue),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoStatusFilter.done,
-                      child: Text(l10n.todoFilterStatusDone),
-                    ),
-                  ],
-                  onChanged: (v) => onStatusChanged(v ?? TodoStatusFilter.all),
-                ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final statusField = _filterDropdown<TodoStatusFilter>(
+            fieldKey: const Key('todo-filter-status-field'),
+            label: l10n.todoFilterStatusLabel,
+            value: status,
+            options: [
+              (value: TodoStatusFilter.all, label: l10n.todoFilterStatusAll),
+              (value: TodoStatusFilter.open, label: l10n.todoFilterStatusOpen),
+              (
+                value: TodoStatusFilter.overdue,
+                label: l10n.todoFilterStatusOverdue,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String?>(
-                  key: const Key('todo-filter-priority-field'),
-                  initialValue: priority,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoFilterPriorityLabel,
-                    isDense: true,
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text(l10n.todoFilterPriorityAll),
+              (value: TodoStatusFilter.done, label: l10n.todoFilterStatusDone),
+            ],
+            onChanged: (v) => onStatusChanged(v ?? TodoStatusFilter.all),
+          );
+          final priorityField = _filterDropdown<String?>(
+            fieldKey: const Key('todo-filter-priority-field'),
+            label: l10n.todoFilterPriorityLabel,
+            value: priority,
+            options: [
+              (value: null, label: l10n.todoFilterPriorityAll),
+              for (final p in knownTodoPriorities)
+                (value: p, label: todoPriorityLabel(l10n, p) ?? p),
+            ],
+            onChanged: onPriorityChanged,
+          );
+          // Narrow (a phone in portrait): one filter per row, so a long
+          // localized value gets the full width rather than half of it
+          // (#626). Wide: both on one row, keeping the bar compact.
+          final stacked = constraints.maxWidth < _kStackFiltersBelowWidth;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (stacked) ...[
+                statusField,
+                const SizedBox(height: 8),
+                priorityField,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: statusField),
+                    const SizedBox(width: 8),
+                    Expanded(child: priorityField),
+                  ],
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterDropdown<TodoDueFilter>(
+                      fieldKey: const Key('todo-filter-due-field'),
+                      label: l10n.todoFilterDueLabel,
+                      value: due,
+                      options: [
+                        (
+                          value: TodoDueFilter.any,
+                          label: l10n.todoFilterDueAny,
+                        ),
+                        (
+                          value: TodoDueFilter.today,
+                          label: l10n.todoFilterDueToday,
+                        ),
+                        (
+                          value: TodoDueFilter.thisWeek,
+                          label: l10n.todoFilterDueThisWeek,
+                        ),
+                        (
+                          value: TodoDueFilter.thisMonth,
+                          label: l10n.todoFilterDueThisMonth,
+                        ),
+                      ],
+                      onChanged: (v) => onDueChanged(v ?? TodoDueFilter.any),
                     ),
-                    for (final p in knownTodoPriorities)
-                      DropdownMenuItem(
-                        value: p,
-                        child: Text(todoPriorityLabel(l10n, p) ?? p),
+                  ),
+                  if (_hasFilter) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      key: const Key('todo-filter-clear-button'),
+                      tooltip: l10n.todoFilterClearAction,
+                      constraints: const BoxConstraints(
+                        minWidth: kMinTapTarget,
+                        minHeight: kMinTapTarget,
                       ),
-                  ],
-                  onChanged: onPriorityChanged,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<TodoDueFilter>(
-                  key: const Key('todo-filter-due-field'),
-                  initialValue: due,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoFilterDueLabel,
-                    isDense: true,
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: TodoDueFilter.any,
-                      child: Text(l10n.todoFilterDueAny),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoDueFilter.today,
-                      child: Text(l10n.todoFilterDueToday),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoDueFilter.thisWeek,
-                      child: Text(l10n.todoFilterDueThisWeek),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoDueFilter.thisMonth,
-                      child: Text(l10n.todoFilterDueThisMonth),
+                      icon: const Icon(Icons.clear),
+                      onPressed: onClearFilters,
                     ),
                   ],
-                  onChanged: (v) => onDueChanged(v ?? TodoDueFilter.any),
-                ),
+                ],
               ),
-              if (_hasFilter) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  key: const Key('todo-filter-clear-button'),
-                  tooltip: l10n.todoFilterClearAction,
-                  constraints: const BoxConstraints(
-                    minWidth: kMinTapTarget,
-                    minHeight: kMinTapTarget,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterDropdown<TodoSortField>(
+                      fieldKey: const Key('todo-sort-field-field'),
+                      label: l10n.todoSortFieldLabel,
+                      value: sortField,
+                      options: [
+                        (
+                          value: TodoSortField.dueDate,
+                          label: l10n.todoSortFieldDueDate,
+                        ),
+                        (
+                          value: TodoSortField.priority,
+                          label: l10n.todoSortFieldPriority,
+                        ),
+                        (
+                          value: TodoSortField.status,
+                          label: l10n.todoSortFieldStatus,
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          onSortFieldChanged(v ?? TodoSortField.dueDate),
+                    ),
                   ),
-                  icon: const Icon(Icons.clear),
-                  onPressed: onClearFilters,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<TodoSortField>(
-                  key: const Key('todo-sort-field-field'),
-                  initialValue: sortField,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoSortFieldLabel,
-                    isDense: true,
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: const Key('todo-sort-direction-button'),
+                    tooltip: sortDirection == SortDirection.ascending
+                        ? l10n.todoSortDirectionAscendingLabel
+                        : l10n.todoSortDirectionDescendingLabel,
+                    constraints: const BoxConstraints(
+                      minWidth: kMinTapTarget,
+                      minHeight: kMinTapTarget,
+                    ),
+                    icon: Icon(
+                      sortDirection == SortDirection.ascending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward,
+                    ),
+                    onPressed: onSortDirectionToggle,
                   ),
-                  items: [
-                    DropdownMenuItem(
-                      value: TodoSortField.dueDate,
-                      child: Text(l10n.todoSortFieldDueDate),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoSortField.priority,
-                      child: Text(l10n.todoSortFieldPriority),
-                    ),
-                    DropdownMenuItem(
-                      value: TodoSortField.status,
-                      child: Text(l10n.todoSortFieldStatus),
-                    ),
-                  ],
-                  onChanged: (v) =>
-                      onSortFieldChanged(v ?? TodoSortField.dueDate),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                key: const Key('todo-sort-direction-button'),
-                tooltip: sortDirection == SortDirection.ascending
-                    ? l10n.todoSortDirectionAscendingLabel
-                    : l10n.todoSortDirectionDescendingLabel,
-                constraints: const BoxConstraints(
-                  minWidth: kMinTapTarget,
-                  minHeight: kMinTapTarget,
-                ),
-                icon: Icon(
-                  sortDirection == SortDirection.ascending
-                      ? Icons.arrow_upward
-                      : Icons.arrow_downward,
-                ),
-                onPressed: onSortDirectionToggle,
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
