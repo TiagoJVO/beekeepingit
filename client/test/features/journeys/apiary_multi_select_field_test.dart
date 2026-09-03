@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/apiary_multi_select_field.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -50,7 +51,7 @@ Widget _wrap(
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Scaffold(
         body: Builder(
           builder: (context) => MediaQuery(

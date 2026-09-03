@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
@@ -149,7 +150,7 @@ Widget _buildScreen(
     ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: AccountScreen(),
     ),
   );
@@ -220,6 +221,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Profile saved.'), findsOneWidget);
+  });
+
+  testWidgets('a profile written before #656 (locale "pt") opens the picker on '
+      'Português and saves the supported tag (D-34)', (tester) async {
+    String? submitted;
+    final controller = _FakeProfileController(
+      // The value every pre-#656 profile actually holds. The dropdown's
+      // items are `en-GB`/`pt-PT` now, so an un-migrated `pt` reaching the
+      // field unchanged is a Flutter assertion failure, not a soft
+      // fallback — this test is what stops that regressing.
+      _profile(locale: 'pt'),
+      onSubmit: ({name, email, locale}) async {
+        submitted = locale;
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    // Shown as the language it always was, not reset to English.
+    expect(find.text('Português'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('account-save-button')));
+    await tester.pumpAndSettle();
+
+    // ...and the next save writes the canonical tag back, so the legacy
+    // value does not survive the round trip.
+    expect(submitted, 'pt-PT');
   });
 
   testWidgets('surfaces a mocked 422 field error from the server', (

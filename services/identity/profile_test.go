@@ -467,7 +467,7 @@ func TestProfile_PatchLocaleOnly_IsPartial(t *testing.T) {
 		"name": "Beatriz",
 	})
 
-	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt"})
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt-PT"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("locale-only PATCH status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
@@ -475,11 +475,76 @@ func TestProfile_PatchLocaleOnly_IsPartial(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if p.Locale != "pt" {
-		t.Errorf("locale = %q, want pt", p.Locale)
+	if p.Locale != "pt-PT" {
+		t.Errorf("locale = %q, want pt-PT", p.Locale)
 	}
 	if p.Name != "Beatriz" {
 		t.Errorf("name changed by locale-only PATCH: %+v", p)
+	}
+}
+
+// TestProfile_PatchLocale_NormalizesToSupportedTag pins D-34 (#656): the app
+// ships European Portuguese and British English only, and the stored value is
+// always the supported tag — never the generic `pt`/`en` a pre-#656 client
+// still submits, which CLDR would render with Brazilian/American conventions.
+func TestProfile_PatchLocale_NormalizesToSupportedTag(t *testing.T) {
+	tests := []struct {
+		submitted string
+		want      string
+	}{
+		{"pt-PT", "pt-PT"},
+		{"en-GB", "en-GB"},
+		// What a client older than #656 sends. Accepted, not rejected — the
+		// migration carried these users over and their language switch must
+		// keep working — but stored canonically.
+		{"pt", "pt-PT"},
+		{"en", "en-GB"},
+		// Separator/case variants, and another region of a supported
+		// language: all resolve to the region the app actually ships (C-2).
+		{"pt_PT", "pt-PT"},
+		{"en-gb", "en-GB"},
+		{"pt-BR", "pt-PT"},
+		{"en-US", "en-GB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.submitted, func(t *testing.T) {
+			f := newProfileFixture(t)
+			bearer := f.token(t, uuid.NewString())
+			f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+
+			rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": tt.submitted})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("PATCH locale=%q status = %d, want 200, body = %s", tt.submitted, rec.Code, rec.Body.String())
+			}
+			var p api.ProfileResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if p.Locale != tt.want {
+				t.Errorf("PATCH locale=%q stored %q, want %q", tt.submitted, p.Locale, tt.want)
+			}
+		})
+	}
+}
+
+// TestProfile_FirstLogin_DefaultsToSupportedLocale pins the other half of
+// D-34: the row created on first login must not start life on a locale the
+// app no longer offers.
+func TestProfile_FirstLogin_DefaultsToSupportedLocale(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.token(t, uuid.NewString())
+
+	rec := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var p api.ProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if p.Locale != "en-GB" {
+		t.Errorf("first-login locale = %q, want en-GB", p.Locale)
 	}
 }
 
@@ -674,7 +739,7 @@ func TestProfile_History_PartialPatchOnlyRecordsChangedFields(t *testing.T) {
 		"name": "Beatriz",
 	})
 
-	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt"})
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt-PT"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("locale-only PATCH status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
@@ -905,6 +970,15 @@ func TestProfile_PatchInvalidFields_Returns422(t *testing.T) {
 			body:      map[string]string{"locale": "   "},
 			wantField: "locale",
 			wantCode:  "required",
+		},
+		{
+			// D-34/#656: a language the app does not ship is refused, not
+			// silently answered with English — the caller asked for French
+			// and must be told there is no French.
+			name:      "unsupported locale language",
+			body:      map[string]string{"locale": "fr-FR"},
+			wantField: "locale",
+			wantCode:  "unsupported",
 		},
 	}
 

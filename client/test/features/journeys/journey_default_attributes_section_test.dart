@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/activities/activity_types.dart';
 import 'package:beekeepingit_client/features/journeys/journey_default_attributes_section.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -15,7 +16,7 @@ void main() {
   }) => MaterialApp(
     locale: locale,
     localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
+    supportedLocales: kSupportedLocales,
     home: Scaffold(
       body: SingleChildScrollView(
         child: JourneyDefaultAttributesSection(

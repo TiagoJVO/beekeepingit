@@ -128,6 +128,10 @@ to `open-questions.md`.
 - **NFR-I18N-1** — Support multiple **languages**, **date/time formats**, and other
   locale-specific features. **Focus on English and Portuguese now**, designed to
   add more languages easily later.
+  - _Resolved (D-34):_ "English and Portuguese" means **British English (`en-GB`)** and
+    **European Portuguese (`pt-PT`)** — generic `en`/`pt` resolve to American/Brazilian
+    conventions and are not shipped. Units are **metric** (kg/L), fixed by the domain rather
+    than by the locale.
 
 ## AI Constraints (NFR-AI)
 

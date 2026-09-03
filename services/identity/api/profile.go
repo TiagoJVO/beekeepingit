@@ -45,6 +45,40 @@ const entityTypeProfile = "profile"
 
 const maxNameLength = 200
 
+// supportedLocales maps a language code onto the ONE BCP 47 tag the app ships
+// for it (D-34, #656, NFR-I18N-1, C-2): European Portuguese and British
+// English. Generic `pt`/`en` are not neutral — CLDR resolves them to
+// Brazilian and American conventions — so they are not storable values, and
+// the identity.users.locale CHECK (migration 00005) enforces that at rest.
+//
+// Adding a language means adding it here, to that CHECK, to the sqlc schema
+// mirror, and to the client's kSupportedLocales. Deliberately four edits: the
+// set of locales the product supports is a decision, not a free-text field.
+var supportedLocales = map[string]string{
+	"pt": "pt-PT",
+	"en": "en-GB",
+}
+
+// normalizeLocale maps a submitted locale onto the supported tag it means,
+// reporting false when it means none of them.
+//
+// It NORMALIZES rather than requiring an exact match, because a client older
+// than #656 — a PWA still running a cached bundle, say — submits the bare
+// `pt`/`en` it has always submitted, and rejecting that would break language
+// switching for exactly the users the migration was meant to carry over. A
+// supported language in some other region (`pt-BR`, `en-US`) resolves to the
+// region we ship for the same reason the client does it: Portugal is the only
+// in-scope market (C-2), and answering "Portuguese" with European Portuguese
+// beats storing a locale the app cannot render.
+//
+// An unsupported LANGUAGE is a 422, not a silent coercion — a caller asking
+// for French must be told the app has no French, not quietly given English.
+func normalizeLocale(raw string) (string, bool) {
+	language, _, _ := strings.Cut(strings.ReplaceAll(raw, "_", "-"), "-")
+	tag, ok := supportedLocales[strings.ToLower(language)]
+	return tag, ok
+}
+
 // ProfileResponse is the client-facing profile shape
 // (contracts/openapi/identity.openapi.yaml's Profile schema).
 // ProfileComplete is computed on every response, never stored, so it can
@@ -279,11 +313,17 @@ func parseProfileUpdateRequest(body profileUpdateRequest) (sqlcgen.UpdateUserPro
 
 	if body.Locale != nil {
 		locale := strings.TrimSpace(*body.Locale)
-		if locale == "" {
+		tag, supported := normalizeLocale(locale)
+		switch {
+		case locale == "":
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "locale", Code: "required", Message: "locale must not be empty"})
-		} else {
+		case !supported:
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "locale", Code: "unsupported", Message: "locale must be one of: en-GB, pt-PT"})
+		default:
+			// The NORMALIZED tag, never the raw submission — this is what
+			// keeps a legacy `pt` from being stored as `pt` again (D-34).
 			params.SetLocale = true
-			params.Locale = locale
+			params.Locale = tag
 		}
 	}
 

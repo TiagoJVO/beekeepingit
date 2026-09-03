@@ -249,7 +249,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 
 const upsertUserOnFirstSeen = `-- name: UpsertUserOnFirstSeen :one
 INSERT INTO identity.users (id, oidc_sub, name, email, locale)
-VALUES ($1, $2, $3, $4, 'en')
+VALUES ($1, $2, $3, $4, 'en-GB')
 ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
 RETURNING id, oidc_sub, name, email, locale, created_at, updated_at
 `

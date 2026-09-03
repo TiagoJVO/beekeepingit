@@ -60,7 +60,7 @@ WHERE id = ANY(@ids::uuid[]);
 -- the seed values are deliberately ignored on conflict, so a later login can
 -- never overwrite a name the user has since edited.
 INSERT INTO identity.users (id, oidc_sub, name, email, locale)
-VALUES ($1, $2, sqlc.arg(name), sqlc.arg(email), 'en')
+VALUES ($1, $2, sqlc.arg(name), sqlc.arg(email), 'en-GB')
 ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
 RETURNING id, oidc_sub, name, email, locale, created_at, updated_at;
 

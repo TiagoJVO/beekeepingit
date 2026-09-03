@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/l10n/locale_formatting.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,31 +22,32 @@ void main() {
   group('LocaleFormatting.forLocale (unit)', () {
     final date = DateTime(2026, 7, 12, 15, 4);
 
-    test('formats a date using English month/day/year conventions', () {
-      const formatting = LocaleFormatting.forLocale('en');
-      expect(formatting.date(date), 'Jul 12, 2026');
+    test('formats a date using British day/month/year ordering (#656)', () {
+      // British English puts the day first — American English is
+      // `Jul 12, 2026`. Shipping generic `en` gave us the American form
+      // (D-34).
+      const formatting = LocaleFormatting.forLocale('en_GB');
+      expect(formatting.date(date), '12 Jul 2026');
     });
 
-    test('formats a date using Portuguese day/month/year conventions', () {
-      const formatting = LocaleFormatting.forLocale('pt');
-      // Portuguese month names/order differ from English — this is the
-      // "locale-specific date convention" NFR-I18N-1 asks for.
-      final formatted = formatting.date(date);
-      expect(formatted, isNot('Jul 12, 2026'));
-      expect(formatted, contains('2026'));
-      expect(formatted, contains('12'));
+    test('formats a date using European Portuguese conventions (#656)', () {
+      const formatting = LocaleFormatting.forLocale('pt_PT');
+      // CLDR's medium date for pt-PT is numeric `d/MM/y` — unlike generic
+      // (Brazilian) `pt`, which spells the month out as `12 de jul. de 2026`.
+      expect(formatting.date(date), '12/07/2026');
     });
 
     test('formats a decimal with English (.) grouping/decimal separators', () {
-      const formatting = LocaleFormatting.forLocale('en');
+      const formatting = LocaleFormatting.forLocale('en_GB');
       expect(formatting.decimal(1234.5), '1,234.5');
     });
 
     test(
-      'formats a decimal with Portuguese (,) grouping/decimal separators',
+      'formats a decimal with European Portuguese separators — a NON-BREAKING '
+      'SPACE for thousands, not the Brazilian full stop (#656)',
       () {
-        const formatting = LocaleFormatting.forLocale('pt');
-        expect(formatting.decimal(1234.5), '1.234,5');
+        const formatting = LocaleFormatting.forLocale('pt_PT');
+        expect(formatting.decimal(1234.5), '1\u00A0234,5');
       },
     );
 
@@ -53,66 +55,91 @@ void main() {
     // `toString()` shows an English full stop and no grouping in every
     // locale. `number()` is the "as many decimals as the value has, grouped"
     // formatter the activity list/detail rows use.
-    test('number: pt renders a decimal with a comma, not a full stop', () {
-      const formatting = LocaleFormatting.forLocale('pt');
+    test('number: pt-PT renders a decimal with a comma, not a full stop', () {
+      const formatting = LocaleFormatting.forLocale('pt_PT');
       expect(formatting.number(62.5), '62,5');
     });
 
-    test('number: en renders the same decimal with a full stop', () {
-      const formatting = LocaleFormatting.forLocale('en');
+    test('number: en-GB renders the same decimal with a full stop', () {
+      const formatting = LocaleFormatting.forLocale('en_GB');
       expect(formatting.number(62.5), '62.5');
     });
 
     test('number: a whole number keeps no spurious decimals', () {
-      expect(const LocaleFormatting.forLocale('pt').number(4), '4');
-      expect(const LocaleFormatting.forLocale('en').number(4), '4');
+      expect(const LocaleFormatting.forLocale('pt_PT').number(4), '4');
+      expect(const LocaleFormatting.forLocale('en_GB').number(4), '4');
     });
 
     test('number: large integers are grouped in both locales', () {
-      // Grouping is the locale's own — pt groups with `.`, en with `,`.
+      // Grouping is the locale's own — pt-PT groups with a non-breaking
+      // space, en-GB with `,`.
       expect(
-        const LocaleFormatting.forLocale('pt').number(999999999),
-        '999.999.999',
+        const LocaleFormatting.forLocale('pt_PT').number(999999999),
+        '999\u00A0999\u00A0999',
       );
       expect(
-        const LocaleFormatting.forLocale('en').number(999999999),
+        const LocaleFormatting.forLocale('en_GB').number(999999999),
         '999,999,999',
       );
     });
 
     test('dateTime appends a localized time (24h "Hm") to the date', () {
-      const formatting = LocaleFormatting.forLocale('en');
+      const formatting = LocaleFormatting.forLocale('en_GB');
       final formatted = formatting.dateTime(date);
-      expect(formatted, startsWith('Jul 12, 2026'));
+      expect(formatted, startsWith('12 Jul 2026'));
       expect(formatted, contains('15:04'));
     });
   });
 
   group('LocaleFormatting.of (BuildContext)', () {
-    testWidgets(
-      'reads the active locale from the widget tree, matching AppLocalizations',
-      (tester) async {
-        LocaleFormatting? formatting;
-        AppLocalizations? l10n;
-
-        await tester.pumpWidget(
-          MaterialApp(
-            locale: const Locale('pt'),
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Builder(
-              builder: (context) {
-                formatting = LocaleFormatting.of(context);
-                l10n = AppLocalizations.of(context);
-                return const SizedBox.shrink();
-              },
-            ),
+    /// #656's first landmine: `LocaleFormatting.of` used to read
+    /// `locale.languageCode`, throwing the country away — so every date and
+    /// number in the app was formatted as generic `pt`/`en` (i.e. Brazilian
+    /// and American) no matter which locale the tree had resolved to.
+    Future<LocaleFormatting> formattingIn(
+      WidgetTester tester,
+      Locale locale,
+    ) async {
+      late LocaleFormatting formatting;
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: kSupportedLocales,
+          home: Builder(
+            builder: (context) {
+              formatting = LocaleFormatting.of(context);
+              return const SizedBox.shrink();
+            },
           ),
-        );
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
+      return formatting;
+    }
 
-        expect(l10n!.localeName, 'pt');
-        expect(formatting!.decimal(1234.5), '1.234,5');
+    testWidgets(
+      'carries the COUNTRY of the resolved locale, not just its language',
+      (tester) async {
+        final pt = await formattingIn(tester, const Locale('pt', 'PT'));
+        expect(pt.decimal(1234.5), '1\u00A0234,5');
+
+        final en = await formattingIn(tester, const Locale('en', 'GB'));
+        expect(en.date(DateTime(2026, 9, 3)), '3 Sept 2026');
+      },
+    );
+
+    testWidgets(
+      'a legacy generic locale still resolves to the supported country '
+      'variant (#656 migration)',
+      (tester) async {
+        // An existing profile stores `pt`; Flutter resolves it against
+        // supportedLocales to `pt_PT`, so the formatting must be European.
+        final pt = await formattingIn(tester, const Locale('pt'));
+        expect(pt.decimal(1234.5), '1\u00A0234,5');
+
+        final en = await formattingIn(tester, const Locale('en'));
+        expect(en.date(DateTime(2026, 9, 3)), '3 Sept 2026');
       },
     );
   });

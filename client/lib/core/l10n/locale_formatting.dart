@@ -30,7 +30,11 @@ class LocaleFormatting {
   /// to thread a `Locale` through separately.
   factory LocaleFormatting.of(BuildContext context) {
     final locale = Localizations.localeOf(context);
-    return LocaleFormatting._(locale.languageCode);
+    // The FULL tag (`pt-PT`, not `pt`) — #656/D-34. `languageCode` alone
+    // threw the country away, so every date and number in the app came out
+    // with Brazilian/American conventions no matter which locale the tree
+    // had resolved to.
+    return LocaleFormatting._(locale.toLanguageTag());
   }
 
   /// For tests/non-widget code where a `BuildContext` isn't available.
