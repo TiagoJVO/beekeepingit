@@ -2,8 +2,10 @@ import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/core/geo/haversine.dart';
+import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_map_screen.dart';
+import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
@@ -121,14 +123,24 @@ Widget _buildApp(
       // sheet's open-todo count (#388) — defaults to empty so every other
       // test in this file (none of which touch todos) is unaffected.
       todosStreamProvider.overrideWith((ref) => Stream.value(todos ?? [])),
+      // Home is the app's landing screen (#658, D-35), so every whole-app
+      // pump here boots through it and it composes all four org-scoped
+      // streams (home_providers.dart) — stub the two this file doesn't
+      // otherwise use so the boot never reaches a real repository chain.
+      journeysStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Journey>[]),
+      ),
+      activitiesStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Activity>[]),
+      ),
     ],
     child: const BeekeepingitApp(),
   );
 }
 
 /// Switches to the map view via the list/map toggle's map segment (#34, #35).
-/// The app now lands on the Tasks tab (#427, D-29), so this first navigates to
-/// the Apiaries tab (where the list/map toggle lives) before toggling to map.
+/// The app lands on the Home tab (#658, D-35), so this first navigates to the
+/// Apiaries tab (where the list/map toggle lives) before toggling to map.
 Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
@@ -306,6 +318,44 @@ void main() {
       // is now the selected one.
       expect(find.text('Apiaries'), findsWidgets);
       expect(find.byKey(const Key('apiary-map')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the initial camera fit keeps every marker clear of the bottom overlay '
+    'column — attribution included, not just the measure card',
+    (tester) async {
+      await _goToMap(tester);
+      await _enableRuler(tester);
+
+      // The bottom-anchored column is attribution + measure card, and the
+      // fit padding must clear BOTH: a marker rendered underneath the
+      // attribution still looks fine but swallows every tap meant for the
+      // pin, which is how the whole tap-to-measure flow silently dies. This
+      // asserts the geometry directly rather than only through a tap, so the
+      // regression is named when it comes back.
+      // The attribution is the column's FIRST child, so its own top edge is
+      // the top of the whole bottom overlay.
+      final attribution = tester.renderObject<RenderBox>(
+        find.byKey(const Key('apiary-map-attribution')),
+      );
+      final overlayTop = attribution.localToGlobal(Offset.zero).dy;
+
+      for (final apiary in [_serraNorte, _valeDasEguas]) {
+        final marker = tester.renderObject<RenderBox>(
+          find.byKey(Key('apiary-marker-${apiary.id}')),
+        );
+        final markerCentre = marker
+            .localToGlobal(marker.size.center(Offset.zero))
+            .dy;
+        expect(
+          markerCentre,
+          lessThan(overlayTop),
+          reason:
+              '${apiary.name}\'s pin centre must sit above the bottom '
+              'overlay column, or its tap target is unreachable',
+        );
+      }
     },
   );
 
