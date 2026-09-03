@@ -39,9 +39,12 @@ class _FabAction {
   final void Function(BuildContext context) onPressed;
 }
 
-/// Per-tab quick-add config for the contextual actions (FR-UX-2). Tabs without
-/// a real feature screen yet (Assistant — M8) have no entry here, so [AppShell]
-/// omits the control rather than wiring it to a screen that doesn't exist.
+/// Per-tab quick-add config for the contextual actions (FR-UX-2). Tabs with no
+/// single right create action have no entry here, so [AppShell] omits the
+/// control entirely: Activities (an activity always needs an apiary context
+/// first, so its create entry point lives on the apiary detail page) and Home
+/// (#658, D-35 — FR-UX-2's quick-add is contextual to the active area, and
+/// Home's area is every area).
 /// [secondary] is optional — only the Apiaries tab has one (#52): a "New todo"
 /// action alongside its primary "New apiary" action. With two actions the
 /// shell renders a single expandable "Actions" button (#347); with one, a
@@ -116,10 +119,16 @@ void _openNewTodo(BuildContext context) => context.go('/todos/new');
 /// idiomatic pattern), a header (contextual back, brand + screen title,
 /// sync-status pill, account), an offline banner, and a contextual honey FAB.
 ///
-/// Apiaries, Activities, Journeys and Todos (M2/M3/M4/M5, #293) now have
-/// real screens; Assistant still shows a [ComingSoonScreen] placeholder (see
-/// coming_soon_screen.dart, M8) — this shell itself doesn't know or care
-/// which, it just renders whatever the active branch's navigator holds.
+/// The tab set is D-35's (#658): apiaries · activities · **home** · journeys ·
+/// todos, Home at the centre in the slot the Assistant placeholder used to
+/// hold. Every tab now has a real screen — the AI assistant stays an M8
+/// roadmap item (FR-AI-*, D-8/D-11), it just no longer costs a fifth of the
+/// field app's primary navigation while it waits.
+///
+/// [tabs] below is the SINGLE source for both the [NavigationBar] destinations
+/// and the `tabs[currentIndex]` active-tab lookup, so **tab position is branch
+/// position**: the `StatefulShellBranch` order in app_router.dart must match
+/// this list exactly.
 class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
 
@@ -139,6 +148,12 @@ class AppShell extends ConsumerWidget {
       label: _activitiesLabel,
     ),
     (
+      route: 'home',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home,
+      label: _homeLabel,
+    ),
+    (
       route: 'journeys',
       icon: Icons.route_outlined,
       selectedIcon: Icons.route,
@@ -150,19 +165,13 @@ class AppShell extends ConsumerWidget {
       selectedIcon: Icons.task_alt,
       label: _todosLabel,
     ),
-    (
-      route: 'assistant',
-      icon: Icons.forum_outlined,
-      selectedIcon: Icons.forum,
-      label: _assistantLabel,
-    ),
   ];
 
   static String _apiariesLabel(AppLocalizations l10n) => l10n.apiariesTitle;
   static String _activitiesLabel(AppLocalizations l10n) => l10n.activitiesTitle;
+  static String _homeLabel(AppLocalizations l10n) => l10n.homeTitle;
   static String _journeysLabel(AppLocalizations l10n) => l10n.journeysTitle;
   static String _todosLabel(AppLocalizations l10n) => l10n.todosTitle;
-  static String _assistantLabel(AppLocalizations l10n) => l10n.assistantTitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -379,12 +388,14 @@ class AppShell extends ConsumerWidget {
   // apiary" while pushed on top of the Apiaries tab — falling back to the
   // active tab's own label at the branch root. Named routes pushed within a
   // branch (apiaryNew, apiaryDetail, apiaryEdit) opt into a specific title
-  // here; anything else (including the placeholder tabs) just shows the tab
-  // label. The map view (#34/#35) is a sibling view within the apiaries tab
-  // root (not a pushed route — see _ShellFab's own apiariesViewProvider
-  // watch) so it doesn't need an entry here — the segmented toggle itself is
-  // the view indicator (#35 AC), the header title stays "Apiaries" for both
-  // views.
+  // here; anything else just shows the tab label. Every tab ROOT — Home
+  // included (#658, D-35) — deliberately has no case of its own: the
+  // fallback already resolves each to its own tab label, so an entry here
+  // would be redundant. The map view (#34/#35) is a sibling view within the
+  // apiaries tab root (not a pushed route — see _ShellFab's own
+  // apiariesViewProvider watch) so it doesn't need an entry here — the
+  // segmented toggle itself is the view indicator (#35 AC), the header title
+  // stays "Apiaries" for both views.
   String _titleFor(
     String? routeName,
     ({

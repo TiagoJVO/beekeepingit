@@ -21,8 +21,8 @@ import 'todos_repository.dart';
 /// as`: a dangling article with no ellipsis to signal truncation
 /// (NFR-I18N-1, FR-UX-1). English (`All priorities`) happens to fit, which is
 /// why the cramped row survived review. Above this width both fields have
-/// room, so the bar stays compact — it sits on the app's home screen (D-29)
-/// where vertical space is scarce.
+/// room, so the bar stays compact — it sits above a full-height list (the
+/// Tasks tab, D-29/D-35) where vertical space is scarce.
 const double _kStackFiltersBelowWidth = 480;
 
 /// One option of a filter dropdown: the value it selects and the localized

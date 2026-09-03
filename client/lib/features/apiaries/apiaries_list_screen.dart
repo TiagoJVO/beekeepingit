@@ -104,8 +104,9 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
 /// [_ApiariesListScreenState._reconcileRefreshTimer]).
 const Duration _locationRefreshInterval = Duration(seconds: 10);
 
-/// The home screen: the org's apiaries, read live from local SQLite (works
-/// offline). Tapping a row opens the edit form. No own AppBar/FAB: this
+/// The Apiaries tab: the org's apiaries, read live from local SQLite (works
+/// offline). Not the app's landing screen — that is the Home tab (D-35,
+/// #658). Tapping a row opens the edit form. No own AppBar/FAB: this
 /// screen is the Apiaries tab's root within the app shell (FR-UX-2, #197),
 /// which supplies the header (title, sync pill, account) and the contextual
 /// "New apiary" FAB. Account/org actions that used to live in this screen's

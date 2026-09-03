@@ -688,6 +688,12 @@ abstract class AppLocalizations {
   /// **'Activities'**
   String get activitiesTitle;
 
+  /// Home tab label and screen title — the centre tab of the bottom nav, replacing the Assistant placeholder (#658, D-35, FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeTitle;
+
   /// Journeys tab label and screen title (bottom nav, #197)
   ///
   /// In en, this message translates to:
@@ -699,36 +705,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Todos'**
   String get todosTitle;
-
-  /// Assistant tab label and screen title (bottom nav, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant'**
-  String get assistantTitle;
-
-  /// Placeholder shown on the Activities tab until its real screens land (M3, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Activities — coming soon'**
-  String get activitiesComingSoon;
-
-  /// Placeholder shown on the Journeys tab until its real screens land (M4, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Journeys — coming soon'**
-  String get journeysComingSoon;
-
-  /// Placeholder shown on the Todos tab until its real screens land (M5, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Todos — coming soon'**
-  String get todosComingSoon;
-
-  /// Placeholder shown on the Assistant tab until its real screens land (M8, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant — coming soon'**
-  String get assistantComingSoon;
 
   /// App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)
   ///
@@ -2260,6 +2236,18 @@ abstract class AppLocalizations {
   /// **'All types'**
   String get journeyFilterTypeAll;
 
+  /// Field label for the Journeys tab's status filter dropdown (#658, D-35) — its options are the cleared 'All statuses' plus each journey status (Open/Closed, journeyStatusOpenLabel/journeyStatusClosedLabel)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get journeyFilterStatusLabel;
+
+  /// The Journeys tab's status filter's cleared/default option — no status filter applied, so open and closed journeys both show (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'All statuses'**
+  String get journeyFilterStatusAll;
+
   /// Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)
   ///
   /// In en, this message translates to:
@@ -2278,7 +2266,7 @@ abstract class AppLocalizations {
   /// **'{start} – {end}'**
   String journeyFilterDateRangeValue(String start, String end);
 
-  /// Button that resets both the Journeys tab's type and date-range filters at once (#47)
+  /// Button that resets the Journeys tab's type, status and date-range filters at once (#47, #658)
   ///
   /// In en, this message translates to:
   /// **'Clear filters'**
@@ -3424,6 +3412,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'All your changes are synced.'**
   String get notificationSyncCompleted;
+
+  /// Home summary section header over the todos that are overdue or due soon (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks needing attention'**
+  String get homeTasksSectionTitle;
+
+  /// Screen-reader label for the Home tasks section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 task needs attention} other{{count} tasks need attention}}'**
+  String homeTasksCountLabel(int count);
+
+  /// Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}'**
+  String homeTasksViewAllOverdueAction(int count);
+
+  /// Compact trailing badge on an overdue Home task row, paired with a warning icon so it never relies on colour alone (#658, D-35, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d late} other{{days} d late}}'**
+  String homeTodoOverdueBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeTodoOverdueBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day overdue} other{{days} days overdue}}'**
+  String homeTodoOverdueLabel(int days);
+
+  /// Compact trailing badge on a Home task row that is due soon but not yet overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Soon'**
+  String get homeTodoDueSoonBadge;
+
+  /// Screen-reader expansion of the abbreviated homeTodoDueSoonBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due soon'**
+  String get homeTodoDueSoonLabel;
+
+  /// Home summary section header over the journeys that are still open (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys in progress'**
+  String get homeJourneysSectionTitle;
+
+  /// Screen-reader label for the Home journeys section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 journey in progress} other{{count} journeys in progress}}'**
+  String homeJourneysCountLabel(int count);
+
+  /// Home journeys section footer link into the Journeys list (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'View all journeys'**
+  String get homeJourneysViewAllAction;
+
+  /// Home summary section header over the apiaries with no recorded activity inside the recency window (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited recently'**
+  String get homeApiariesSectionTitle;
+
+  /// Screen-reader label for the Home apiaries section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 apiary not visited recently} other{{count} apiaries not visited recently}}'**
+  String homeApiariesCountLabel(int count);
+
+  /// Subtitle of a Home apiary row that has never been visited — its own state, never rendered as '0 days ago' (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'No activity recorded yet'**
+  String get homeApiaryNeverVisitedSubtitle;
+
+  /// Compact trailing badge on a Home apiary row that has never been visited (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get homeApiaryNeverVisitedBadge;
+
+  /// Subtitle of a Home apiary row showing when it was last visited, already formatted for the active locale (#658, D-35, NFR-I18N-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Last visit {date}'**
+  String homeApiaryLastVisitSubtitle(String date);
+
+  /// Compact trailing badge on a Home apiary row: whole days since its last recorded activity (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d} other{{days} d}}'**
+  String homeApiaryStaleBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeApiaryStaleBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day since the last visit} other{{days} days since the last visit}}'**
+  String homeApiaryStaleLabel(int days);
+
+  /// Home's first-run state (#658, D-35): the org owns no records at all, so Home shows one message and one action instead of three empty sections
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.'**
+  String get homeFirstRunMessage;
+
+  /// The single action on Home's first-run state, opening the apiary create form (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first apiary'**
+  String get homeFirstRunAction;
+
+  /// Home's all-clear state (#658, D-35): the org has data but nothing matched any section. Names the recency window so the threshold is discoverable; {days} is apiaryVisitRecencyDays, never hardcoded here. Pluralized because that constant is D-35's own adjustable default — at 1 an unpluralized placeholder reads 'the last 1 days'
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in {days, plural, =1{the last day} other{the last {days} days}}.'**
+  String homeAllClearMessage(int days);
+
+  /// Home's data-unavailable state (#658 review, D-35): every local query failed, so Home knows nothing. Replaces the first-run state it used to settle on permanently — same notify-and-fix voice as the sync needs-fix screen, one honest sentence rather than an error dump
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the data stored on this device.\n\nHome can\'t show what needs your attention until that\'s fixed. Try reopening the app.'**
+  String get homeUnavailableMessage;
+
+  /// Notice above Home's sections when SOME local queries failed while others resolved (#658 review, D-35): the sections that loaded still show, but the screen admits the rest is missing or frozen rather than passing it off as empty
+  ///
+  /// In en, this message translates to:
+  /// **'Some data couldn\'t be read on this device, so this may be incomplete.'**
+  String get homeUnavailableNotice;
 }
 
 class _AppLocalizationsDelegate

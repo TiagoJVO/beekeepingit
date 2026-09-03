@@ -23,3 +23,17 @@ String? journeyStatusLabel(AppLocalizations l10n, String status) {
     _ => null,
   };
 }
+
+/// [name] itself when it is a status this client knows, else null (#658,
+/// D-35) — the validator behind the Journeys route's `?status=` query
+/// parameter, so a stale bookmark, a hand-typed URL or a status only a
+/// newer server knows falls back to "no status filter" rather than
+/// silently filtering the list down to nothing.
+///
+/// Lives here, with the vocabulary itself, for the same reason
+/// [journeyStatusLabel] does: what counts as a known status is this file's
+/// business, not the router's.
+String? knownJourneyStatusOrNull(String? name) {
+  if (name == null) return null;
+  return knownJourneyStatuses.contains(name) ? name : null;
+}

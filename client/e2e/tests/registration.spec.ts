@@ -281,10 +281,10 @@ test.describe("self-service registration (#366)", () => {
       // ── Onboarding proceeds as any first sign-in (AC 4, FR-ONB-1/3) ───────
       // Profile first; the org gate then auto-claims the (now claimable)
       // pending invitation on its GET /organizations/me, so the router lands
-      // on the Tasks tab (/todos, D-29/#427) — joined, not prompted to create
+      // on the Home tab (/home, D-35/#658) — joined, not prompted to create
       // an org.
       await completeProfile(page, "Reg Invitee", INVITEE_EMAIL);
-      await page.waitForURL(/\/todos/, { timeout: 60_000 });
+      await page.waitForURL(/\/home/, { timeout: 60_000 });
 
       await expect.poll(() => userToken, { timeout: 30_000 }).not.toBe("");
       const mine = await apiJson(page, userToken, "GET", "/organizations/me");
@@ -331,11 +331,11 @@ test.describe("self-service registration (#366)", () => {
     await enableSemantics(page);
     await typeInto(page, page.getByLabel("Organization name", { exact: true }), `Reg Org ${RUN}`);
     await page.getByText("Create organization", { exact: true }).click();
-    // Post-onboarding the app now lands on the Tasks tab (/todos, D-29/#427),
-    // not the apiaries list.
-    await page.waitForURL(/\/todos/, { timeout: 60_000 });
+    // Post-onboarding the app now lands on the Home tab (/home, D-35/#658) —
+    // the summary a brand-new org needs most, its Tasks list being empty.
+    await page.waitForURL(/\/home/, { timeout: 60_000 });
     await enableSemantics(page);
-    await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({
       timeout: 30_000,
     });
 

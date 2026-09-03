@@ -157,8 +157,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           key: const Key('account-back-button'),
           icon: const Icon(Icons.arrow_back),
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-          // Back to the app home, which is the Tasks tab now (D-29, #427).
-          onPressed: () => context.go('/todos'),
+          // Back to the app home, which is the Home tab now (#658, D-35,
+          // amending D-29's Tasks landing).
+          onPressed: () => context.go('/home'),
         ),
         title: Text(l10n.accountTitle),
       ),

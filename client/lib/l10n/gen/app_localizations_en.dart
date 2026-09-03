@@ -380,25 +380,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activitiesTitle => 'Activities';
 
   @override
+  String get homeTitle => 'Home';
+
+  @override
   String get journeysTitle => 'Journeys';
 
   @override
   String get todosTitle => 'Todos';
-
-  @override
-  String get assistantTitle => 'Assistant';
-
-  @override
-  String get activitiesComingSoon => 'Activities — coming soon';
-
-  @override
-  String get journeysComingSoon => 'Journeys — coming soon';
-
-  @override
-  String get todosComingSoon => 'Todos — coming soon';
-
-  @override
-  String get assistantComingSoon => 'Assistant — coming soon';
 
   @override
   String get syncStatusOnline => 'Online';
@@ -1329,6 +1317,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get journeyFilterTypeAll => 'All types';
 
   @override
+  String get journeyFilterStatusLabel => 'Status';
+
+  @override
+  String get journeyFilterStatusAll => 'All statuses';
+
+  @override
   String get journeyFilterDateRangeLabel => 'Date range';
 
   @override
@@ -2028,6 +2022,149 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notificationSyncCompleted => 'All your changes are synced.';
+
+  @override
+  String get homeTasksSectionTitle => 'Tasks needing attention';
+
+  @override
+  String homeTasksCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tasks need attention',
+      one: '1 task needs attention',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTasksViewAllOverdueAction(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'View all $count overdue tasks',
+      one: 'View the 1 overdue task',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d late',
+      one: '1 d late',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days overdue',
+      one: '1 day overdue',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeTodoDueSoonBadge => 'Soon';
+
+  @override
+  String get homeTodoDueSoonLabel => 'Due soon';
+
+  @override
+  String get homeJourneysSectionTitle => 'Journeys in progress';
+
+  @override
+  String homeJourneysCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count journeys in progress',
+      one: '1 journey in progress',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeJourneysViewAllAction => 'View all journeys';
+
+  @override
+  String get homeApiariesSectionTitle => 'Not visited recently';
+
+  @override
+  String homeApiariesCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries not visited recently',
+      one: '1 apiary not visited recently',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeApiaryNeverVisitedSubtitle => 'No activity recorded yet';
+
+  @override
+  String get homeApiaryNeverVisitedBadge => 'Never';
+
+  @override
+  String homeApiaryLastVisitSubtitle(String date) {
+    return 'Last visit $date';
+  }
+
+  @override
+  String homeApiaryStaleBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d',
+      one: '1 d',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeApiaryStaleLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days since the last visit',
+      one: '1 day since the last visit',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeFirstRunMessage =>
+      'Let\'s set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.';
+
+  @override
+  String get homeFirstRunAction => 'Add your first apiary';
+
+  @override
+  String homeAllClearMessage(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'the last $days days',
+      one: 'the last day',
+    );
+    return 'Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in $_temp0.';
+  }
+
+  @override
+  String get homeUnavailableMessage =>
+      'Couldn\'t read the data stored on this device.\n\nHome can\'t show what needs your attention until that\'s fixed. Try reopening the app.';
+
+  @override
+  String get homeUnavailableNotice =>
+      'Some data couldn\'t be read on this device, so this may be incomplete.';
 }
 
 /// The translations for English, as used in the United Kingdom (`en_GB`).
