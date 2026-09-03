@@ -10,6 +10,17 @@ terminates them. Confirm the backend Service names at deploy and adjust if any
 differ.
 */}}
 {{- if .Values.enabled }}
+{{/*
+Guard before anything below renders: when cert-manager owns this Secret, the
+hostnames in `spec.tls` become the SAN a public CA is asked to sign, so a
+leftover `*.local` dev default here is an un-issuable Certificate rather than a
+cosmetic mistake (#556). The same template also checks
+`global.appOrigin`/`global.adminOrigin`, which carry the identical drift into the
+services' CORS allowlist and Authentik's OIDC redirect URIs — hence the name
+`assertPublicHostnames` rather than "…TlsHosts". See its own comment in
+_helpers.tpl.
+*/}}
+{{- include "gateway.assertPublicHostnames" . }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

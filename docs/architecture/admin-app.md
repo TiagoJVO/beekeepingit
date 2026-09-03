@@ -349,6 +349,21 @@ per environment (`gateway.adminHost`, ADR-0016, `oidc-integration.md` §2). As-b
 - **Image config** — `VITE_OIDC_ISSUER` → auth host, `VITE_API_BASE_URL` → app host,
   `VITE_ACCOUNT_URL` → auth host, `VITE_OIDC_CLIENT_ID=beekeepingit-admin`, baked per
   environment (§8).
+- **The admin host's DNS record is opt-in** (#556) — `ADMIN_HOST` is an optional
+  gate-environment variable, and while it is unset the `cluster-ops` bring-up scripts skip the
+  `admin.` A record entirely. Setting the variable creates nothing on its own: the record appears
+  on the next `cluster-ops` `up`/`scale-up` run. Check the current value with
+  `gh variable list --env staging-gate`, and the record with `dig +short admin.<zone>`.
+- **"Mirrored per environment" means the DEPLOYED values**, in the `beekeepingit-gitops` repo
+  (`apps/<env>/beekeepingit-helmrelease.yaml`, D-27/ADR-0018) — not just this repo's
+  `environments/<env>.yaml` mirror. Setting only the mirror is what left staging's Certificate
+  asking Let's Encrypt for the dev default `admin.beekeepingit.local` and killed renewal for five
+  weeks (#556). The gateway chart now fails the render on such a value —
+  `gateway.assertPublicHostnames` covers `gateway.appHost`/`authHost`/`adminHost` and
+  `global.appOrigin`/`global.adminOrigin`, and also rejects an `adminOrigin` with an empty
+  `adminHost`. Create the A record **before** adding the host to the deployed values: a host with
+  no A record only swaps a `rejectedIdentifier` failure for a failed HTTP-01 challenge, and one
+  failed authorization invalidates the whole multi-SAN order (ADR-0020 consequences).
 
 Because the admin origin is **different** from the app-host API, the admin app's `fetch()`es are
 cross-origin. The API therefore answers CORS:

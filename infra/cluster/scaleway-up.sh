@@ -18,9 +18,10 @@
 #     https://www.scaleway.com/en/docs/console/account/how-to/create-api-keys/)
 #
 # Optional dynamic DNS (D-27/Phase 5): set CF_API_TOKEN / CF_ZONE_ID /
-# APP_HOST / AUTH_HOST and this script pushes Traefik's freshly-assigned
-# LoadBalancer IP to Cloudflare on each bring-up. We deliberately do NOT
-# reserve a static Scaleway IP (a held flexible IP bills ~EUR3/mo even while
+# APP_HOST / AUTH_HOST (+ the optional ADMIN_HOST) and this script pushes
+# Traefik's freshly-assigned LoadBalancer IP to Cloudflare on each bring-up.
+# We deliberately do NOT reserve
+# a static Scaleway IP (a held flexible IP bills ~EUR3/mo even while
 # the cluster is torn down); dynamic DNS keeps the standing cost at zero.
 # Skipped if CF_API_TOKEN is unset (then point DNS by hand from the summary
 # printed at the end):
@@ -28,7 +29,11 @@
 #   CF_ZONE_ID    the zone's ID (Cloudflare dashboard -> the zone -> API section)
 #   APP_HOST      e.g. beekeepingit-rc.melargil.pt
 #   AUTH_HOST     e.g. auth.beekeepingit-rc.melargil.pt
-# (STAGING_APP_HOST/STAGING_AUTH_HOST are accepted as legacy aliases.)
+#   ADMIN_HOST    OPTIONAL — the admin SPA's own origin (#449, ADR-0016),
+#                 e.g. admin.beekeepingit-rc.melargil.pt. Unset simply skips
+#                 that A record (#556).
+# (STAGING_APP_HOST/STAGING_AUTH_HOST are accepted as legacy aliases; there
+# has never been a STAGING_ADMIN_HOST, so ADMIN_HOST is the only spelling.)
 #
 # Optional Authentik outbound-email relay credentials (#361, NFR-SEC-1): set
 # AUTHENTIK_EMAIL_USERNAME / AUTHENTIK_EMAIL_PASSWORD and this script creates/
@@ -89,6 +94,9 @@ node_type="${SCW_NODE_TYPE:-DEV1-L}"
 
 app_host="${APP_HOST:-${STAGING_APP_HOST:-}}"
 auth_host="${AUTH_HOST:-${STAGING_AUTH_HOST:-}}"
+# Optional, unlike the two above (#556): `production-gate` has no ADMIN_HOST
+# variable today, and hard-requiring one would break the next prod bring-up.
+admin_host="${ADMIN_HOST:-}"
 
 # scw itself was already checked by scw-common.sh above.
 for bin in kubectl helm flux; do
@@ -252,9 +260,9 @@ cat <<EOF
 
 Cluster '$cluster_name' ($env_name) ready.
 
-- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts were
-  pushed to Cloudflare above. Otherwise point them at Traefik's LoadBalancer
-  IP manually:
+- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts — and
+  the admin host, when ADMIN_HOST is set — were pushed to Cloudflare above.
+  Otherwise point them at Traefik's LoadBalancer IP manually:
 
     kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 

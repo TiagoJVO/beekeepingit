@@ -175,6 +175,8 @@ while IFS="$(printf '\t')" read -r env defines; do
   app_host="$(yq -r '.gateway.appHost // "null"' "$overlay")"
   auth_host="$(yq -r '.gateway.authHost // "null"' "$overlay")"
   issuer_url="$(yq -r '.services.oidc.issuerUrl // "null"' "$overlay")"
+  admin_origin="$(yq -r '.global.adminOrigin // "null"' "$overlay")"
+  admin_host="$(yq -r '.gateway.adminHost // "null"' "$overlay")"
 
   # An overlay may legitimately carry no PWA-facing URLs at all (e.g. a local-only
   # environment the release workflow never builds) — that is not drift, skip it.
@@ -194,6 +196,22 @@ while IFS="$(printf '\t')" read -r env defines; do
   # POWERSYNC_URL is the gateway origin + the /sync-stream/ route, so its authority
   # must match appHost too (a same-origin path difference is not drift).
   expect "$env" "POWERSYNC_URL host vs gateway.appHost" "$(url_host "$powersync")" "$app_host"
+
+  # --- admin host vs admin origin, WITHIN the overlay (#556) -------------------
+  # `global.adminOrigin` is what the services allowlist for CORS and what
+  # Authentik registers as the admin client's redirect URI; `gateway.adminHost`
+  # is the Ingress host (and TLS SAN entry) that actually serves it. Nothing
+  # derives one from the other, so a one-sided edit ships an origin no host
+  # answers on — the same class of drift that put `admin.beekeepingit.local` in
+  # staging's public certificate. The chart's `gateway.assertPublicHostnames`
+  # guard catches the DEPLOYED copy at render time; this catches the in-repo copy
+  # for free, before a push. (This script cannot see the gitops repo — that stays
+  # the guard's job.)
+  if [ "$admin_origin" = "null" ] && [ "$admin_host" = "null" ]; then
+    note "$env: overlay declares no admin URLs — skipped"
+  else
+    expect "$env" "global.adminOrigin host vs gateway.adminHost" "$(url_host "$admin_origin")" "$admin_host"
+  fi
 
   # --- admin app (#449): its VITE_* URLs point at the same auth/app hosts ------
   # publish-admin bakes these into the admin image per environment; they must
