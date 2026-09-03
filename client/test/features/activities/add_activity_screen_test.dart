@@ -3121,9 +3121,37 @@ void main() {
           find.byKey(const Key('activity-honey-supers-field')),
           '4',
         );
-        // `.` is pt's GROUPING separator and `5` is not a thousands group,
-        // so this is not a number in Portuguese. The old filter kept the
-        // digits and stored 405.
+        // `1.234` in pt-PT: the dot is neither the locale's decimal
+        // separator nor its grouping one (European Portuguese groups with a
+        // non-breaking space — #656), and exactly three digits follow it, so
+        // it could mean 1234 or 1.234 and the locale offers no tie-breaker.
+        // Rejected — a 1000x guess is exactly what #623 exists to prevent.
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '1.234',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, isEmpty);
+        expect(find.text('Este valor não é válido'), findsWidgets);
+      },
+    );
+
+    // --- #657: the other locale's decimal separator, where it cannot mean
+    // thousands ---
+
+    testWidgets(
+      'pt: "40.5" typed with a dot is accepted as 40.5 — a lone 5 cannot be '
+      'a thousands group (#657)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo, portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
         await tester.enterText(
           find.byKey(const Key('activity-honey-kg-field')),
           '40.5',
@@ -3131,8 +3159,52 @@ void main() {
         await tester.pumpAndSettle();
         await save(tester);
 
-        expect(repo.created, isEmpty);
-        expect(find.text('Este valor não é válido'), findsWidgets);
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['honey_kg'], 40.5);
+      },
+    );
+
+    testWidgets('en: "40,5" typed with a comma is accepted as 40.5 (#657)', (
+      tester,
+    ) async {
+      final repo = _FakeActivitiesRepository();
+      await openForm(tester, repo);
+
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-kg-field')),
+        '40,5',
+      );
+      await tester.pumpAndSettle();
+      await save(tester);
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.attributes['honey_kg'], 40.5);
+    });
+
+    testWidgets(
+      'en: "1,234" keeps the locale reading — grouping-shaped input is not '
+      'reinterpreted (#657)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '1,234',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['honey_kg'], 1234.0);
       },
     );
 
