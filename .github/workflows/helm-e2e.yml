@@ -599,7 +599,7 @@ jobs:
             ak shell -c "$(cat infra/ci/authentik-federation-probe.py)"
 
       # Node itself already came from "Set up toolchains from mise.toml" above
-      # (mise.toml pins node = 22, the same toolchain local dev uses) — no
+      # (mise.toml pins the node major, the same toolchain local dev uses) — no
       # separate actions/setup-node needed.
       - name: Install e2e dependencies
         if: steps.changes.outputs.e2e == 'true'
