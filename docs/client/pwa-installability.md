@@ -242,11 +242,12 @@ templates, without a live gateway/cluster:
 Needs a person with a real Chrome/Android session against a **deployed** (or `flutter run -d
 chrome`-served) instance — not reproducible from a static build in this environment:
 
-- [ ] **Chrome desktop/Android install prompt** — open the hosted URL (or
+- [x] **Chrome desktop/Android install prompt** — open the hosted URL (or
       `flutter run -d chrome` locally), confirm Chrome's install affordance (omnibox icon /
       "Add to Home screen" menu item on Android) appears, and that accepting it installs a
-      standalone-windowed app with the BeekeepingIT icon and name.
-- [ ] **Offline app-shell serving in an INSTALLED app.** The browser-tab half of this is no
+      standalone-windowed app with the BeekeepingIT icon and name. **Passed** — see the pass log
+      below.
+- [x] **Offline app-shell serving in an INSTALLED app.** The browser-tab half of this is no
       longer manual: `client/e2e/tests/offline-boot.spec.ts` does exactly it — go offline, reload
       (at a deep link), assert the shell renders — in a real Chromium against the real deployed
       image, on every PR touching `client/**`, `infra/helm/**` or `infra/cluster/**`. What is
@@ -256,9 +257,31 @@ chrome`-served) instance — not reproducible from a static build in this enviro
       screen or the offline-dino page is a fail). Per the issue's scope note it checks the
       **shell** loads, not that data/API calls work offline — that's PowerSync's local-first sync
       (`EPIC-06`), covered elsewhere.
-- [ ] **Large-device no-offline-requirement check (FR-PL-1)** — on a laptop/desktop viewport,
+- [x] **Large-device no-offline-requirement check (FR-PL-1)** — on a laptop/desktop viewport,
       confirm the app functions normally online; desktops are not required to pass the offline
       check above, only phones/tablets are.
 
-Record the result of this pass (pass/fail + browser/OS versions used) in the PR or issue
-thread when a human runs it; this doc is the procedure, not a substitute for running it.
+### Pass log
+
+| Field                         | Result                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Date                          | 2026-09-04                                                                                                         |
+| Build under test              | `v0.0.1-rc16` on staging (`https://beekeepingit-rc.melargil.pt`)                                                   |
+| Platforms                     | Windows 11 desktop Chrome · Android Chrome                                                                         |
+| Install prompt                | **Pass** — offered on both; accepting installs a standalone-windowed app                                           |
+| Installed identity            | **Pass** — window title and taskbar read "BeekeepingIT by Melargil", carrying the bee icon from `icons/Icon-*.png` |
+| Offline launch, installed app | **Pass** — launched from the home screen with the network off and the shell painted                                |
+| Large-device online check     | **Pass** — desktop behaves normally online                                                                         |
+
+**Outcome: pass on every item.** This closes #233 and, with it, the last manual gap in #93's
+installability criteria.
+
+One caveat worth carrying forward, because it will look like a failure to the next person who
+tests it: the **first** load after a deploy is the one that installs the worker and fills the
+cache, so an install-then-immediately-offline sequence on a browser that has never loaded the
+app fails by design. Reload once online before testing offline. The automated
+`offline-boot.spec.ts` handles this by asserting its online preconditions before it cuts the
+network.
+
+Record the result of any later pass the same way (pass/fail + browser/OS versions used); this
+doc is the procedure, not a substitute for running it.
