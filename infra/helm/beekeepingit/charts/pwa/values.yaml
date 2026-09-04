@@ -1,7 +1,24 @@
 # Defaults for standalone `helm template`/`helm lint`. The umbrella overrides
 # via the `pwa:` key in its own values.yaml / environments/*.yaml.
 enabled: true
-resourceTier: small
+# `medium` (250m/256Mi), not `small` (100m/64Mi), since #670 turned on runtime
+# gzip: the filter needs the bytes in user space, so `sendfile` no longer applies
+# to these responses and this pod does real per-request CPU work for the first
+# time.
+#
+# Idle usage is not the risk — measured 1m CPU / 4Mi against the old 100m/64Mi on
+# staging. The risk is the release-time herd: this container's `nginx.conf` feeds
+# the service worker's `BUILD_REVISION` (client/tool/build_app_shell_cache.dart),
+# so every installed shell re-primes its cache the moment a release lands, which
+# is exactly when gzip costs the most. One replica, no HPA, and the liveness /
+# readiness probes share this cgroup — under CFS throttling a slow probe response
+# restarts the pod that is already the bottleneck, turning a slow release into a
+# failed one.
+#
+# Requests move 25m -> 100m, which is the part that affects scheduling; the limit
+# is headroom for the spike. `gzip_comp_level 2` in `client/nginx.conf` is the
+# other half of this trade (#693, #670).
+resourceTier: medium
 
 image:
   repository: ghcr.io/tiagojvo/beekeepingit/client
