@@ -55,6 +55,21 @@ flutter:
   uses-material-design: true
   generate: true # regenerate lib/l10n/gen from l10n.yaml + lib/l10n/arb/*.arb
 
+  # The one brand mark (#686, FR-UX-1). `app-icon-512.png` is a byte-identical
+  # copy of `web/icons/Icon-512.png` — the Melargil bee the installed app shows
+  # in its title bar, taskbar and home screen (#233/#681) — so the in-app mark
+  # and the app icon are the same artwork rather than two lookalikes that can
+  # drift apart. `test/brand_mark_asset_test.dart` pins that byte-for-byte.
+  #
+  # A COPY rather than a reference into `web/`: `web/` is the web platform
+  # folder, not an asset root, and pointing lib code at it would couple the
+  # widget tree to one platform's scaffolding. Bundled, never fetched — the
+  # login screen is the first thing an offline cold boot paints (FR-OF-1,
+  # D-10); the built bundle's copy is precached by
+  # `tool/build_app_shell_cache.dart` along with the rest of the shell.
+  assets:
+    - assets/brand/app-icon-512.png
+
   # Melargil brand typography (FR-UX-1, FR-AX-1, D-18, #243), bundled as
   # assets — offline-first, NO runtime font fetching (no google_fonts, no CDN).
   # Static per-weight TTFs from Google Fonts (the two BRAND families are OFL
