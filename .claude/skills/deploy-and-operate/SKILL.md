@@ -23,13 +23,6 @@ PR-based promotion; chart pinned per its 2026-08-31 addendum),
 [`docs/architecture/platform.md`](../../../docs/architecture/platform.md). This skill is the map,
 the runbooks and the traps — not a restatement of those.
 
-**A trap here describes something that already bit, and every one names the state it is in.** A
-trap marked settled is history: it explains why a guard or an ordering exists, so nobody undoes
-it — it is **not** a checklist to re-verify on a release. Re-proving settled infrastructure costs
-a release the time it was meant to save. So: when you close an issue this file cites, fix its
-entry in the same change, and if a trap is now guarded in code, say so and say what still needs
-doing (usually: prod, which has none of staging's setup yet).
-
 ## Boundaries
 
 The agent drives everything that goes through GitHub or a public URL, and **reads** the cluster to
@@ -128,9 +121,7 @@ gh api repos/TiagoJVO/beekeepingit-gitops/contents/clusters/staging/flux-system.
    step 7: `curl -sI https://beekeepingit-rc.melargil.pt/main.dart.js | grep -i last-modified`.
 
 2. **Draft the notes** to the scratchpad. Convention (see rc13): prose, led by what a staging
-   user will notice, issue numbers inline. Short. A release needs **no manual post-deploy step** —
-   a blueprint change re-applies on its own (step 8); only add one if this particular delta
-   genuinely carries one, and do not pre-announce an authentik nudge.
+   user will notice, issue numbers inline. Short.
 
 3. **Cut the release.** Target the sha, not `main`, so a concurrent merge cannot move it:
 
@@ -288,21 +279,13 @@ creating one a **second** render is needed
 - `environments/<env>.yaml` is not what runs. #556: staging's gitops values never got
   `gateway.adminHost` / `global.adminOrigin`, the dev default leaked into the ACME order, and cert
   renewal failed while the mirror looked right. The chart now refuses to render such a value
-  (`gateway.assertPublicHostnames`).
-
-  **Settled for staging — do not re-verify it on a release.** All three hostnames have A records
-  and ride one 3-SAN cert; the gitops values carry both admin keys; the guard is deployed and
-  passing. A release does not touch any of this, so checking hostnames, curling the admin host, or
-  reading the guard template is not part of a release. The live check that a promotion actually
-  reconciled is `flux get helmreleases -A` (step 7), and it covers a failed render of any cause.
-
-  What stays worth knowing, because **prod has none of it yet** and this is the order to bring a
-  new host up in: set the `*_HOST` variable, then run `cluster-ops` (`up`/`scale-up`) and confirm
+  (`gateway.assertPublicHostnames`). Staging is done; **prod is not**, and this is the order to
+  bring a host up in: set the `*_HOST` variable, then `cluster-ops` (`up`/`scale-up`) and confirm
   `cloudflare: A … -> <ip>` in the job log — the variable alone creates nothing — then land the
   gitops PR adding **both** `gateway.adminHost` and `global.adminOrigin`, and only then promote a
-  chart carrying the guard. The order is load-bearing: naming a host that has no A record swaps a
-  `rejectedIdentifier` rejection for a failed HTTP-01 challenge, and **one** failed authorization
-  invalidates the entire multi-SAN order — app and auth TLS go down with the new host.
+  chart carrying the guard. Naming a host that has no A record swaps a `rejectedIdentifier`
+  rejection for a failed HTTP-01 challenge, and **one** failed authorization invalidates the whole
+  multi-SAN order — app and auth TLS go down with the new host.
 
 - The `GitRepository` `ref` is the only chart pin: Flux ignores `chart.spec.version` for git
   sources. `reconcileStrategy` must stay `Revision` — `Chart.yaml` is frozen at `0.1.0`, so
