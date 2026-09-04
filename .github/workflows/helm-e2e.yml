@@ -61,9 +61,11 @@ jobs:
     # that precache out of every OTHER spec's context, so the job does not pay
     # for it eight times.
     # Held at 60 again for #670's compression spec: it also logs nobody in, and
-    # its one test is a boot plus one no-store re-fetch of eight bundle paths —
-    # which now includes the 4.4 MB app and the 5.8 MB engine, but compressed,
-    # so ~3.5 MB. Budgeted at 180s in the spec itself.
+    # its one test is a boot plus one no-store re-fetch of eleven bundle paths
+    # — eight until #688 added a second font face, `assets/NOTICES` and a
+    # `.frag` shader (the `.ttf` was already probed; #688 flipped its role, it
+    # did not add it). That includes the 4.4 MB app and the 5.8 MB engine, but
+    # compressed, so ~4.2 MB. Budgeted at 180s in the spec itself.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -187,6 +189,16 @@ jobs:
             && flutter build web --release --no-web-resources-cdn \
             && dart run tool/build_app_shell_cache.dart build/web )
           docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
+          # Parse client/nginx.conf in the real base image, in the real `http {}`
+          # context, before anything is deployed (#688). Without this a plain
+          # syntax error in that file surfaces tens of minutes later as a pod
+          # that never binds :80 — read as a deploy failure rather than a config
+          # one. It is also where a "duplicate extension" WARNING would appear if
+          # a future base image starts mapping `.ttf`/`.otf` itself. Costs a
+          # second. `--entrypoint` because the stock entrypoint would launch the
+          # server instead of validating.
+          docker run --rm --entrypoint nginx \
+            "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" -t
 
       # Build the admin image from THIS checkout (#449), same rationale as the PWA
       # step above: the admin subchart defaults to `admin:latest` (published only on
