@@ -176,9 +176,10 @@ const PROBES: Probe[] = [
   // Negative control 2: a file nginx's mime.types STILL has no entry for, so it
   // is served as the `application/octet-stream` default_type — the role the
   // `.ttf` probe above played until #688 typed it. `.frag` is the largest such
-  // extension left in the bundle (8,890 B; the only bigger ones are the
-  // `canvaskit/*.symbols` tables, which no browser ever requests and which cost
-  // 1.3 MB a probe). It is NOT pinned to the octet-stream string — only to "did
+  // extension left in the bundle (8,890 B). The `canvaskit/*.symbols` tables
+  // used to be the bigger ones, but #701 stopped shipping them into the image
+  // entirely — see the absence test below. It is NOT pinned to the
+  // octet-stream string — only to "did
   // not collapse to the SPA fallback" — so that mapping `.frag` one day is a
   // one-line change here rather than a puzzle.
   //
@@ -405,4 +406,68 @@ test("the bundle is served gzip-encoded, and already-compressed types are not", 
     "compressing the bundle dropped COEP from the document — the origin is no longer " +
       "cross-origin isolated and PowerSync's sync worker cannot start (#89)",
   ).toBe("require-corp");
+});
+
+/**
+ * The CanvasKit symbolication tables are not in the image at all (#701).
+ *
+ * A release `flutter build web` emits ~8.2 MB of `canvaskit/*.js.symbols` into
+ * `build/web`, and `COPY build/web` shipped and publicly served every byte of
+ * something no browser ever requests. `client/.dockerignore` now excludes them.
+ *
+ * Asserting their ABSENCE takes care, because nginx's SPA fallback
+ * (`try_files $uri $uri/ /index.html`) answers a missing path with `200` and the
+ * app shell — so "expect 404" would fail even when the fix works, and "expect
+ * 200" would pass whether or not the file is there. The real signal is the
+ * content type: an actual symbols file is served as the
+ * `application/octet-stream` default_type, while the fallback is `text/html`.
+ * Collapsing to the fallback is therefore proof the file is gone.
+ *
+ * This is the same vacuous-200 hazard the sibling specs guard against, arrived
+ * at from the opposite direction: here the fallback is the pass condition
+ * rather than the failure.
+ */
+test("the CanvasKit .symbols tables are not shipped in the image", async ({ page }) => {
+  await gotoSameOriginDocument(page);
+
+  const probes = [
+    "/canvaskit/canvaskit.js.symbols",
+    "/canvaskit/chromium/canvaskit.js.symbols",
+    "/canvaskit/skwasm.js.symbols",
+  ];
+
+  const results = await page.evaluate(async (paths: string[]) => {
+    const out: { path: string; status: number; type: string; bytes: number }[] = [];
+    for (const path of paths) {
+      const response = await fetch(path, { cache: "no-store" });
+      const body = await response.arrayBuffer();
+      out.push({
+        path,
+        status: response.status,
+        type: response.headers.get("content-type") ?? "",
+        bytes: body.byteLength,
+      });
+    }
+    return out;
+  }, probes);
+
+  // Sanity: the app shell really is what came back, so a broken origin (which
+  // would also "not be a symbols file") cannot make this pass.
+  const shell = await page.evaluate(async () => {
+    const response = await fetch("/index.html", { cache: "no-store" });
+    return (await response.text()).length;
+  });
+  expect(shell, "the SPA fallback document itself should be non-trivial").toBeGreaterThan(200);
+
+  for (const result of results) {
+    expect(
+      result.type,
+      `${result.path} should collapse to the SPA fallback, not serve a symbols table`,
+    ).toContain("text/html");
+    expect(
+      result.bytes,
+      `${result.path} returned ${result.bytes} B — a real symbols table is ~1 MB, ` +
+        `so this looks like the file is still in the image`,
+    ).toBeLessThan(100_000);
+  }
 });

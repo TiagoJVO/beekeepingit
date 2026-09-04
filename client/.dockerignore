@@ -1,0 +1,28 @@
+# Build context for client/Dockerfile, which CI and the deploy script build as
+# `docker build -t <image> client`. Patterns are relative to this directory.
+#
+# The image COPYs exactly two things — `nginx.conf` and `build/web` — so most of
+# what follows only shrinks the context uploaded to the daemon. The first block
+# is different: it changes what the image actually serves.
+
+# CanvasKit's symbolication tables (#701). A release `flutter build web` emits
+# ~8.6 MB of `canvaskit/*.js.symbols`, and `COPY build/web` would ship and
+# publicly serve every byte of it. No browser ever requests them: the service
+# worker's precache generator already skips this exact pair of suffixes
+# (`kExcludedSuffixes` in client/tool/build_app_shell_cache.dart), so they were
+# already understood to be non-assets — they were simply still being copied.
+# They are useful only to `flutter symbolize` against a build artifact, which is
+# where they remain; nothing needs them resident in a serving container.
+#
+# Source maps go with them, for the same reason and by the same precedent: never
+# fetched by the app, and they hand any reader the unminified sources.
+**/*.symbols
+**/*.map
+
+# Local dependency trees. None of these are part of the served bundle, but
+# without this every `docker build client` uploads whatever a developer happens
+# to have installed — `client/e2e` pulls Playwright, and `client/tool/icons`
+# pulls a platform-specific Skia binary (@napi-rs/canvas), which is tens of MB
+# of pure waste on each build.
+**/node_modules/
+.dart_tool/
