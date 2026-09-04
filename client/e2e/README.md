@@ -54,6 +54,31 @@ stack** plus `E2E_MAILPIT_URL` (helm-e2e.yml port-forwards the sink and sets
 it) and self-skips when the env is absent; its tests are order-dependent
 within the file.
 
+**`tests/cache-headers.spec.ts`** (#621, FR-PL-1) is the cheap one — no login,
+and it deliberately does **not** wait for the Flutter app to boot (it only needs
+a same-origin document to fetch from, so it retries `/` just while a cold gateway
+still answers its own 5xx page, rather than using `gotoAppRoot`'s 120s glass-pane
+wait — otherwise an unrelated app-boot regression would report as a cache-headers
+failure). It is the only place the response headers served **through the gateway,
+from the real nginx container** (`client/nginx.conf`) are asserted. It reads `/`,
+`/index.html`, an SPA-fallback route, `main.dart.js`, the Flutter loader scripts,
+`canvaskit/canvaskit.js`, `version.json`, `manifest.json` and a bundled asset
+through in-page same-origin `fetch(…, { cache: "no-store" })` (Playwright's
+Node-side `request` fixture can't resolve the dev hostnames, and the browser's own
+cache must not be allowed to answer). Each must be `200` with
+`Cache-Control: no-cache` — nothing `immutable`, because `flutter build web` emits
+no content-hashed filenames — **and** must carry the `Content-Type` of its asset
+class: nginx's `try_files` fallback answers any missing path with `200` +
+`index.html`, so without that second check a renamed Flutter output (a `--wasm`
+build's `main.dart.mjs`, a relocated CanvasKit) would leave the spec green while it
+just re-measured the document's headers ten times. It doubles as the guard for
+nginx's `add_header` **inheritance trap** (#89): an `add_header` inside a
+`location {}` cancels every server-level one, so the spec also asserts
+`X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` still arrive — COOP/COEP named
+explicitly because they break first: losing cross-origin isolation takes
+`SharedArrayBuffer`, and with it PowerSync's wasm/OPFS sync worker.
+
 The fresh-client **notes** assertion doubles as the regression guard for the
 PowerSync sync-rules column list
 (`infra/helm/beekeepingit/charts/powersync/values.yaml`): the

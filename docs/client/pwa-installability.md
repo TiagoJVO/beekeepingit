@@ -61,11 +61,65 @@ icons replace Flutter's default template icons" AC, and it remains **unmet**; pr
 brand artwork is a design task, not something this change (an audit + docs pass) can do. Tracked
 in #233.
 
-## 2. Manual pass — install + offline-shell-serving
+## 2. Served caching policy (as built)
 
-The audit above proves the manifest/service-worker are well-formed; it does not prove a real
-browser actually shows the install prompt, that installing produces a working standalone app,
-or that the service worker serves the shell with the network off. That needs a real browser.
+The container that serves the built bundle (`client/nginx.conf`, the `pwa` Helm chart) sends
+one explicit header for **everything** it serves (#621):
+
+```text
+Cache-Control: no-cache
+```
+
+`no-cache` is not "don't store" — it is "store, but revalidate before reuse", so nginx's
+`ETag`/`Last-Modified` turn repeat loads into cheap `304 Not Modified` responses while a new
+release is picked up on the very next load. Before this, no `Cache-Control` was sent at all and
+browsers fell back to **heuristic** caching (an implementation-defined freshness guess derived
+from `Last-Modified`), which can hold a stale bundle for an unbounded window after a deploy.
+
+**Nothing is served `immutable`, deliberately.** `flutter build web` emits **no content-hashed
+filenames**: `index.html`, `main.dart.js`, `flutter_bootstrap.js`, `flutter.js`, `version.json`,
+`manifest.json`, `canvaskit/*`, `sqlite3.wasm`, `powersync_db.worker.js`, and the (per-build
+tree-shaken) `assets/fonts/MaterialIcons-Regular.otf` are all **stable names whose bytes change
+every release**. A long `max-age=…, immutable` therefore has no safe target here — it would pin
+users to a stale build with no reload escape. The same missing hashes are the strongest argument
+for keeping the policy **uniform**: mixing `no-cache` on the document with any stale-tolerant
+policy on the assets could serve a fresh `index.html` against a previous build's cached
+`main.dart.js`, and revalidating everything is what keeps a release atomic.
+
+The header is set at **server** level, not inside the SPA-fallback `location {}`: in nginx an
+`add_header` inside a `location` cancels inheritance of **every** server-level `add_header`, which
+would silently drop COOP/COEP, `X-Content-Type-Options`, `Referrer-Policy` and the Report-Only
+CSP (#89).
+
+This is currently the **only** cache layer: per #619 the deployed `flutter_service_worker.js` is
+Flutter's self-unregistering deprecation stub, so no service worker caches the app shell today.
+Restoring the offline shell is that issue's work; the header above only makes repeat loads cheap
+and releases prompt.
+
+**`no-cache` therefore does not — and cannot — give an offline reload.** It means a stored
+response may not be reused without a **successful** revalidation ([RFC 9111
+§5.2.2.4](https://www.rfc-editor.org/rfc/rfc9111#section-5.2.2.4)), and with no connectivity that
+revalidation fails, so the browser has nothing it is allowed to serve. Under the previous
+no-header state, heuristic freshness could sometimes let a repeat visit paint without the
+network — accidentally, and just as easily with a stale build. Making the policy explicit is the
+right correctness call regardless, but it means #619 (ship a real service worker) is a **hard
+prerequisite** for FR-PL-1's offline app-shell AC, not merely the next thing after this; both
+issues sit in the same milestone (H1 · Offline shell restored).
+
+Verified live by `client/e2e/tests/cache-headers.spec.ts` through the gateway, from the real
+nginx container, in the `helm-e2e` job.
+
+## 3. Manual pass — install + offline-shell-serving
+
+The audits above prove the manifest is well-formed; they do not prove a real browser actually
+shows the install prompt, that installing produces a working standalone app, or that anything is
+served with the network off. That needs a real browser.
+
+**Partly superseded by §2.** This pass was recorded before it was established that the deployed
+`flutter_service_worker.js` is Flutter's self-unregistering deprecation stub. There is therefore
+**no service worker caching the app shell today**, so only the _install_ half of this pass is
+runnable now; the offline half is blocked on #619 and would deterministically fail if run. The
+items below are kept as the historical record, annotated where the record turned out to be wrong.
 
 ### What was verified in this pass (static build inspection — no live cluster)
 
@@ -82,11 +136,16 @@ templates, without a live gateway/cluster:
       `viewport` meta tags (both were missing before this change — added, see the PR diff),
       and carries the iOS-specific meta tags/`apple-touch-icon` for Safari's non-standard
       install path.
-- [x] Flutter's build (`flutter build web`) generates a service worker
+- [ ] ~~Flutter's build (`flutter build web`) generates a service worker
       (`flutter_service_worker.js`) that precaches the app shell (engine/framework JS, fonts,
       the manifest, the icons) — this is Flutter's own web-build behavior, not custom code
       here; confirmed by reading the generated `build/web/flutter_service_worker.js` manifest
-      list structure in a local build.
+      list structure in a local build.~~ **Superseded — this does not hold.** On the pinned
+      Flutter (3.44) the generated `flutter_service_worker.js` is Flutter's **self-unregistering
+      deprecation stub**: it calls `self.registration.unregister()` on activate, so it precaches
+      nothing and removes itself. No service worker caches the app shell today (see §2).
+      Unchecked rather than deleted, so the wrong belief this pass acted on stays visible;
+      shipping a real service worker is #619.
 - [x] The `pwa` Helm chart (`infra/helm/beekeepingit/charts/pwa/`) serves the static bundle
       (`client/Dockerfile` + `nginx.conf`) behind the cluster's TLS-terminating ingress — HTTPS
       is a deployment property of the chart, not something a static-file Lighthouse run can
@@ -101,10 +160,12 @@ chrome`-served) instance — not reproducible from a static build in this enviro
       `flutter run -d chrome` locally), confirm Chrome's install affordance (omnibox icon /
       "Add to Home screen" menu item on Android) appears, and that accepting it installs a
       standalone-windowed app with the BeekeepingIT icon and name.
-- [ ] **Offline app-shell serving** — after installing (or just visiting once so the service
-      worker registers), go offline (DevTools → Network → Offline, or airplane mode on
-      Android) and reload: the app shell must still load (blank/white screen or a browser
-      offline-dino page is a fail). Per the issue's scope note, this checks the **shell**
+- [ ] **Offline app-shell serving — blocked on #619, do not run it yet.** The check itself is:
+      after installing (or just visiting once), go offline (DevTools → Network → Offline, or
+      airplane mode on Android) and reload; the app shell must still load (blank/white screen or
+      a browser offline-dino page is a fail). It cannot pass today: nothing caches the shell, and
+      `no-cache` forbids reusing a stored response without a successful revalidation (§2). Run it
+      once #619 ships a real service worker. Per the issue's scope note, it checks the **shell**
       loads, not that data/API calls work offline — that's PowerSync's local-first sync
       (`EPIC-06`), already covered elsewhere.
 - [ ] **Large-device no-offline-requirement check (FR-PL-1)** — on a laptop/desktop viewport,
