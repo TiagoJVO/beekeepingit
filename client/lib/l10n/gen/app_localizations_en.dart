@@ -12,6 +12,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
+  String get appLogoLabel => 'BeekeepingIT logo';
+
+  @override
   String get loginPrompt =>
       'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.';
 

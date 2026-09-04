@@ -106,6 +106,12 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT'**
   String get appTitle;
 
+  /// Screen-reader label for the brand mark (the Melargil bee, #686) — an image with no text of its own, so it is announced by what it stands for rather than described
+  ///
+  /// In en, this message translates to:
+  /// **'BeekeepingIT logo'**
+  String get appLogoLabel;
+
   /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
   ///
   /// In en, this message translates to:

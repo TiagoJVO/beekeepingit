@@ -65,10 +65,51 @@ so the audit passing is necessary but not sufficient for the "real project app i
 That AC (#93, tracked in #233) is **met as of #233**: `client/web/icons/*` and `favicon.png`
 carry the Melargil bee mark — a white bee on the brand amber `#F9A825`, which is also the
 manifest's `theme_color`/`background_color`, so the icon, the splash screen and the browser
-omnibox agree rather than the icon being the odd one out. They are rasterised from the vector
-logo master, with the bee isolated from the wordmark by colour, so the set can be regenerated
-at any size without losing crispness. The maskable pair insets the bee to ~62% of the canvas so
-it survives Android's circle/squircle crop; the plain pair fills ~86%.
+omnibox agree rather than the icon being the odd one out.
+
+### App icons — provenance and regeneration
+
+The shipped PNGs are **generated, not drawn**. Everything needed to reproduce them is in the
+repo as of #682 — before that the PNGs were the only artefact, and the master plus the script
+that rasterised them lived outside it, so a new size meant redrawing by hand.
+
+| Where                                        | What                                                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client/tool/icons/melargil-logo-master.pdf` | The brand master — the Melargil wordmark with the amber bee, pure vector, transparent background. Committed with the owner's approval; it is brand artwork, not a reusable asset |
+| `client/tool/icons/generate-app-icons.mjs`   | The generator — rasterises the master and writes the five PNGs                                                                                                                   |
+| `client/tool/icons/README.md`                | Full rationale for each geometry constant and the pdf.js/Node traps                                                                                                              |
+
+```sh
+task web:icons         # regenerate client/web/icons/* + client/web/favicon.png
+task web:icons-check   # assert the committed PNGs are byte-identical to the generator's output
+```
+
+The committed PNGs are the **byte-for-byte** output of that script with its two exact-pinned
+dependencies (`pdfjs-dist` 3.11.174, `@napi-rs/canvas` 1.0.8) — `task web:icons-check` asserts
+it. That check is deliberately not in `task lint`/`ci`: Skia rasterisation is only confirmed
+byte-stable on the platform that produced the set (#687 tracks confirming it on CI's Linux).
+
+The geometry, in short — the master is the whole logo, but the icon is the bee alone, so the
+bee is isolated by colour rather than by hand-editing the vector:
+
+- the page renders at `scale: 24` (5323 × 2409), far above any output size, so the downscale
+  to 512/192/32 is a clean area-average;
+- the bee is the only **amber** artwork (the wordmark is near-black), so an amber colour probe
+  gives its raw bounding box — 845 × 723 — which is then padded by 2% of its longest side, to 879 × 757;
+- that pad reaches into the wordmark, so pixels dark on all three channels are dropped from the
+  crop; the bee anti-aliases amber-to-transparent and never goes dark, so its edge survives;
+- the silhouette is recoloured flat white and centred on an amber tile: the **maskable** pair
+  fills **62%** of the canvas so it survives Android's circle/squircle crop, the plain pair
+  fills **86%**, and the 32 px favicon **92%** because it has no pixels to spare.
+
+**The in-app mark is the same file (#686).** The login screen used to draw a Material honeycomb
+glyph on a honey tile, so an installed launch put a bee in the title bar and a honeycomb on the
+screen below it within a second of each other. It now renders `BrandMark`
+(`client/lib/theming/brand_widgets.dart`), which draws
+`client/assets/brand/app-icon-512.png` — a byte-identical copy of `web/icons/Icon-512.png`.
+A copy rather than a reference because `web/` is the web platform folder, not an asset root;
+`client/test/brand_mark_asset_test.dart` fails if the two ever diverge, so **regenerating the
+icon set (#682) must re-copy it**.
 
 ## 2. Served caching policy (as built)
 
