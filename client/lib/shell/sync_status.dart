@@ -7,6 +7,7 @@ import 'package:powersync/powersync.dart' as ps;
 import '../core/sync/powersync_service.dart';
 import '../core/sync/sync_events.dart';
 import '../core/sync/sync_gate.dart';
+import '../features/organization/organization_repository.dart';
 
 export '../core/sync/sync_events.dart' show SupersededChange, RejectedChange;
 export '../core/sync/sync_gate.dart' show SyncGateState;
@@ -243,8 +244,22 @@ final syncStatusProvider = Provider<SyncStatus>((ref) {
 /// reconnect + upload/download attempt is a disconnect/connect cycle on the
 /// *same* connector, which re-invokes `fetchCredentials`/`uploadData` right
 /// away instead of waiting on the SDK's own retry backoff.
+///
+/// The override is over the connection-**quality** gate, and nothing else. It
+/// declines outright for a caller with no organization membership (#622): the
+/// gate's probe is a heuristic about the link, which the user may well know
+/// better than the device does, whereas a missing membership is a fact about
+/// the caller that the server enforces with a `403` on the org-scoped
+/// `GET /v1/sync/token`. Checked **before** the session is read, because the
+/// first thing this does is `db.disconnect()` — connecting again afterwards
+/// would need credentials the connector correctly refuses to fetch
+/// (`BeekeepingitConnector.fetchCredentials`), so without this guard "sync
+/// now" would leave the engine disconnected. Unreachable from the UI in
+/// practice: the router keeps a caller with no membership inside onboarding,
+/// where there is no account screen and so no "Sync now" button.
 final syncNowProvider = Provider<Future<void> Function()>((ref) {
   return () async {
+    if (!ref.read(hasOrganizationProvider)) return;
     final session = await ref.read(powerSyncProvider.future);
     await session.db.disconnect();
     await session.gate.requestSync();

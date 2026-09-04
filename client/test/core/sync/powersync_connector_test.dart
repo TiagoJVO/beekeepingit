@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:beekeepingit_client/core/config/app_config.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/core/sync/powersync_connector.dart';
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/core/sync/sync_events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:powersync/powersync.dart';
 
 /// Unit tests for the connector's pure/injectable seams — the notify-and-fix
 /// wiring (sync.md §4.2/§8, D-12) split out of [BeekeepingitConnector.uploadData]
@@ -381,7 +383,10 @@ void main() {
     late _FakeRejectedStore store;
 
     setUp(() {
-      connector = BeekeepingitConnector(getAccessToken: () async => null);
+      connector = BeekeepingitConnector(
+        getAccessToken: () async => null,
+        hasMembership: () => true,
+      );
       store = _FakeRejectedStore();
     });
 
@@ -544,6 +549,7 @@ void main() {
       final client = _TrackingHttpClient();
       final connector = BeekeepingitConnector(
         getAccessToken: () async => null,
+        hasMembership: () => true,
         client: client,
       );
 
@@ -696,6 +702,99 @@ void main() {
       expect(cache, hasLength(1), reason: 'fell back to the cache');
     });
   });
+
+  group('fetchCredentials — membership precondition (#622)', () {
+    test(
+      'no membership: returns null and issues NO request at all — the '
+      'org-scoped GET /v1/sync/token is 403 by construction before the '
+      'caller has an organization (FR-ONB-2, D-3), so it is never sent',
+      () async {
+        final client = _RecordingHttpClient();
+        final connector = BeekeepingitConnector(
+          // A perfectly good session: logged in, profile complete. What this
+          // caller does not have yet is a membership.
+          getAccessToken: () async => 'access-token',
+          hasMembership: () => false,
+          client: client,
+        );
+        addTearDown(connector.dispose);
+
+        expect(await connector.fetchCredentials(), isNull);
+
+        // THE assertion of #622: not "the 403 is handled" but "no request was
+        // sent". PowerSync's connect plus its internal retry loop turned this
+        // into ~8 consecutive 403s — one console error each — during
+        // onboarding, for a request that cannot succeed by design.
+        expect(
+          client.requests,
+          isEmpty,
+          reason: 'no sync token may be requested without an active membership',
+        );
+      },
+    );
+
+    test(
+      'with a membership: exactly one bearer-authenticated GET to the sync '
+      'token endpoint, returning those credentials (happy path intact)',
+      () async {
+        final client = _RecordingHttpClient(body: '{"token": "sync-token"}');
+        final connector = BeekeepingitConnector(
+          getAccessToken: () async => 'access-token',
+          hasMembership: () => true,
+          client: client,
+        );
+        addTearDown(connector.dispose);
+
+        final credentials = await connector.fetchCredentials();
+
+        expect(credentials, isA<PowerSyncCredentials>());
+        expect(credentials?.token, 'sync-token');
+        expect(client.requests, hasLength(1));
+        final request = client.requests.single;
+        expect(request.method, 'GET');
+        expect(request.url, Uri.parse(AppConfig.syncTokenUrl));
+        expect(request.headers['Authorization'], 'Bearer access-token');
+      },
+    );
+
+    test('logged out stays first-class: a null access token returns null and '
+        'sends nothing, membership or not', () async {
+      final client = _RecordingHttpClient();
+      final connector = BeekeepingitConnector(
+        getAccessToken: () async => null,
+        hasMembership: () => true,
+        client: client,
+      );
+      addTearDown(connector.dispose);
+
+      expect(await connector.fetchCredentials(), isNull);
+      expect(client.requests, isEmpty);
+    });
+  });
+}
+
+/// A minimal [http.Client] that records every request the connector actually
+/// sends and answers each with one canned response — so a test can assert on
+/// requests that were **not** issued (#622's actual acceptance criterion),
+/// which a stub returning a 403 could never show.
+class _RecordingHttpClient extends http.BaseClient {
+  _RecordingHttpClient({this.body = '{"token": "t"}'});
+
+  /// Answered with `200` unconditionally, on purpose: a test that stubbed the
+  /// real `403` would pass just as well against the broken behavior, since the
+  /// bug is the request being *sent*, not how its answer is handled.
+  final String body;
+  final List<http.BaseRequest> requests = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requests.add(request);
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(body)),
+      200,
+      request: request,
+    );
+  }
 }
 
 /// A minimal [http.Client] that records whether [close] was called, so

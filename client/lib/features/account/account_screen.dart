@@ -416,10 +416,12 @@ class _SyncSection extends ConsumerWidget {
         const SizedBox(height: 8),
         // Auto-sync setting (FR-ST-1, FR-OF-3, #81): honored by the EPIC-06
         // sync layer's connection-quality gate (`core/sync/powersync_service
-        // .dart`'s `applyAutoSyncSetting`). Turning it off never disables
-        // "Sync now" above — the manual override always works regardless
-        // (sync.md §7.1) — so there is no invalid combination to prevent
-        // between these two controls.
+        // .dart`'s `applySyncPreconditions`). Turning it off never disables
+        // "Sync now" above — the manual override works regardless of this
+        // setting (sync.md §7.1) — so there is no invalid combination to
+        // prevent between these two controls. (The override's one
+        // precondition, a membership, is not reachable from this screen: a
+        // caller without one is held in onboarding and never sees it, #622.)
         SwitchListTile(
           key: const Key('settings-auto-sync-toggle'),
           contentPadding: EdgeInsets.zero,

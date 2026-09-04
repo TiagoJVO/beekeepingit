@@ -61,7 +61,10 @@ void main() {
     late _FakeRejectedStore store;
 
     setUp(() {
-      connector = BeekeepingitConnector(getAccessToken: () async => 'token');
+      connector = BeekeepingitConnector(
+        getAccessToken: () async => 'token',
+        hasMembership: () => true,
+      );
       store = _FakeRejectedStore();
     });
 
