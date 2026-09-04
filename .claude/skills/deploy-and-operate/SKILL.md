@@ -58,11 +58,11 @@ release contents in chat — the release notes are that summary.
 
 ## Environments
 
-| Env       | Runs on                      | Namespace              | Hosts                                                                                                                                            | Chart source `ref`                                  | Deploys when                                                                 | GitHub env (gate)                                                       |
-| --------- | ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `dev`     | local k3d (`dev-up.sh`)      | `beekeepingit-dev`     | `app/auth/admin.beekeepingit.local:8443`                                                                                                         | `branch: main` — deliberate, post-merge integration | every merge to `main` (only if GitOps was bootstrapped; `dev-up.sh` doesn't) | none                                                                    |
-| `staging` | Scaleway Kapsule (D-26)      | `beekeepingit-staging` | `beekeepingit-rc.melargil.pt` plus the `auth.` and `admin.` prefixes — all three on Cloudflare DNS in one 3-SAN LE cert (#556 closed 2026-09-03) | `tag: <release>` — moved by the promotion PR        | a `*-rc*` release's promotion PR merges                                      | `staging-gate` (ungated; secrets + `APP_HOST`/`AUTH_HOST`/`ADMIN_HOST`) |
-| `prod`    | none — inert scaffold (D-26) | `beekeepingit-prod`    | `*.beekeepingit.example` placeholders                                                                                                            | `tag: v0.0.0` placeholder                           | never, until `Q-DR` and #90 land                                             | `production-gate` (required reviewer; no secrets set today)             |
+| Env       | Runs on                      | Namespace              | Hosts                                                                                       | Chart source `ref`                                  | Deploys when                                                                 | GitHub env (gate)                                                       |
+| --------- | ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `dev`     | local k3d (`dev-up.sh`)      | `beekeepingit-dev`     | `app/auth/admin.beekeepingit.local:8443`                                                    | `branch: main` — deliberate, post-merge integration | every merge to `main` (only if GitOps was bootstrapped; `dev-up.sh` doesn't) | none                                                                    |
+| `staging` | Scaleway Kapsule (D-26)      | `beekeepingit-staging` | `beekeepingit-rc.melargil.pt` + the `auth.` and `admin.` prefixes (Cloudflare DNS, LE cert) | `tag: <release>` — moved by the promotion PR        | a `*-rc*` release's promotion PR merges                                      | `staging-gate` (ungated; secrets + `APP_HOST`/`AUTH_HOST`/`ADMIN_HOST`) |
+| `prod`    | none — inert scaffold (D-26) | `beekeepingit-prod`    | `*.beekeepingit.example` placeholders                                                       | `tag: v0.0.0` placeholder                           | never, until `Q-DR` and #90 land                                             | `production-gate` (required reviewer; no secrets set today)             |
 
 Plain `staging` / `production` GitHub environments also exist, unprotected and empty: they are the
 **deploy record** written by the gitops repo's `notify-deploy` workflow, not a place for secrets.
@@ -279,13 +279,8 @@ creating one a **second** render is needed
 - `environments/<env>.yaml` is not what runs. #556: staging's gitops values never got
   `gateway.adminHost` / `global.adminOrigin`, the dev default leaked into the ACME order, and cert
   renewal failed while the mirror looked right. The chart now refuses to render such a value
-  (`gateway.assertPublicHostnames`). Staging is done; **prod is not**, and this is the order to
-  bring a host up in: set the `*_HOST` variable, then `cluster-ops` (`up`/`scale-up`) and confirm
-  `cloudflare: A … -> <ip>` in the job log — the variable alone creates nothing — then land the
-  gitops PR adding **both** `gateway.adminHost` and `global.adminOrigin`, and only then promote a
-  chart carrying the guard. Naming a host that has no A record swaps a `rejectedIdentifier`
-  rejection for a failed HTTP-01 challenge, and **one** failed authorization invalidates the whole
-  multi-SAN order — app and auth TLS go down with the new host.
+  (`gateway.assertPublicHostnames`). Bringing a new host up is order-dependent for the same
+  reason — `infra/README.md` has that order.
 
 - The `GitRepository` `ref` is the only chart pin: Flux ignores `chart.spec.version` for git
   sources. `reconcileStrategy` must stay `Revision` — `Chart.yaml` is frozen at `0.1.0`, so
