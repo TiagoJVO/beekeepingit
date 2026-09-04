@@ -7,6 +7,10 @@ coverage/
 vendor/
 .dart_tool/
 .task/
+# Playwright run output (client/e2e/.gitignore already keeps it untracked; this
+# stops a local `task lint` failing on it after someone runs the e2e).
+test-results/
+playwright-report/
 
 # Generated / vendored lockfiles
 **/package-lock.json

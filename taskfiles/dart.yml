@@ -190,7 +190,18 @@ tasks:
             # unreachable/blocked. It does NOT cover the engine's own font fetches from
             # fonts.gstatic.com; those are closed in client/pubspec.yaml and
             # client/web/flutter_bootstrap.js (#620).
-            (cd "$d" && flutter build web --no-web-resources-cdn)
+            # build_app_shell_cache: generate the app-shell precache manifest
+            # inside build/web's service worker (#619, FR-OF-1). Nothing Flutter
+            # emits is content-hashed, so that manifest is what gives the worker
+            # a per-release cache key — without it the worker stays inert and
+            # the app cannot start offline. Required after EVERY
+            # `flutter build web`; scripts/check-app-shell-precache-wired.sh
+            # fails `task lint` if a build site ever loses it. Guarded on the
+            # tool's presence so a future Flutter package without it still
+            # builds.
+            (cd "$d" && flutter build web --no-web-resources-cdn \
+              && { [ ! -f tool/build_app_shell_cache.dart ] \
+                   || dart run tool/build_app_shell_cache.dart build/web; })
           else
             echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
           fi

@@ -29,8 +29,24 @@ To point at a gateway host other than the local k3d dev mapping
 flutter run -d chrome --no-web-resources-cdn --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
 ```
 
-`flutter build web` produces the installable PWA bundle (`build/web/`): web app manifest
-and the service worker Flutter generates at build time for app-shell caching.
+`flutter build web` produces the installable PWA bundle (`build/web/`): the web app manifest,
+the icons, and this repo's own app-shell service worker (`web/service_worker.js`).
+
+**The build is two steps, not one.** Flutter no longer generates a caching service worker —
+since [flutter/flutter#156910](https://github.com/flutter/flutter/issues/156910) the generated
+`flutter_service_worker.js` is a self-unregistering deprecation stub, which is why the app
+silently lost its offline shell (#619). This repo ships its own worker instead, and because
+nothing `flutter build web` emits is content-hashed (#678) that worker gets its cache key from a
+manifest generated **after** the build:
+
+```sh
+flutter build web --release --no-web-resources-cdn
+dart run tool/build_app_shell_cache.dart build/web
+```
+
+Skip the second step and the worker ships inert — it installs, caches nothing, and the app
+cannot start without a connection. Every build site in CI runs both, and
+`scripts/check-app-shell-precache-wired.sh` (in `task lint`) fails if one ever stops.
 
 ### Configuration (`--dart-define`)
 
@@ -63,6 +79,8 @@ hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 | `lib/core/api/`             | Generic REST scaffold (`ApiClient`) — base URL + bearer injection (reuses `core/auth`'s access token), typed JSON, RFC 9457 `ApiException` mapping. Not profile-specific — other features reuse it (`#25`)                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `lib/core/l10n/`            | `supported_locales.dart` (the shipped locale set `en-GB`/`pt-PT` and the normalization every stored locale code goes through, `D-34`/`#656`), `LocaleFormatting` (display) and `LocalizedNumberInput` (typed input) — locale-aware date/number handling on `intl` (`NFR-I18N-1`, `#77`, `#623`); see [Translations (i18n)](#translations-i18n) below                                                                                                                                                                                                                                                                       |
 | `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`, `activities`, `home`, `journeys`, `todos`, `history`, `notifications`, `stock_declarations`, `sync`, `profile`, `organization`, `members`, `account`, `settings`)                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `web/`                      | The bundle's non-Dart sources, copied verbatim into `build/web/`: `index.html`, `manifest.json`, `icons/`, the repo-controlled `flutter_bootstrap.js` override (`#620`), and the app-shell service worker `service_worker.js` with its registration script `sw_register.js` (`#619`)                                                                                                                                                                                                                                                                                                                                       |
+| `tool/`                     | Build-time tooling run **against the built bundle** — today `build_app_shell_cache.dart`, which injects the service worker's per-release precache manifest (`#619`). Runs after every `flutter build web`; unit-tested in `test/tool/`                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## Translations (i18n)
 
@@ -234,10 +252,12 @@ Display'` that had no bundled font and fell back to Roboto.
 
 ## PWA installability
 
-Manifest, service worker (Flutter-generated at build time), icons, and hosting are covered by
-`#93`. An automated Lighthouse CI installability audit runs in `build-publish.yml` on every
-client change, plus a manual verification procedure (with a first pass already filled in) for
-what a static-build audit can't check (real install prompt, offline shell serving) — see
+Manifest, icons and hosting are covered by `#93`; the app-shell service worker is this repo's
+own (`web/service_worker.js`, #619 — see the build note above). An automated Lighthouse CI
+installability audit runs in `build-publish.yml` on every client change, and
+`e2e/tests/offline-boot.spec.ts` takes a real browser offline against the deployed bundle and
+asserts the shell renders. A manual pass remains for what neither can check (the real install
+prompt on a device) — see
 [`docs/client/pwa-installability.md`](../docs/client/pwa-installability.md).
 
 ## Not in scope here

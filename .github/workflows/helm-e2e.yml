@@ -54,6 +54,12 @@ jobs:
     # Bumped 50 -> 60 (#366): the registration spec adds three ordered tests
     # (five registrations/verifications plus ~six full OIDC logins and two
     # in-app onboardings) on top of the existing suite.
+    # Held at 60 for #619's offline-boot spec: it logs nobody in (the expensive
+    # part of every other spec), and its one test is a boot, a ~6.6 MB precache
+    # and an offline reload — measured at ~6s against a warm bundle, budgeted at
+    # 420s for a cold cluster. The suite-wide `serviceWorkers: "block"` keeps
+    # that precache out of every OTHER spec's context, so the job does not pay
+    # for it eight times.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -164,10 +170,18 @@ jobs:
           owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           echo "repository=ghcr.io/${owner}/beekeepingit/client" >> "$GITHUB_OUTPUT"
           echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          # `build_app_shell_cache` generates the app-shell precache manifest
+          # inside build/web's service worker (#619). Nothing Flutter emits is
+          # content-hashed, so that manifest is what gives the worker a
+          # per-release cache key; without it the worker is inert and
+          # offline-boot.spec.ts fails. Required after EVERY `flutter build web`
+          # — scripts/check-app-shell-precache-wired.sh fails the lint gate if a
+          # build site ever loses it.
           ( cd client \
             && flutter pub get \
             && dart run powersync:setup_web \
-            && flutter build web --release --no-web-resources-cdn )
+            && flutter build web --release --no-web-resources-cdn \
+            && dart run tool/build_app_shell_cache.dart build/web )
           docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
 
       # Build the admin image from THIS checkout (#449), same rationale as the PWA

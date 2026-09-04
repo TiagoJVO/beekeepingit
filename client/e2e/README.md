@@ -62,7 +62,7 @@ wait — otherwise an unrelated app-boot regression would report as a cache-head
 failure). It is the only place the response headers served **through the gateway,
 from the real nginx container** (`client/nginx.conf`) are asserted. It reads `/`,
 `/index.html`, an SPA-fallback route, `main.dart.js`, the Flutter loader scripts,
-`canvaskit/canvaskit.js`, `version.json`, `manifest.json` and a bundled asset
+`canvaskit/canvaskit.js`, `service_worker.js`, `version.json`, `manifest.json` and a bundled asset
 through in-page same-origin `fetch(…, { cache: "no-store" })` (Playwright's
 Node-side `request` fixture can't resolve the dev hostnames, and the browser's own
 cache must not be allowed to answer). Each must be `200` with
@@ -103,6 +103,56 @@ engine would download in full and then fail to parse as a font).
 Because it asserts an _absence_, it also asserts two presences first — the font
 manifest and the bundled Roboto were both actually fetched — so a boot that died
 before loading fonts fails loudly instead of passing with an empty list.
+
+**`tests/offline-boot.spec.ts`** (#619, FR-OF-1/FR-PL-1/NFR-PER-1/D-10) is the
+third login-free spec, and the only one that runs **with** service workers:
+`playwright.config.ts` blocks them suite-wide and this file opts back in with
+`test.use({ serviceWorkers: "allow" })`. It boots the app online, then takes the
+browser genuinely offline, reloads, and asserts the **shell renders** — the
+login screen's Sign in button, not merely a 200.
+
+The suite-wide block is not incidental. The app-shell worker answers every
+bundle path out of the Cache API, and `cache: "no-store"` is an HTTP-cache
+directive that does **not** bypass a service worker — so a controlled page would
+let `cache-headers.spec.ts` measure Cache Storage while believing it measured
+nginx, and pass, because a stored response keeps the headers it was stored with.
+Blocking by default also spares every other spec a full precache per context on
+a k3d runner.
+
+An offline test is an absence assertion, so this one asserts its way in: the
+registration exists and is **ours** (Flutter's self-unregistering stub claims the
+same `/` scope, which is the #619 bug), exactly one `bkit-app-shell-*` cache
+exists **and the decoy caches it seeded before anything registered are gone** (a
+plain "one cache" check is true of a fresh profile whether or not the sweep runs;
+the decoys are what turn the eviction half into an observation), that cache holds
+**named** entries (`index.html`, `main.dart.js`, the fonts, `sqlite3.wasm`,
+PowerSync's worker) plus the CanvasKit variant this browser actually booted —
+that one is stored lazily, because the build ships six mutually exclusive
+variants and only the browser knows which it wants, and it is **polled** rather
+than read once because `sw_register.js` warms it asynchronously. Then **two
+negative controls**: a same-origin path the worker never handles must answer 200
+online and **reject** offline (the page's own network is really off), and a path
+the worker _does_ handle but has not cached must reject too (the **worker's own**
+`fetch` is really off — otherwise a cache miss could be quietly served from the
+network and the offline half would prove much less than it claims). The offline
+reload goes to a **deep link**, since offline only the worker's navigation branch
+can answer one, and it also asserts `crossOriginIsolated`, which is only true if
+the _cached_ document still carries nginx's COOP/COEP — without it PowerSync's
+wasm/OPFS worker cannot start, so the app would come back offline and then never
+sync.
+
+It also pins the release-invalidation mechanism: nothing `flutter build web`
+emits is content-hashed (#678), so `client/tool/build_app_shell_cache.dart`
+injects a per-file sha-256 into the worker at build time and the cache name is
+derived from all of them. The spec hashes the bytes nginx serves for
+`/index.html` and `/main.dart.js` — from a second, service-worker-**blocked**
+context, so it measures the wire rather than the cache those revisions filled —
+and checks they match the revisions the deployed worker embeds. Any changed byte
+therefore changes the worker script the browser update-checks, and the decoy
+assertion above shows what that produces.
+`client/test/tool/build_app_shell_cache_test.dart` is the behavioural half (flip
+a byte, assert the revision moves) and
+`client/test/app_shell_service_worker_test.dart` pins the `web/` wiring.
 
 The fresh-client **notes** assertion doubles as the regression guard for the
 PowerSync sync-rules column list

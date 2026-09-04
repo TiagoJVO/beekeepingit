@@ -1,6 +1,25 @@
-// Flutter's web bootstrap. Byte-for-byte the file `flutter build web` would
-// generate on its own (flutter_tools' `generateDefaultFlutterBootstrapScript`,
-// service-worker settings included), plus exactly ONE addition: `config`.
+// Flutter's web bootstrap. What `flutter build web` would generate on its own
+// (flutter_tools' `generateDefaultFlutterBootstrapScript`), plus one addition —
+// `config` — and minus one removal: `serviceWorkerSettings`.
+//
+// Why the removal (FR-OF-1, FR-PL-1, D-10, #619)
+// ----------------------------------------------
+// The default block asks `_flutter.loader` to register
+// `flutter_service_worker.js`. Since flutter/flutter#156910 that generated file
+// is an 815-byte DEPRECATION STUB — `install` → `skipWaiting()`, `activate` →
+// `self.registration.unregister()` plus a reload of every client — whose only
+// purpose is to remove a worker an older Flutter installed. Registering it
+// leaves the app with zero service workers and zero caches after every load,
+// which is exactly how the offline app shell #93 shipped went missing.
+//
+// It cannot merely be ignored, either: a registration is keyed by SCOPE, and
+// the stub would take the same `/` scope our own worker needs — its
+// `unregister()` would then be removing OUR registration. So the loader must
+// not register it at all. `client/web/index.html` loads
+// `client/web/sw_register.js`, which registers `client/web/service_worker.js`
+// instead. Guarded by `client/test/app_shell_service_worker_test.dart` and, in
+// a real browser against the deployed bundle, by
+// `client/e2e/tests/offline-boot.spec.ts`.
 //
 // Why it exists (NFR-CMP, FR-OF-1, C-2, #620)
 // -------------------------------------------
@@ -32,9 +51,6 @@
 {{flutter_js}}
 {{flutter_build_config}}
 _flutter.loader.load({
-  serviceWorkerSettings: {
-    serviceWorkerVersion: {{flutter_service_worker_version}}
-  },
   config: {
     fontFallbackBaseUrl: "font-fallback/"
   }
