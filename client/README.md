@@ -265,5 +265,5 @@ prompt on a device) — see
 The PowerSync **web assets** (wasm SQLite + workers) and a few **deploy-time** wirings
 (OIDC issuer/host resolution, the `/sync-stream` gateway route) were validated against the
 live cluster in `#23` (#160). The full-slice **Playwright e2e** lives in
-[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) are Flutter's default placeholders —
-real branded artwork is still needed (`#93`'s "real project app icons" AC, tracked in #233).
+[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) carry the Melargil bee brand mark
+(white on `#F9A825`, matching the manifest theme), rasterised from the vector logo master (#233).

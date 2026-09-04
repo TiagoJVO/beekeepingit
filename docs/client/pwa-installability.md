@@ -59,12 +59,16 @@ Reports land in `client/lhci-report/` (gitignored).
 
 **Known gap the audit does not catch:** Lighthouse's `maskable-icon` audit only checks that the
 manifest _declares_ an icon with `purpose: maskable` at the right sizes — it does not check
-whether the icon's actual artwork is project-branded. `client/web/icons/*` and `favicon.png`
-are still **Flutter's default template logo**, not a BeekeepingIT icon (visually confirmed by
-opening `Icon-512.png` — it's the blue Flutter chevron). This is issue #93's "real project app
-icons replace Flutter's default template icons" AC, and it remains **unmet**; producing real
-brand artwork is a design task, not something this change (an audit + docs pass) can do. Tracked
-in #233.
+whether the artwork is project-branded. Only a human looking at the files can tell you that,
+so the audit passing is necessary but not sufficient for the "real project app icons" AC.
+
+That AC (#93, tracked in #233) is **met as of #233**: `client/web/icons/*` and `favicon.png`
+carry the Melargil bee mark — a white bee on the brand amber `#F9A825`, which is also the
+manifest's `theme_color`/`background_color`, so the icon, the splash screen and the browser
+omnibox agree rather than the icon being the odd one out. They are rasterised from the vector
+logo master, with the bee isolated from the wordmark by colour, so the set can be regenerated
+at any size without losing crispness. The maskable pair insets the bee to ~62% of the canvas so
+it survives Android's circle/squircle crop; the plain pair fills ~86%.
 
 ## 2. Served caching policy (as built)
 
@@ -212,8 +216,7 @@ templates, without a live gateway/cluster:
       `theme_color`, `background_color`, and both a `192x192`/`512x512` icon pair and a
       `maskable` pair, at the declared sizes — confirmed via the Lighthouse
       `installable-manifest`/`maskable-icon` audits against the real asset files (§1). The
-      artwork itself is still Flutter's default logo, not project branding — see the "known
-      gap" callout in §1.
+      artwork is the Melargil bee brand mark as of #233 — see the callout in §1.
 - [x] `index.html` links the manifest (`<link rel="manifest">`), sets `theme-color` and
       `viewport` meta tags (both were missing before this change — added, see the PR diff),
       and carries the iOS-specific meta tags/`apple-touch-icon` for Safari's non-standard
