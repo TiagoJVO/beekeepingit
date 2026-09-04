@@ -83,13 +83,26 @@ class TeardownGuard {
   /// that hasn't finished yet. Resolves immediately if nothing is pending.
   Future<void> waitForPrior() => _pending ?? Future.value();
 
-  /// Registers [teardown] as the new "in flight" teardown for the *next*
-  /// [waitForPrior] call to await. Fire-and-forget by design — [teardown]
+  /// Registers [teardown] so the *next* [waitForPrior] call awaits it, along
+  /// with any teardown still in flight. Fire-and-forget by design — [teardown]
   /// starts running immediately but is never awaited here, mirroring the
   /// synchronous-callback constraint of Riverpod's `ref.onDispose` this
   /// exists to work around.
+  ///
+  /// Chains rather than overwrites. Two disposals in quick succession — logout
+  /// straight into a fresh login, or #125's membership-loss purge landing on
+  /// top of one — would otherwise drop the FIRST teardown from what the next
+  /// [waitForPrior] awaits, and that guarantee is the entire reason this class
+  /// exists: it is what stops a new [PowerSyncDatabase] opening against a file
+  /// the previous `close()` is still holding. [teardown] is invoked before the
+  /// chain is built, so the fire-and-forget contract is unchanged — only the
+  /// *awaiting* is combined, never the starting.
   void registerTeardown(Future<void> Function() teardown) {
-    _pending = teardown();
+    final prior = _pending;
+    final current = teardown();
+    _pending = prior == null
+        ? current
+        : Future.wait<void>([prior, current]).then((_) {});
   }
 }
 
@@ -129,14 +142,24 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // control. The `ref.listen` further down keeps this local current for the
   // whole live session; once that subscription is closed on dispose the local
   // simply freezes at its last value, which is the right answer for a session
-  // being torn down. (No claim of a ref-free teardown window: `getAccessToken`
-  // just below, and the rearm callback further down, do read `ref` — this path
-  // just doesn't add another one that would have to.)
+  // being torn down. (Since #675 this is one of three mechanisms rather than
+  // the lone exception: the connector's token read just below is session-scoped
+  // via [sessionScopedAccessToken], and the rearm callback further down can no
+  // longer fire after disposal at all, because [sessionTeardown] cancels its
+  // subscription in the synchronous half of `ref.onDispose`.)
   var hasMembership = ref.read(hasOrganizationProvider);
 
   final connector = BeekeepingitConnector(
-    getAccessToken: () =>
-        ref.read(authControllerProvider.notifier).accessToken(),
+    // Session-scoped rather than a bare `ref.read` (#675): the connector can
+    // still be asked for credentials after this provider is disposed, and
+    // `Ref.mounted` is what makes that
+    // resolve to "no credentials" instead of throwing inside PowerSync. See
+    // [sessionScopedAccessToken] for why nothing here may be captured.
+    getAccessToken: sessionScopedAccessToken(
+      sessionAlive: () => ref.mounted,
+      readAccessToken: () =>
+          ref.read(authControllerProvider.notifier).accessToken(),
+    ),
     hasMembership: () => hasMembership,
   );
   final probe = HttpConnectivityProbe();
@@ -235,20 +258,32 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
 
   // Synchronous by construction — Riverpod's `ref.onDispose` is a
   // `void Function()` and never awaits a Future a callback returns (HIGH
-  // finding). [TeardownGuard.registerTeardown] starts the teardown
-  // immediately but doesn't await it either; it's stashed so the *next*
-  // [powerSyncProvider] instance can await it before opening a new database.
+  // finding). [sessionTeardown] holds the invariant that makes that safe
+  // (#675): everything this session owns — both `ref.listen` handles here,
+  // plus the status subscription, gate and probe in there — is detached in
+  // this synchronous half, so no callback of ours can outlive the `ref` it
+  // reads. Only the engine shutdown itself is deferred, stashed on
+  // [TeardownGuard] for the *next* [powerSyncProvider] instance to await
+  // before opening a new database.
+  //
+  // The rearm callback wired above deliberately keeps its plain
+  // `ref.read(autoSyncEnabledProvider)`: with its subscription now cancelled
+  // synchronously it stands on exactly the same footing as these two
+  // listeners, and adding a second guard mechanism there would blur which one
+  // is actually load-bearing.
+  final disposeSession = sessionTeardown(
+    statusSub: statusSub,
+    gate: gate,
+    probe: probe,
+    disconnect: db.disconnect,
+    close: db.close,
+    disposeConnector: connector.dispose,
+    guard: _teardownGuard,
+  );
   ref.onDispose(() {
     autoSyncSub.close();
     membershipSub.close();
-    _teardownGuard.registerTeardown(() async {
-      await statusSub.cancel();
-      gate.dispose();
-      probe.dispose();
-      await db.disconnect();
-      await db.close();
-      connector.dispose();
-    });
+    disposeSession();
   });
   return PowerSyncSession(db: db, connector: connector, gate: gate);
 });
@@ -334,6 +369,54 @@ Future<void> connectIfAllowed({
   await connect();
 }
 
+/// Builds the `getAccessToken` closure [powerSyncProvider] hands to
+/// [BeekeepingitConnector] — a token read scoped to the *session* that built
+/// it (#675, FR-OF-1, NFR-MNT-1).
+///
+/// [BeekeepingitConnector] outlives the provider that constructed it: PowerSync
+/// can still call `fetchCredentials` during the fire-and-forget teardown
+/// ([TeardownGuard]), i.e. after the provider's `ref` is disposed. An
+/// unguarded `ref.read(...)` there throws — every `Ref` read/watch/listen
+/// funnels through Riverpod's own `_throwIfInvalidUsage()` — from inside the
+/// sync engine's internals, where nothing of ours is on the stack to handle it.
+/// [sessionAlive] (production: `Ref.mounted`, a plain field read that stays
+/// safe after disposal) is what turns that into a defined answer.
+///
+/// Three deliberate shapes, each of which a well-meaning refactor would undo:
+///
+/// - **Not `async`.** The liveness check and the read must land in the *same*
+///   synchronous turn, so no disposal can slip in between deciding "alive" and
+///   performing the `ref.read`. An `async` body that grew an `await` above the
+///   check would reintroduce exactly the window this exists to close.
+/// - **`null`, not an exception, once the session is gone.**
+///   [BeekeepingitConnector.fetchCredentials] already contracts `null` as "no
+///   credentials → stay disconnected" — the very answer a logged-out session
+///   gives — which is far better than letting an exception escape into
+///   PowerSync's internals. It does park PowerSync in its `CredentialsException`
+///   retry loop (powersync_core's `streaming_sync.dart`) for the few
+///   milliseconds until the teardown's `db.disconnect()` lands, which is the
+///   same benign state a membership-less session already sits in.
+/// - **Nothing is captured.** Not the token *value* — tokens expire, and
+///   `AuthController.accessToken()` is what refreshes one on demand, so a
+///   captured string would go stale mid-session. And not the `AuthController`
+///   *notifier instance* either: pinning one instance would keep calling
+///   `accessToken()` on a disposed notifier, whose `state` setter throws when a
+///   refresh tries to persist the new session — a worse failure than today's,
+///   and a genuinely different case from #622's `hasMembership`, where a plain
+///   `bool` frozen at its last value is the right answer for a session being
+///   torn down.
+///
+/// `@visibleForTesting` and free of PowerSync/Riverpod types — production only
+/// calls it from [powerSyncProvider] (same extraction rationale as
+/// [connectIfAllowed]).
+@visibleForTesting
+Future<String?> Function() sessionScopedAccessToken({
+  required bool Function() sessionAlive,
+  required Future<String?> Function() readAccessToken,
+}) {
+  return () => sessionAlive() ? readAccessToken() : Future<String?>.value(null);
+}
+
 /// Builds the callback [powerSyncProvider] hands to
 /// `ref.listen(hasOrganizationProvider, ...)` — the membership edge (#622) as
 /// one testable decision instead of a closure inlined in the provider body.
@@ -396,6 +479,75 @@ StreamSubscription<bool> rearmGateOnDisconnect({
     wasConnected = isConnected;
     onConnectedChanged(isConnected);
   });
+}
+
+/// Builds [powerSyncProvider]'s dispose callback (#675, FR-OF-1, NFR-MNT-1):
+/// everything the session owns *and that a stream or listener can reach* is
+/// detached in the synchronous half of `ref.onDispose`, so no such callback can
+/// fire against a disposed `ref`.
+///
+/// **What actually changed here is [gate] and [probe].** They used to be
+/// disposed inside the fire-and-forget async teardown, one microtask turn late,
+/// leaving a window in which a probe that had just passed could call
+/// `db.connect()` while [disconnect]/[close] were already in flight. Disposing
+/// them synchronously narrows that window: [SyncGate.dispose] retires an
+/// in-flight probe before it can reach `onGatePassed`. It does not *close* the
+/// window — a `db.connect()` already awaiting inside `_onGatePassed` has no
+/// cancellation, and `SyncGate.requestSync()` still calls it regardless of
+/// `_disposed`.
+///
+/// [statusSub] did **not** move, despite an earlier version of this comment
+/// claiming it as the fix. Its `cancel()` was already synchronous before this
+/// change and still is: [TeardownGuard.registerTeardown] invokes its callback
+/// immediately, and a Dart `async` body runs synchronously up to its first
+/// `await` — so in `await statusSub.cancel()` the *call* is evaluated in the
+/// same turn as the two `ref.listen` handles, and only the awaiting suspends.
+/// (Same semantic the comment in `local_data_purge.dart` relies on.) It is
+/// listed as a parameter here because this function owns the teardown order,
+/// not because its timing changed.
+///
+/// The invariant is scoped deliberately. It covers what streams and listeners
+/// can reach; it does **not** cover the connector's `getAccessToken`, which the
+/// sync engine owns and can invoke after disposal — that one is handled by
+/// [sessionScopedAccessToken] instead. Nor does it cover a disposal that lands
+/// while [powerSyncProvider]'s body is still awaiting its database open, in
+/// which case this callback is never registered at all (see #694).
+///
+/// Deliberately *not* fixed here (out of scope for #675): `await cancelled`
+/// preserves today's behaviour that the async remainder wedges if the cancel
+/// future never completes.
+///
+/// `@visibleForTesting` and free of PowerSync/Riverpod types — production only
+/// calls it from [powerSyncProvider] (same extraction rationale as
+/// [rearmGateOnDisconnect]).
+@visibleForTesting
+void Function() sessionTeardown({
+  required StreamSubscription<bool> statusSub,
+  required SyncGate gate,
+  required ConnectivityProbe probe,
+  required Future<void> Function() disconnect,
+  required Future<void> Function() close,
+  required void Function() disposeConnector,
+  required TeardownGuard guard,
+}) {
+  return () {
+    // The synchronous half. `cancel()` detaches the listener right here; the
+    // Future it returns is only awaited below, so nothing about the ordering
+    // of the async steps changes.
+    final cancelled = statusSub.cancel();
+    gate.dispose();
+    probe.dispose();
+
+    // The async remainder, fire-and-forget: Riverpod's `ref.onDispose` is a
+    // `void Function()` and never awaits a returned Future, so it is stashed
+    // for the *next* [powerSyncProvider] instance to await instead.
+    guard.registerTeardown(() async {
+      await cancelled;
+      await disconnect();
+      await close();
+      disposeConnector();
+    });
+  };
 }
 
 /// The open database plus the connector and gate it was wired with (see

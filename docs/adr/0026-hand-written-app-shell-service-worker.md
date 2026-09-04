@@ -89,6 +89,15 @@ before nginx ever sees them — so answering those from the cached `index.html` 
 `SERVER_ROUTED_PREFIXES` excludes them. Nothing in the app navigates to one today (every API call
 is `fetch`), but a downloaded export or a presigned-object redirect would.
 
+That list is a hand-maintained mirror of the gateway chart, and a route added there without it
+would fail **silently** — `helm lint` green, pod Ready, every `fetch` still correct.
+`scripts/check-service-worker-routes.sh` (#683, in `task lint`) therefore reads the array out of
+the worker and the `routes`/`powersyncRoute` out of
+`infra/helm/beekeepingit/charts/gateway/values.yaml` and fails when they disagree in either
+direction. It scopes itself to the **app host** (`authRoutes`/`adminRoutes` are other origins the
+worker's scope never covers) and skips the routes served by the `/` catch-all's own Service, which
+is what nginx answers and what the cached shell is a correct reply for.
+
 A response is also refused if it is not really the asset it was asked for: nginx's
 `try_files $uri $uri/ /index.html` answers **any** miss with 200 + the HTML document, so
 `response.ok` alone would let a moved asset precache the shell document under every asset path —
