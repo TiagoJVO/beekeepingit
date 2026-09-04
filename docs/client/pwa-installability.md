@@ -65,10 +65,42 @@ so the audit passing is necessary but not sufficient for the "real project app i
 That AC (#93, tracked in #233) is **met as of #233**: `client/web/icons/*` and `favicon.png`
 carry the Melargil bee mark — a white bee on the brand amber `#F9A825`, which is also the
 manifest's `theme_color`/`background_color`, so the icon, the splash screen and the browser
-omnibox agree rather than the icon being the odd one out. They are rasterised from the vector
-logo master, with the bee isolated from the wordmark by colour, so the set can be regenerated
-at any size without losing crispness. The maskable pair insets the bee to ~62% of the canvas so
-it survives Android's circle/squircle crop; the plain pair fills ~86%.
+omnibox agree rather than the icon being the odd one out.
+
+### App icons — provenance and regeneration
+
+The shipped PNGs are **generated, not drawn**. Everything needed to reproduce them is in the
+repo as of #682 — before that the PNGs were the only artefact, and the master plus the script
+that rasterised them lived outside it, so a new size meant redrawing by hand.
+
+| Where                                        | What                                                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client/tool/icons/melargil-logo-master.pdf` | The brand master — the Melargil wordmark with the amber bee, pure vector, transparent background. Committed with the owner's approval; it is brand artwork, not a reusable asset |
+| `client/tool/icons/generate-app-icons.mjs`   | The generator — rasterises the master and writes the five PNGs                                                                                                                   |
+| `client/tool/icons/README.md`                | Full rationale for each geometry constant and the pdf.js/Node traps                                                                                                              |
+
+```sh
+task web:icons         # regenerate client/web/icons/* + client/web/favicon.png
+task web:icons-check   # assert the committed PNGs are byte-identical to the generator's output
+```
+
+The committed PNGs are the **byte-for-byte** output of that script with its two exact-pinned
+dependencies (`pdfjs-dist` 3.11.174, `@napi-rs/canvas` 1.0.8) — `task web:icons-check` asserts
+it. That check is deliberately not in `task lint`/`ci`: Skia rasterisation is only confirmed
+byte-stable on the platform that produced the set (#687 tracks confirming it on CI's Linux).
+
+The geometry, in short — the master is the whole logo, but the icon is the bee alone, so the
+bee is isolated by colour rather than by hand-editing the vector:
+
+- the page renders at `scale: 24` (5323 × 2409), far above any output size, so the downscale
+  to 512/192/32 is a clean area-average;
+- the bee is the only **amber** artwork (the wordmark is near-black), so an amber colour probe
+  gives its raw bounding box — 845 × 723 — which is then padded by 2% of its longest side, to 879 × 757;
+- that pad reaches into the wordmark, so pixels dark on all three channels are dropped from the
+  crop; the bee anti-aliases amber-to-transparent and never goes dark, so its edge survives;
+- the silhouette is recoloured flat white and centred on an amber tile: the **maskable** pair
+  fills **62%** of the canvas so it survives Android's circle/squircle crop, the plain pair
+  fills **86%**, and the 32 px favicon **92%** because it has no pixels to spare.
 
 **The in-app mark is the same file (#686).** The login screen used to draw a Material honeycomb
 glyph on a honey tile, so an installed launch put a bee in the title bar and a honeycomb on the
@@ -123,6 +155,71 @@ Verified live by `client/e2e/tests/cache-headers.spec.ts` through the gateway, f
 nginx container, in the `helm-e2e` job. That spec runs with service workers **blocked**
 (`playwright.config.ts`) so it keeps measuring what nginx put on the wire rather than what the
 worker stored.
+
+## 2b. Compression (as built)
+
+The same container compresses the bundle on the fly (#670, `NFR-PER-1`, `FR-OF-1`, `C-2`).
+Before this, nothing in the serving path did: `nginx.conf` never enabled `gzip`, the
+`nginx:1.31-alpine` base ships it commented out in its own config, and Traefik has no compress
+middleware — so the two biggest files went over the wire whole on every cold load, and again after
+every release invalidated the shell.
+
+| Asset                               |       Before |       After | Saved |
+| ----------------------------------- | -----------: | ----------: | ----: |
+| `main.dart.js`                      |  4,441,974 B | 1,458,316 B | 67.2% |
+| `canvaskit/chromium/canvaskit.wasm` |  5,760,502 B | 2,401,322 B | 58.3% |
+| Both, as a cold load pays them      | 10,202,476 B | 3,859,638 B | 62.2% |
+
+The directives are `gzip on; gzip_proxied any; gzip_vary on; gzip_comp_level 2;
+gzip_min_length 256;` plus a `gzip_types` allow-list, all at **server** level. `text/html` is
+absent from that list deliberately — nginx always compresses it, and listing it logs a
+duplicate-MIME warning.
+
+**Level 2 is a CPU decision, not a compression one.** The `pwa` Deployment is one replica, no HPA,
+100m CPU in dev and staging, with its liveness/readiness probes in the same cgroup — and gzip ends
+`sendfile` for these responses, so this is the pod's first real CPU load. It arrives all at once,
+because this file's bytes feed `BUILD_REVISION` and a release therefore re-primes every installed
+shell simultaneously. Level 2 captures **94%** of the bytes level 9 could (level 9 would take
+`main.dart.js` to 1,248,305 B and the `.wasm` to 2,185,812 B), for a small fraction of the work.
+Raising it is a one-line change the day that pod is sized for it — **#693** tracks measuring it live.
+
+One knock-on worth knowing: nginx weakens the `ETag` to `W/"…"` on every compressed response and
+drops `Content-Length`/`Accept-Ranges`. The 304s §2 relies on still happen (`If-None-Match` compares
+weakly), and so does the service worker's cheap re-precache, but the strong ETag §2 names is no
+longer what they rest on.
+
+**On-the-fly, not `gzip_static`.** Pre-compressed `.gz` twins are usually the better trade for
+files that are byte-identical per request, and they are rejected here for a specific reason:
+`client/tool/build_app_shell_cache.dart` walks every file under `build/web` and precaches each one,
+so a `.gz` beside each asset would make every install download the shell twice. Generating them
+inside `client/Dockerfile` would dodge that but break the invariant that image and
+[ADR-0026](../adr/0026-hand-written-app-shell-service-worker.md) both state — it only COPYs the
+prebuilt artifact — and would leave a silent ordering dependency in its place. The runtime cost is
+bounded: `no-cache` turns repeat loads into bodiless 304s, and the service worker precaches once
+per release. No Brotli — `ngx_brotli` is not in the official image, and #670 scoped Brotli to
+whatever the base image supports without a custom build.
+
+**What is still uncompressed, and why.** The allow-list _is_ the exclusion mechanism; there is no
+negative directive. `image/png` and `font/woff2` are already-compressed formats and are simply
+never named. `application/octet-stream` is unnamed for a sharper reason — it is nginx's
+`default_type`, so listing it would sweep in every unrecognised file, PNGs included. The cost is
+that the bundled font faces (461 KB, precached, ~46% compressible) and `assets/NOTICES` (1.45 MB,
+runtime-tier, 89% compressible) still transfer whole, because the stock `mime.types` has no
+`.ttf`/`.otf` entry and `NOTICES` has no extension at all. That is tracked on **#688**; the fix is
+a MIME mapping, and a `types {}` block inside this `server {}` would _replace_ the inherited map
+rather than extend it.
+
+**This change necessarily re-primes every installed shell**, because `nginx.conf`'s bytes feed
+`BUILD_REVISION` (§3). That is required rather than incidental: the worker stores responses as
+received, so installed clients would otherwise keep serving themselves uncompressed-era responses
+indefinitely.
+
+Verified live by `client/e2e/tests/compression.spec.ts` in the same `helm-e2e` job — protocol-level
+`Content-Encoding` from `page.on("response")`, plus `PerformanceResourceTiming`'s
+`encodedBodySize`/`decodedBodySize` so the saving is measured rather than inferred, and two
+negative controls (a PNG and a `.ttf`) for the exclusions. What no live probe can see —
+`text/html` and `application/octet-stream` staying **out** of `gzip_types` — is pinned off-browser
+by `client/test/nginx_compression_test.dart`.
 
 ## 3. App-shell service worker (as built)
 

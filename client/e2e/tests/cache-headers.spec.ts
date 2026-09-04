@@ -1,4 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import {
+  contains,
+  expectContentType,
+  gotoSameOriginDocument,
+  notContains,
+  type ContentTypeExpectation,
+} from "./helpers";
 
 /**
  * Cache headers for the client bundle (#621, FR-PL-1, D-10).
@@ -42,15 +49,12 @@ import { test, expect, type Page } from "@playwright/test";
  * on this request.
  */
 
-// What a path's `Content-Type` must look like. `not-contains` is for responses
-// whose exact type we deliberately don't pin — see AssetManifest.bin below.
-type ContentTypeExpectation =
-  { kind: "contains"; value: string } | { kind: "not-contains"; value: string };
-
+// What a path's `Content-Type` must look like — `contains`/`notContains` and
+// the assertion itself live in helpers.ts, shared with compression.spec.ts
+// (#670), which needs the identical check for the identical reason.
+// `not-contains` is for responses whose exact type we deliberately don't pin —
+// see AssetManifest.bin below.
 type BundleEntry = { path: string; contentType: ContentTypeExpectation };
-
-const contains = (value: string): ContentTypeExpectation => ({ kind: "contains", value });
-const notContains = (value: string): ContentTypeExpectation => ({ kind: "not-contains", value });
 
 // One representative path per asset class the nginx container serves, each
 // carrying what its Content-Type must look like.
@@ -115,33 +119,10 @@ type Probe = {
   embedderPolicy: string | null;
 };
 
-// This spec needs ONE thing from the navigation: a same-origin document to
-// fetch from. It does NOT need Flutter to boot — so it deliberately does not
-// use helpers.ts's gotoAppRoot, which waits up to 120s for the glass pane. With
-// that helper, any unrelated app-boot regression (PowerSync's worker, CanvasKit,
-// cross-origin isolation) would report as a *cache-headers* failure and send
-// the reader to the wrong file.
-//
-// The 5xx tolerance is kept, and is not optional: on a freshly-booted k3d
-// cluster the gateway really does answer Traefik's own 502 page for a short
-// window, and we must not measure THAT origin's headers.
-async function gotoSameOriginDocument(page: Page) {
-  const deadline = Date.now() + 60_000;
-  let lastStatus: number | null = null;
-  for (;;) {
-    const resp = await page.goto("/", { waitUntil: "domcontentloaded" }).catch(() => null);
-    lastStatus = resp?.status() ?? lastStatus;
-    if (resp != null && resp.status() < 500) return;
-    if (Date.now() > deadline) {
-      throw new Error(
-        `the app origin never answered below 5xx (last HTTP status ${
-          lastStatus ?? "unknown"
-        }) — the gateway/PWA route is not ready, so no header here would be the PWA container's`,
-      );
-    }
-    await page.waitForTimeout(3_000);
-  }
-}
+// The navigation this spec needs — a same-origin document to fetch from, with
+// no wait on Flutter booting — is `helpers.ts`'s `gotoSameOriginDocument`,
+// shared with compression.spec.ts (#670) since both measure what nginx put on
+// the wire. Its rationale lives there.
 
 // Deliberately ONE test and no login: it costs a single page load plus ten
 // same-origin fetches, which keeps it near-free inside the helm-e2e job's
@@ -190,24 +171,9 @@ test("the served bundle revalidates (Cache-Control: no-cache) and keeps its secu
 
     // The status above is necessary but NOT sufficient (see BUNDLE_PATHS): the
     // content-type is what proves the path still resolves to the asset it names
-    // rather than to the SPA fallback's index.html.
-    const contentType = (probe.contentType ?? "").toLowerCase();
-    const seen = probe.contentType ?? "no Content-Type at all";
-    if (entry.contentType.kind === "contains") {
-      expect(
-        contentType,
-        `${entry.path} must be served as "${entry.contentType.value}" (got ${seen}) — ` +
-          `either the bundle no longer emits this path (try_files then answers 200 with ` +
-          `index.html, making the Cache-Control assertion above vacuous) or its type changed`,
-      ).toContain(entry.contentType.value);
-    } else {
-      expect(
-        contentType,
-        `${entry.path} must NOT be served as "${entry.contentType.value}" (got ${seen}) — ` +
-          `that is nginx's try_files fallback answering with index.html, i.e. the bundle no ` +
-          `longer emits this path and the Cache-Control assertion above covers nothing`,
-      ).not.toContain(entry.contentType.value);
-    }
+    // rather than to the SPA fallback's index.html — in which case the
+    // Cache-Control assertion below would be measuring the document, ten times.
+    expectContentType(entry.path, entry.contentType, probe.contentType);
 
     // `toContain`, not equality: the point is that the response is never reused
     // without revalidation. A future policy may legitimately add a companion
