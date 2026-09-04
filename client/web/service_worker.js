@@ -110,6 +110,14 @@ const SHELL_DOCUMENT = "/index.html";
 // app navigates to one today — every API call is `fetch`, which never reaches
 // the navigation branch — but a downloaded export, a presigned-object redirect
 // or a `.well-known` endpoint would, and would silently receive the app instead.
+//
+// This list is a hand-maintained mirror of that chart, so
+// `scripts/check-service-worker-routes.sh` (in `task lint`, #683) reads the array
+// below and the chart's app-host `routes`/`powersyncRoute` and fails when they
+// disagree in either direction. Adding a gateway route on the app host therefore
+// cannot ship without this line moving with it. An exclusion the chart cannot
+// declare — a cert-manager ACME solver Ingress, say — goes in that script's
+// NOT_CHART_ROUTED list with a note saying why.
 const SERVER_ROUTED_PREFIXES = ["/v1/", "/sync-stream"];
 
 // The message `client/web/sw_register.js` posts. See the handler.

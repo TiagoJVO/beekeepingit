@@ -246,7 +246,9 @@ the engine loads before any worker controls the first visit). Leaves APIs, the P
 is content-hashed (#678), so `tool/build_app_shell_cache.dart` injects a per-file sha-256 — plus a
 digest of `nginx.conf`, since cached responses keep their headers — and a `BUILD_REVISION` into
 the worker after **every** `flutter build web`; that is the release-invalidation key
-(`scripts/check-app-shell-precache-wired.sh` guards the wiring).
+(`scripts/check-app-shell-precache-wired.sh` guards the wiring). The `/v1/*` + `/sync-stream`
+exclusion is a hand-maintained mirror of the gateway chart's app-host routes, guarded by
+`scripts/check-service-worker-routes.sh` (#683).
 
 `nginx.conf` also decides what the bundle costs on the wire: `Cache-Control: no-cache` (#621) plus,
 since #670, on-the-fly `gzip` — `main.dart.js` and the CanvasKit `.wasm` transfer at 33% / 42% of
