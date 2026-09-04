@@ -57,8 +57,10 @@ flutter:
 
   # Melargil brand typography (FR-UX-1, FR-AX-1, D-18, #243), bundled as
   # assets — offline-first, NO runtime font fetching (no google_fonts, no CDN).
-  # Static per-weight TTFs from Google Fonts (OFL 1.1; license file lives
-  # beside each family under fonts/<Family>/OFL.txt). Archivo is the app-wide
+  # Static per-weight TTFs from Google Fonts (the two BRAND families are OFL
+  # 1.1, with the license file beside each under fonts/<Family>/OFL.txt; the
+  # Roboto below is not a brand face and carries its own — see its block).
+  # Archivo is the app-wide
   # default (AppTheme.bodyFontFamily); Playfair Display is applied to
   # display/headline/title styles (AppTheme.displayFontFamily). See
   # docs/design/prototype.md §Type and client/lib/theming/app_theme.dart.
@@ -79,3 +81,33 @@ flutter:
           weight: 600
         - asset: fonts/PlayfairDisplay/PlayfairDisplay-Bold.ttf
           weight: 700
+    # Roboto is NOT a brand font and no style references it. It is here purely
+    # to be CanvasKit's default glyph fallback (NFR-CMP, FR-OF-1, C-2, #620).
+    #
+    # The web engine hard-requires a family literally named `Roboto`: if
+    # FontManifest.json has none, it downloads one on EVERY cold load, from
+    # `${fontFallbackBaseUrl}roboto/v32/…woff2` — i.e. fonts.gstatic.com by
+    # default (flutter_web_sdk .../engine/canvaskit/fonts.dart,
+    # `if (!loadedRoboto)`). `--no-web-resources-cdn` does not suppress that;
+    # it only localises the CanvasKit engine payload. That request put every
+    # user's IP address in front of Google on a screen the app must also paint
+    # with no signal at all. Declaring the family here makes `loadedRoboto`
+    # true, so the branch never runs — and it is what keeps the engine with a
+    # default family at all now that web/flutter_bootstrap.js has pinned that
+    # base URL to our own origin.
+    #
+    # It also widens glyph coverage: Archivo and Playfair Display map ~230
+    # code points each (Latin-1 + a little punctuation), Roboto maps ~896 —
+    # Latin Extended, Greek, Cyrillic and Vietnamese — so free text outside
+    # pt-PT/en-GB (D-34) still renders instead of falling through to a
+    # network-only Noto fallback.
+    #
+    # Apache-2.0, not OFL like the two brand families above: this is the exact
+    # binary the Flutter SDK itself ships (bin/cache/artifacts/material_fonts/
+    # roboto-regular.ttf, sha256
+    # 79e851404657dac2106b3d22ad256d47824a9a5765458edb72c9102a45816d95), so
+    # fonts/Roboto/LICENSE.txt is that build's licence, copied beside it.
+    - family: Roboto
+      fonts:
+        - asset: fonts/Roboto/Roboto-Regular.ttf
+          weight: 400

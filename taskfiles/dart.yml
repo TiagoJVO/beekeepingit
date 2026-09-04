@@ -183,10 +183,13 @@ tasks:
           d=$(dirname "$p")
           if grep -q 'sdk: *flutter' "$p"; then
             echo "› [dart] build $d (flutter build web)"
-            # --no-web-resources-cdn: bundle CanvasKit/fonts locally instead of fetching
-            # from Google's CDN at runtime — required for an offline-first PWA (the app
-            # must not depend on external network reachability just to paint its first
-            # frame), and avoids a blank page wherever that CDN is unreachable/blocked.
+            # --no-web-resources-cdn: bundle the CanvasKit engine payload locally instead
+            # of fetching it from Google's CDN at runtime — required for an offline-first
+            # PWA (the app must not depend on external network reachability just to paint
+            # its first frame), and avoids a blank page wherever that CDN is
+            # unreachable/blocked. It does NOT cover the engine's own font fetches from
+            # fonts.gstatic.com; those are closed in client/pubspec.yaml and
+            # client/web/flutter_bootstrap.js (#620).
             (cd "$d" && flutter build web --no-web-resources-cdn)
           else
             echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
