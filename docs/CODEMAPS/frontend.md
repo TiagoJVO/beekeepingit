@@ -29,6 +29,12 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
   `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
   + secondary "New todo" routing to /todos/new (#389), no pre-filled apiary)
+  NOTE (#658, D-35): `AppShell.tabs` is the SINGLE source for both the NavigationBar
+  destinations and the `tabs[currentIndex]` active-tab lookup, so **tab position IS branch
+  position** — the branch order below must match that list exactly. Tab order is
+  apiaries · activities · home · journeys · todos, Home at the centre in the slot the
+  retired Assistant placeholder held. Home and Activities have no `_fabConfigByTab` entry,
+  so the shell renders no FAB on them.
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
@@ -61,9 +67,19 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │                                     apiary in the full form's own picker
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
+  ├ /home                  HomeScreen             features/home       ◄ live (#658, D-35/D-29
+  │                        amended; THE LANDING SCREEN — initialLocation + the post-login and
+  │                        post-onboarding redirect target. Summary of what needs attention:
+  │                        tasks overdue/due-soon, open journeys, apiaries not visited in
+  │                        `apiaryVisitRecencyDays` (30). One of three exhaustive states —
+  │                        firstRun (one EmptyState + one 56px action → /apiaries/new),
+  │                        allClear, needsAttention. Rows tap to the record; "view all" taps
+  │                        to the filtered list. Reads NO clock: every badge rides on the
+  │                        summary's single `now`. No FAB, no own Scaffold)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
-  │   │                    list — date-range/activity-type filters (combinable), plan-vs-done
-  │   │                    progress badge per row, tap row → detail (#48))
+  │   │                    list — date-range/activity-type/status filters (combinable), plan-vs-
+  │   │                    done progress badge per row, tap row → detail (#48); `?status=open`
+  │   │                    seeds the status filter from the route (#658))
   │   ├ new                JourneyFormScreen      features/journeys (#45; create)
   │   └ :id                JourneyDetailScreen    features/journeys (#48, FR-JO-3; apiaries
   │       │                visited vs. planned by stored journey_id (D-21), per-apiary
@@ -73,23 +89,27 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │       │                alças/colmeia; edit reachable via its own FAB)
   │       └ edit                        JourneyFormScreen features/journeys (#45; edit/close/
   │                                     delete, isEdit)
-  ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
-  │   │                    todo list — status/priority/due-date filters (combinable), sortable
-  │   │                    by due date/priority/status, distinguishes open/overdue/done; own
-  │   │                    FAB (#52/#389) routes to /todos/new, no pre-filled apiary;
-  │   │                    row tap → detail (#293))
-  │   ├ new                TodoFormScreen         features/todos (#293/#389; the ONLY create
-  │   │                    entry point now — every FAB routes here, `?apiaryId=` optionally
-  │   │                    pre-selects the apiary picker)
-  │   └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field
-  │       │                read-only incl. resolved assignee/apiary names — todo_display.dart's
-  │       │                `todoAssigneeLabel`/`todoApiaryLabel`; complete/reopen toggle in place;
-  │       │                edit reachable via its own FAB)
-  │       └ edit                        TodoFormScreen features/todos (#293, FR-TD-1; full
-  │                                     create/edit form — title/description/due date/priority/
-  │                                     assignee (TodoAssigneePickerField)/apiary
-  │                                     (TodoApiaryPickerField); complete/reopen + delete, isEdit)
-  └ /assistant             ComingSoonScreen (placeholder, M8)
+  └ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
+      │                    todo list — status/priority/due-date filters (combinable), sortable
+      │                    by due date/priority/status, distinguishes open/overdue/done; own
+      │                    FAB (#52/#389) routes to /todos/new, no pre-filled apiary;
+      │                    row tap → detail (#293); `?status=`/`?due=` seed the filters from
+      │                    the route (#658) — seeded INSIDE the mounted screen, never by
+      │                    writing the autoDispose filter providers before context.go)
+      ├ new                TodoFormScreen         features/todos (#293/#389; the ONLY create
+      │                    entry point now — every FAB routes here, `?apiaryId=` optionally
+      │                    pre-selects the apiary picker)
+      └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field
+          │                read-only incl. resolved assignee/apiary names — todo_display.dart's
+          │                `todoAssigneeLabel`/`todoApiaryLabel`; complete/reopen toggle in place;
+          │                edit reachable via its own FAB)
+          └ edit                        TodoFormScreen features/todos (#293, FR-TD-1; full
+                                        create/edit form — title/description/due date/priority/
+                                        assignee (TodoAssigneePickerField)/apiary
+                                        (TodoApiaryPickerField); complete/reopen + delete, isEdit)
+
+(The Assistant tab was retired by #658/D-35 — the AI assistant itself stays an M8 roadmap
+item, it just no longer holds a nav slot behind a "coming soon" placeholder.)
 ```
 
 ## Layer flow
@@ -105,33 +125,49 @@ Screen (ConsumerWidget)
 Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesByQuery`,
 `sortApiariesByDistance` in apiaries_repository.dart).
 
+**Single-definition domain rules** — each of these is the ONE answer to its question, consumed by
+every surface rather than re-derived per screen (#658 lifted the first out of a private
+notification-engine helper for exactly this reason):
+
+| Rule                        | Lives in                                                                                                      | Consumers                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| overdue                     | `features/todos/todo_filters.dart` `isOverdue`                                                                | todos list, notification engine, home |
+| due soon (per-priority)     | `features/todos/todo_due.dart` `todoDueBucket` / `dueSoonWindowDays`                                          | notification engine, home             |
+| apiary not visited recently | `features/apiaries/apiary_visit_recency.dart` `apiariesNotVisitedSince` (`apiaryVisitRecencyDays` = 30, D-35) | home                                  |
+
+`HomeSummary` carries the decided bucket/day-count on each preview item, so a widget never
+re-reads the clock — a second `DateTime.now()` can straddle midnight and badge a row differently
+from the list it sits in.
+
 ## State management (Riverpod providers)
 
-| Provider                                   | Where                                | Yields                                                                                                                                                                                               |
-| ------------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `authControllerProvider`                   | core/auth/auth_controller            | auth state, access token (OIDC)                                                                                                                                                                      |
-| `isAuthenticatedProvider`                  | core/auth                            | bool (gates router)                                                                                                                                                                                  |
-| `profileProvider` / `organizationProvider` | features/profile, /organization      | onboarding gates                                                                                                                                                                                     |
-| `powerSyncProvider`                        | core/sync/powersync_service          | `PowerSyncSession` (db+connector+gate)                                                                                                                                                               |
-| `localStoreProvider`                       | core/sync/powersync_service          | `LocalStoreEngine`                                                                                                                                                                                   |
-| `apiariesRepositoryProvider`               | features/apiaries                    | `ApiariesRepository`                                                                                                                                                                                 |
-| `apiariesStreamProvider`                   | features/apiaries                    | live `List<Apiary>` from SQLite                                                                                                                                                                      |
-| `apiaryCountersProvider` (family)          | features/apiaries                    | live counters per apiary (#256)                                                                                                                                                                      |
-| `activitiesRepositoryProvider`             | features/activities                  | `ActivitiesRepository`                                                                                                                                                                               |
-| `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                                                                                                                                                 |
-| `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter)                                                                                                                             |
-| `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                                                                                                                                                  |
-| `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                                                                                                                                                           |
-| `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                                                                                                                                             |
-| `journeyMatchesProvider` (family)          | features/journeys/journey_picker     | live journeys matching one (apiary, activity type) pair (#46, D-21)                                                                                                                                  |
-| `journeyByIdProvider` (family)             | features/journeys                    | live single `Journey` by id, no `apiaryIds` (#48; the detail screen's read path)                                                                                                                     |
-| `activitiesByJourneyProvider` (family)     | features/activities                  | live activities for one journey, by stored `journey_id` (#48, D-21)                                                                                                                                  |
-| `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match) |
-| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50)                                                                                                                                                                              |
-| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                                                                                                                                         |
-| `todosStreamProvider`                      | features/todos                       | live org-wide todos, unfiltered (#53, org-scoped incl. defense-in-depth filter)                                                                                                                      |
-| `todosViewModelProvider`                   | features/todos/todo_filters          | filtered + sorted list, empty-vs-no-results state, `today` used for overdue (#53)                                                                                                                    |
-| `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                  |
+| Provider                                   | Where                                | Yields                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authControllerProvider`                   | core/auth/auth_controller            | auth state, access token (OIDC)                                                                                                                                                                                                                                                                                                                                                                |
+| `isAuthenticatedProvider`                  | core/auth                            | bool (gates router)                                                                                                                                                                                                                                                                                                                                                                            |
+| `profileProvider` / `organizationProvider` | features/profile, /organization      | onboarding gates                                                                                                                                                                                                                                                                                                                                                                               |
+| `powerSyncProvider`                        | core/sync/powersync_service          | `PowerSyncSession` (db+connector+gate)                                                                                                                                                                                                                                                                                                                                                         |
+| `localStoreProvider`                       | core/sync/powersync_service          | `LocalStoreEngine`                                                                                                                                                                                                                                                                                                                                                                             |
+| `apiariesRepositoryProvider`               | features/apiaries                    | `ApiariesRepository`                                                                                                                                                                                                                                                                                                                                                                           |
+| `apiariesStreamProvider`                   | features/apiaries                    | live `List<Apiary>` from SQLite (org-scoped incl. defense-in-depth filter, #658)                                                                                                                                                                                                                                                                                                               |
+| `apiaryCountersProvider` (family)          | features/apiaries                    | live counters per apiary (#256)                                                                                                                                                                                                                                                                                                                                                                |
+| `activitiesRepositoryProvider`             | features/activities                  | `ActivitiesRepository`                                                                                                                                                                                                                                                                                                                                                                         |
+| `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                                                                                                                                                                                                                                                                                                                                           |
+| `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter)                                                                                                                                                                                                                                                                                                                       |
+| `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                                                                                                                                                                                                                                                                                                                                            |
+| `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                                                                                                                                                                                                                                                                                                                                                     |
+| `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                                                                                                                                                                                                                                                                                                                                       |
+| `journeyMatchesProvider` (family)          | features/journeys/journey_picker     | live journeys matching one (apiary, activity type) pair (#46, D-21)                                                                                                                                                                                                                                                                                                                            |
+| `journeyByIdProvider` (family)             | features/journeys                    | live single `Journey` by id, no `apiaryIds` (#48; the detail screen's read path)                                                                                                                                                                                                                                                                                                               |
+| `activitiesByJourneyProvider` (family)     | features/activities                  | live activities for one journey, by stored `journey_id` (#48, D-21)                                                                                                                                                                                                                                                                                                                            |
+| `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match)                                                                                                                                                                                           |
+| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50)                                                                                                                                                                                                                                                                                                                                                                        |
+| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                                                                                                                                                                                                                                                                                                                                   |
+| `todosStreamProvider`                      | features/todos                       | live org-wide todos, unfiltered (#53, org-scoped incl. defense-in-depth filter)                                                                                                                                                                                                                                                                                                                |
+| `todosViewModelProvider`                   | features/todos/todo_filters          | filtered + sorted list, empty-vs-no-results state, `today` used for overdue (#53)                                                                                                                                                                                                                                                                                                              |
+| `homeSummaryProvider`                      | features/home/home_providers         | live `HomeSummary` for the landing screen (#658, D-35) — composes todos/journeys/apiaries/activities streams, reading each as `.value ?? const []` **without awaiting** (the `journeysViewModelProvider` pattern) so Home paints immediately and a cold or errored stream degrades to an empty section; org scoping is inherited, it adds no query of its own; `now` computed once per rebuild |
+| `journeyStatusFilterProvider`              | features/journeys/journey_filters    | open/closed/all status filter for the journeys list, seeded from `?status=` (#658)                                                                                                                                                                                                                                                                                                             |
+| `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Sync flow (client) — core/sync/
 

@@ -176,7 +176,7 @@ void main() {
 
     await repo.delete(id);
 
-    expect(await repo.getById(id), isNull);
+    expect(await repo.getById(id, organizationId: 'org-a'), isNull);
     final ops = await drain();
     expect(ops.single.op, UpdateType.delete);
     expect(ops.single.id, id);

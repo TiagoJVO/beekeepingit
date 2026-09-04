@@ -800,8 +800,15 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   field-testing feedback (#427).
 - **Rationale:** the daily field workflow starts from "what do I need to do today", not the
   apiary list.
+- **Amended (product owner, 2026-09-03, #658):** the landing screen is **no longer the Tasks
+  list** — it is a **Home summary** of what needs attention (overdue/due-soon tasks, open
+  journeys, apiaries not visited recently). The **rationale above is unchanged and is the reason
+  for the amendment**: a raw task list answers "what do I need to do today" for one tab only, and
+  answers nothing at all for a new organization. The rest of this decision **still stands** — when
+  the Tasks list _is_ opened it still defaults to open tasks sorted by priority. The tab set
+  itself changed with the amendment; that is recorded in [D-35](#d-35--bottom-nav-tab-set-home-replaces-the-assistant-placeholder-at-the-centre).
 - No prior decision governed the app's initial screen; this records it. **Touches:**
-  `area/todos`, #427, EPIC-17 (#430).
+  `area/todos`, #427, EPIC-17 (#430), #658, D-35.
 
 ---
 
@@ -950,6 +957,36 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Touches:** `NFR-I18N-1`, Context `C-2`, `FR-ST-1`, `#656`, `#623`/`#624` (whose
   locale-aware input and display now run under the region locales), `#340`, ADR-0003 (the
   identity contract's `locale` field), `client/lib/core/l10n/`, `services/identity`.
+
+---
+
+## D-35 — Bottom-nav tab set: Home replaces the Assistant placeholder at the centre
+
+- **Decision (product owner, 2026-09-03):** the bottom navigation is **apiaries · activities ·
+  home · journeys · todos**, with **Home at the centre**. Home is the app's landing screen and the
+  post-login and post-onboarding redirect target (amending [D-29](#d-29--default-landing-screen-tasks-tarefas-open-tasks-sorted-by-priority)).
+  Still five tabs — the **Assistant tab is removed**, not added to.
+- **Why Assistant goes:** the tab renders a "coming soon" placeholder; the feature itself is M8
+  (`FR-AI-*`, D-8/D-11). A tab that leads nowhere costs a permanent fifth of the field-app's
+  primary navigation. **The AI assistant remains a roadmap item** — this decision removes the
+  _tab_, not the feature; it returns when M8 ships.
+- **What Home shows:** tasks **overdue or due soon**, **open journeys**, and **apiaries not
+  visited recently** — each a count plus the most relevant few, every item tapping through to the
+  record or to that list screen filtered to the same set. Plus a genuine **first-run** state (one
+  action: add your first apiary) and an **all-clear** state, rather than several empty sections.
+- **Explicitly out of scope for the summary:** **sync state** (already in the app-shell header)
+  and **pending stock declarations** — [D-19](#d-19--pteu-beekeeping--honey-traceability-obligations-scoped-hipaa-dropped)
+  makes the declaration log a record only, deriving no deadlines, so "pending" has no definition
+  to surface. This resolves the "what else belongs on it" note in #658 rather than leaving it open.
+- **"Not visited recently" = 30 days** with no recorded activity, from the most recent activity
+  per apiary; apiaries never visited are included and sort first. No prior requirement fixed this
+  number — it is this decision's deliberate default, owned as one constant in the client's
+  apiaries feature so other surfaces reuse it rather than re-deriving it.
+- **No FAB on Home:** FR-UX-2's quick-add is contextual to the active area, and Home's area is
+  every area — no single create action is the right one.
+- **Supersedes:** #658's own "this does not change the bottom navigation" note, overridden by the
+  product owner on 2026-09-03. **Touches:** FR-UX-1, FR-UX-2, FR-TD-1, FR-JO-1, FR-AP-2, FR-AX-1,
+  D-18, D-19, D-29, #658, EPIC-20 (#618).
 
 ---
 

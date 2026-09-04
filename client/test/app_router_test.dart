@@ -39,6 +39,16 @@ class _FakeLocalPrefs implements LocalPrefs {
   void remove(String key) => _store.remove(key);
 }
 
+Profile _profileFixture({required bool complete}) => Profile(
+  id: 'u1',
+  name: complete ? 'Ana' : '',
+  email: complete ? 'ana@example.com' : '',
+  locale: 'en',
+  profileComplete: complete,
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
+
 /// A no-op controller that reports a fixed completeness, so the router's
 /// redirect logic can be exercised without a real ApiClient/network call.
 class _FixedProfileController extends ProfileController {
@@ -46,16 +56,37 @@ class _FixedProfileController extends ProfileController {
   final bool _complete;
 
   @override
-  Future<Profile> build() async => Profile(
-    id: 'u1',
-    name: _complete ? 'Ana' : '',
-    email: _complete ? 'ana@example.com' : '',
-    locale: 'en',
-    profileComplete: _complete,
-    createdAt: DateTime.utc(2026, 1, 1),
-    updatedAt: DateTime.utc(2026, 1, 1),
-  );
+  Future<Profile> build() async => _profileFixture(complete: _complete);
 }
+
+/// Starts INCOMPLETE and completes on `submit`, so the profile screen's own
+/// post-save hand-off (`context.go`, profile_screen.dart) can be driven
+/// end-to-end against the REAL router — the only place that decides where a
+/// just-onboarded user lands. `submit` is stubbed rather than delegated to
+/// the base controller so no ApiClient/network is involved.
+class _CompletingProfileController extends ProfileController {
+  bool _complete = false;
+
+  @override
+  Future<Profile> build() async => _profileFixture(complete: _complete);
+
+  @override
+  Future<void> submit({String? name, String? email, String? locale}) async {
+    _complete = true;
+    state = AsyncData(_profileFixture(complete: true));
+  }
+}
+
+Organization _organizationFixture() => Organization(
+  id: 'org-1',
+  name: 'Dev Apiary Co.',
+  address: '',
+  createdBy: 'u1',
+  role:
+      'admin', // not under test here — this fixture only exercises has-org routing
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
 
 /// A no-op controller that reports a fixed organization (or none), so the
 /// router's org-completion gate (#26) can be exercised without a real
@@ -65,19 +96,35 @@ class _FixedOrganizationController extends OrganizationController {
   final bool _hasOrganization;
 
   @override
-  Future<Organization?> build() async {
-    if (!_hasOrganization) return null;
-    return Organization(
-      id: 'org-1',
-      name: 'Dev Apiary Co.',
-      address: '',
-      createdBy: 'u1',
-      role:
-          'admin', // not under test here — this fixture only exercises has-org routing
-      createdAt: DateTime.utc(2026, 1, 1),
-      updatedAt: DateTime.utc(2026, 1, 1),
-    );
+  Future<Organization?> build() async =>
+      _hasOrganization ? _organizationFixture() : null;
+}
+
+/// Starts with NO organization and creates one on `submit` — the second half
+/// of the onboarding hand-off (organization_screen.dart's own `context.go`
+/// after a successful create). Same rationale as
+/// [_CompletingProfileController]: exercise the real router's landing
+/// decision without a real ApiClient.
+class _CreatingOrganizationController extends OrganizationController {
+  Organization? _organization;
+
+  @override
+  Future<Organization?> build() async => _organization;
+
+  @override
+  Future<void> submit({required String name, String? address}) async {
+    _organization = _organizationFixture();
+    state = AsyncData(_organization);
   }
+}
+
+/// An always-empty members controller so `/organization/members` renders its
+/// real (empty) list instead of spinning on a never-resolving fetch — the
+/// members screen is only visited here to prove where its BACK button lands.
+class _EmptyMembersController extends MembersController {
+  @override
+  Future<MembersState> build() async =>
+      const MembersState(members: [], invitations: []);
 }
 
 /// A no-op [LocalStoreEngine] for [_FakeJourneysRepository] (#391's
@@ -125,23 +172,40 @@ const _routeTestJourney = Journey(
 GoRouter _routerOf(WidgetTester tester) =>
     GoRouter.of(tester.element(find.byType(Navigator).first));
 
-Widget _buildApp({required bool profileComplete, bool hasOrganization = true}) {
+Widget _buildApp({
+  required bool profileComplete,
+  bool hasOrganization = true,
+  ProfileController Function()? profileController,
+  OrganizationController Function()? organizationController,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       deviceLocationServiceProvider.overrideWithValue(
         const FakeDeviceLocationService(),
       ),
+      // Home is the landing screen (#658, D-35, amending D-29) and it
+      // composes ALL FOUR org-scoped streams (home_providers.dart), so all
+      // four are stubbed here — not just the Tasks one #427 needed — to keep
+      // the landing render hermetic.
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
-      // Tasks is now the landing screen (#427, D-29), so its stream must be
-      // stubbed for the app to render its home hermetically.
       todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
+      journeysStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Journey>[]),
+      ),
+      activitiesStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Activity>[]),
+      ),
       profileProvider.overrideWith(
-        () => _FixedProfileController(profileComplete),
+        profileController ?? () => _FixedProfileController(profileComplete),
       ),
       organizationProvider.overrideWith(
-        () => _FixedOrganizationController(hasOrganization),
+        organizationController ??
+            () => _FixedOrganizationController(hasOrganization),
       ),
+      // /organization/members is visited below only to prove where its back
+      // button lands; without this its real controller would fetch.
+      membersProvider.overrideWith(_EmptyMembersController.new),
     ],
     child: const BeekeepingitApp(),
   );
@@ -216,17 +280,28 @@ void main() {
     },
   );
 
+  // --- the landing screen is Home (#658, D-35, amending D-29) -------------
+  //
+  // D-29's Tasks landing (#427) is superseded: a raw task list answers "what
+  // do I need to do today" for one tab only, and answers nothing at all for a
+  // new organization. Every entry point into "the app home" — boot, the
+  // post-login redirect, the post-onboarding redirect, and the four screens
+  // whose back/save action means "go home" — must agree on /home, so each is
+  // pinned separately below rather than trusting one initialLocation test to
+  // cover them all.
+
   testWidgets(
-    'an authenticated, fully-onboarded user lands on the Tasks home (#427, '
-    'D-29 — not the apiaries list)',
+    'an authenticated, fully-onboarded user lands on Home, NOT the Tasks list '
+    '(#658, D-35, D-29 as amended)',
     (tester) async {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
 
-      // The Todos tab's own filter bar (todo-filter-status-field) is unique to
-      // the Tasks screen, so its presence proves the app landed there rather
-      // than on the apiaries list (whose own content would render instead).
-      expect(find.byKey(const Key('todo-filter-status-field')), findsOneWidget);
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      // The Todos tab's own filter bar is unique to the Tasks screen, so its
+      // ABSENCE is what proves the landing actually moved off it (#427's
+      // landing target) rather than Home merely being reachable.
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
@@ -234,7 +309,90 @@ void main() {
   );
 
   testWidgets(
-    'tapping the shell account action from the apiaries home reaches /account (#29)',
+    'an already-authenticated user who hits /login is redirected to Home '
+    '(#658, D-35)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(profileComplete: true));
+      await tester.pumpAndSettle();
+
+      _routerOf(tester).go('/login');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'an onboarded user who hits an onboarding route is redirected to Home '
+    '(the post-onboarding target, #658, D-35)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(profileComplete: true));
+      await tester.pumpAndSettle();
+
+      _routerOf(tester).go('/organization/new');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      expect(find.byKey(const Key('organization-name-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'finishing profile onboarding lands on Home (profile_screen.dart\'s own '
+    'post-save hand-off, #658, D-35)',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          profileComplete: false,
+          profileController: _CompletingProfileController.new,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The gate put us on /profile; completing it is what hands off.
+      expect(find.byKey(const Key('profile-name-field')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('profile-name-field')),
+        'Ana',
+      );
+      await tester.tap(find.byKey(const Key('profile-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+    },
+  );
+
+  testWidgets('finishing organization onboarding lands on Home '
+      '(organization_screen.dart\'s own post-save hand-off, #658, D-35)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildApp(
+        profileComplete: true,
+        hasOrganization: false,
+        organizationController: _CreatingOrganizationController.new,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('organization-name-field')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Co.',
+    );
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('home-screen')), findsOneWidget);
+    expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+  });
+
+  testWidgets(
+    'tapping the shell account action from Home reaches /account (#29), and '
+    'its back button returns to Home (#658, D-35)',
     (tester) async {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
@@ -244,6 +402,30 @@ void main() {
 
       expect(find.byKey(const Key('account-name-field')), findsOneWidget);
       expect(find.text('Apiaries'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('account-back-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the members screen\'s back button returns to Home (#658, D-35)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(profileComplete: true));
+      await tester.pumpAndSettle();
+
+      _routerOf(tester).go('/organization/members');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('members-back-button')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('members-back-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
     },
   );
 

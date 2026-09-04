@@ -15,6 +15,7 @@ import '../journeys/journey_matching.dart';
 import '../journeys/journey_picker.dart';
 import '../journeys/journey_quick_create_sheet.dart';
 import '../journeys/journeys_repository.dart';
+import '../organization/organization_repository.dart';
 import 'activities_repository.dart';
 import 'activity_attributes.dart';
 import 'activity_types.dart';
@@ -175,7 +176,13 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   Future<void> _prefillHivesInvolvedInner() async {
     try {
       final repo = await ref.read(apiariesRepositoryProvider.future);
-      final apiary = await repo.getById(widget.apiaryId);
+      // Org-scoped like every other apiary read (#658, FR-TEN-2) — a
+      // prefill must not resolve an apiary the org can't see.
+      final org = await ref.read(organizationProvider.future);
+      final apiary = await repo.getById(
+        widget.apiaryId,
+        organizationId: org?.id,
+      );
       if (!mounted) return;
       if (apiary == null || apiary.hiveCount <= 0) return;
       if (_hivesInvolvedController.text.trim().isNotEmpty) return;

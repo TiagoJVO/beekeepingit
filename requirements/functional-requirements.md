@@ -371,9 +371,14 @@ harvest, which requires visiting all apiaries).
   navigation and intuitive controls — **especially field features**, where the
   user has limited time/attention and may be **wearing gloves**.
 - **FR-UX-2** — The client presents a **persistent app shell**: a **bottom
-  navigation** across the primary areas (apiaries, activities, journeys, todos,
-  assistant), a header with the screen title, a **sync-status indicator**, and
+  navigation** across the primary areas (apiaries, activities, **home**, journeys,
+  todos), a header with the screen title, a **sync-status indicator**, and
   account access, plus a **contextual quick-add** (FAB) for the active area.
+  - _Per D-35:_ **home** is the centre tab and the app's landing screen — a summary
+    of what needs attention (D-29 as amended). The **assistant** tab was removed
+    until the AI assistant itself ships (M8, FR-AI-\*); it is not a primary area
+    while it is a placeholder. Home carries **no FAB** — quick-add is contextual to
+    an area, and home spans them all.
   - _Prototype:_ Melargil app shell (see
     [`docs/design/prototype.md`](../docs/design/prototype.md)).
 

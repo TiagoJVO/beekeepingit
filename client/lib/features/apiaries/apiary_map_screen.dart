@@ -419,13 +419,22 @@ class _Map extends StatelessWidget {
     final points = _framedPoints;
     // Extra top/bottom padding keeps the initial fit clear of this screen's
     // own overlays — the permission-denied banner (top, when shown) and the
-    // tap-to-measure card (bottom, always) — so a marker isn't first shown
-    // obscured (and untappable) underneath either one.
+    // bottom-anchored column (attribution + tap-to-measure card) — so a
+    // marker isn't first shown obscured (and untappable) underneath either
+    // one.
+    //
+    // The bottom figure is bigger than the top one because that corner
+    // carries MORE than the measure card: the Esri/OSM attribution rides
+    // directly above it in the same Positioned column (see its own note
+    // below), and a marker's icon is anchored at its centre, so half its
+    // 60px box hangs below the point being framed. 96 only covered the card
+    // itself, which left the southernmost marker sitting under the
+    // attribution — visible, but swallowing every tap meant for the pin.
     final initialCameraFit = points.isEmpty
         ? null
         : CameraFit.bounds(
             bounds: LatLngBounds.fromPoints(points),
-            padding: const EdgeInsets.fromLTRB(48, 96, 48, 96),
+            padding: const EdgeInsets.fromLTRB(48, 96, 48, 152),
             maxZoom: _focusedZoom,
           );
     return FlutterMap(

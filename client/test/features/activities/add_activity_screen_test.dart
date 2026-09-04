@@ -297,7 +297,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   final bool throwOnGetById;
 
   @override
-  Future<Apiary?> getById(String id) async {
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
     if (throwOnGetById) throw Exception('boom-apiary-load');
     return _apiary;
   }

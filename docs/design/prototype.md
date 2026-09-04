@@ -91,6 +91,13 @@
 | PT/EN                                            | stream EPIC-11           | #77                           |
 | App shell (bottom-nav, FAB, header)              | shell · M2               | #21 · **nav IA = net-new**    |
 
+> **Diverged since (#658, [D-35](../../requirements/decisions.md)):** the shipped bottom nav is
+> **apiaries · activities · home · journeys · todos**, with a **Home** summary screen at the centre
+> — the app's landing screen — in the slot the **Assistente** tab held here. The Assistente rows
+> above still stand as the M8 design; the AI assistant remains a roadmap item (#63–#68, #114). What
+> changed is that it no longer holds a nav slot behind a "coming soon" placeholder while it waits.
+> Home itself is **net-new design** — the prototype has no such screen.
+
 ## What the prototype answers (open `Q-*`)
 
 The prototype gives each open scope question a strong, ready-to-confirm answer. **These are NOT yet retired** —
