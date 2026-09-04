@@ -226,5 +226,9 @@ arrive JSON-encoded as TEXT, same convention as `activities.attributes`).
 
 `lib/theming/` — `app_theme.dart` (light/dark, system mode), `brand_tokens.dart`.
 Bundled fonts (offline, no CDN): Archivo (body), Playfair Display (display). Melargil brand (D-18).
+Plus Roboto — not a brand face: it is the family CanvasKit downloads from `fonts.gstatic.com` on
+every cold load unless one is bundled, and the app's glyph fallback (#620). `web/flutter_bootstrap.js`
+pins `fontFallbackBaseUrl` to a same-origin path so the per-code-point Noto fallback can't leave
+the origin either.
 
 E2E: `client/e2e/` (Playwright). Widget/unit tests: `client/test/` mirrors `lib/`.

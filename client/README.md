@@ -13,12 +13,14 @@ flutter pub get
 flutter run -d chrome --no-web-resources-cdn
 ```
 
-`--no-web-resources-cdn` bundles CanvasKit/fonts locally instead of fetching them from
-Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
+`--no-web-resources-cdn` bundles the **CanvasKit engine payload** locally instead of fetching it
+from Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
 wherever that CDN is unreachable (corporate networks, offline). `task dart:build` /
 `flutter build web` already always pass this flag; it matters for `flutter run` too, since
 an offline-first field app must not depend on external network reachability just to paint
-its first frame.
+its first frame. It does **not** cover the engine's own font fetches from `fonts.gstatic.com` —
+those are closed separately, see the typography bullets under
+[Decisions this scaffold makes](#decisions-this-scaffold-makes-ac-of-21) below (`#620`).
 
 To point at a gateway host other than the local k3d dev mapping
 (`https://app.beekeepingit.local:8443`, see `infra/README.md`), pass:
@@ -202,6 +204,27 @@ and restoring it in an `addTearDown`.
     [`fonts/`](fonts/) with each family's `OFL.txt`, declared under `flutter: fonts:` in
     `pubspec.yaml`. This also fixes the shell header's old dangling `fontFamily: 'Playfair
 Display'` that had no bundled font and fell back to Roboto.
+  - **Roboto is bundled too — as the glyph fallback, not as a brand face** (`#620`, `NFR-CMP`,
+    `FR-OF-1`, `C-2`). CanvasKit needs a default family and hardcodes the name `Roboto`: with no
+    such family in `FontManifest.json` it downloads one from `fonts.gstatic.com` on **every cold
+    load**, which `--no-web-resources-cdn` does not suppress (that flag only localises the
+    CanvasKit engine payload). Bundling the family stops the request, and widens fallback coverage
+    from Archivo/Playfair's ~230 code points each to ~896 (Latin Extended, Greek, Cyrillic,
+    Vietnamese). The file is the exact Roboto the Flutter SDK ships, so
+    [`fonts/Roboto/LICENSE.txt`](fonts/Roboto/LICENSE.txt) is Apache-2.0 rather than the OFL the
+    two brand families carry.
+  - **The per-code-point fallback is pinned to our own origin.** For a code point _no_ registered
+    font covers, the engine downloads a Noto font from `fontFallbackBaseUrl`, which defaults to
+    `https://fonts.gstatic.com/s/`. [`web/flutter_bootstrap.js`](web/flutter_bootstrap.js) — the
+    only reason this repo overrides Flutter's generated bootstrap at all — pins it to the relative
+    path `font-fallback/`. Nothing is bundled there, so such a code point renders as the
+    missing-glyph box: a deliberate trade against disclosing every user's IP address to Google, on
+    a boot path that must work with no signal at all anyway. The reachable case is **emoji** in
+    user-entered text, and whether that trade holds for it is `#673`; `nginx.conf` already routes
+    the prefix with `try_files $uri =404`, so bundling a face under `web/font-fallback/` needs no
+    code change. Both settings are pinned by
+    [`test/fonts_local_fallback_test.dart`](test/fonts_local_fallback_test.dart) and the outcome by
+    [`e2e/tests/same-origin-boot.spec.ts`](e2e/tests/same-origin-boot.spec.ts).
 - **i18n: Flutter `intl`** (`flutter gen-l10n`), EN default + a real (not lorem-ipsum) PT
   translation, per `NFR-I18N`.
 - **Backend through the gateway (`#23`):** the `#21` provider-reachability placeholder is
