@@ -72,15 +72,16 @@ checks); Claude cannot — `.claude/settings.json` denies it.
 
 ## Linter/formatter configs
 
-| Language / area  | Config                                                                         | Tool              |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------- |
-| Go               | [`.golangci.yml`](../../.golangci.yml)                                         | golangci-lint     |
-| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                         | dart analyze      |
-| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                     | markdownlint-cli2 |
-| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`               | prettier          |
-| GitHub Actions   | —                                                                              | actionlint        |
-| Secrets          | —                                                                              | gitleaks          |
-| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh) | yq (+ bash)       |
+| Language / area  | Config                                                                                   | Tool              |
+| ---------------- | ---------------------------------------------------------------------------------------- | ----------------- |
+| Go               | [`.golangci.yml`](../../.golangci.yml)                                                   | golangci-lint     |
+| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                                   | dart analyze      |
+| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                               | markdownlint-cli2 |
+| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`                         | prettier          |
+| GitHub Actions   | —                                                                                        | actionlint        |
+| Secrets          | —                                                                                        | gitleaks          |
+| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh)           | yq (+ bash)       |
+| SW route drift   | [`scripts/check-service-worker-routes.sh`](../../scripts/check-service-worker-routes.sh) | bash + awk        |
 
 Note: the deploy-URL check exists because the PWA's OIDC/gateway/PowerSync URLs are Dart
 _compile-time_ constants, so they are written twice — once as `--dart-define`s in
@@ -88,6 +89,15 @@ _compile-time_ constants, so they are written twice — once as `--dart-define`s
 hostnames in `infra/helm/beekeepingit/environments/<env>.yaml`. There is no shared source; the
 check (`task repo:deploy-urls`) fails when the two copies disagree, so a one-sided edit can't ship
 a PWA pointed at the wrong host (#369, [D-27](../../requirements/decisions.md)).
+
+Note: the service-worker route check is the same shape one layer up. `client/web/service_worker.js`
+answers a navigation from the cached app shell unless the path is in its `SERVER_ROUTED_PREFIXES`
+list — a hand-maintained mirror of the gateway chart's app-host `routes`/`powersyncRoute`. A route
+added to the chart alone fails silently (every `fetch` still works; only a browser navigation sees
+the cached shell where the server's answer belongs), so `task repo:service-worker-routes` reads
+both copies and fails on drift in either direction (#683, FR-OF-1,
+[ADR-0026](../adr/0026-hand-written-app-shell-service-worker.md)). It reads the chart with `awk`
+rather than `yq` so it also runs in a bare shell without mise.
 
 Note: `.prettierignore` excludes `infra/helm/**/templates/**` — Helm chart templates embed Go
 template syntax (`{{ .Values.x }}`) inside `.yaml` files, which is not valid standalone YAML and
