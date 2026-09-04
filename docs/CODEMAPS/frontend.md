@@ -248,5 +248,13 @@ digest of `nginx.conf`, since cached responses keep their headers — and a `BUI
 the worker after **every** `flutter build web`; that is the release-invalidation key
 (`scripts/check-app-shell-precache-wired.sh` guards the wiring).
 
+`nginx.conf` also decides what the bundle costs on the wire: `Cache-Control: no-cache` (#621) plus,
+since #670, on-the-fly `gzip` — `main.dart.js` and the CanvasKit `.wasm` transfer at 33% / 42% of
+their size, ~6.3 MB off a cold load. Not `gzip_static`: the precache manifest above would pick up
+every `.gz` twin as its own entry. `gzip_comp_level` is 2, held down by the pwa pod's 100m CPU cap
+(#693). Fonts and `assets/NOTICES` are still uncompressed (#688) — nginx's mime.types has no type
+for them and `application/octet-stream` is its `default_type`. Pinned by
+`client/test/nginx_compression_test.dart` (fast gate) and `client/e2e/tests/compression.spec.ts`.
+
 E2E: `client/e2e/` (Playwright; service workers blocked by default, `offline-boot.spec.ts` opts
 in). Widget/unit tests: `client/test/` mirrors `lib/`, plus `test/tool/` for the build tooling.
