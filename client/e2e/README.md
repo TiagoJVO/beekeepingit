@@ -81,10 +81,10 @@ nginx's `add_header` **inheritance trap** (#89): an `add_header` inside a
 explicitly because they break first: losing cross-origin isolation takes
 `SharedArrayBuffer`, and with it PowerSync's wasm/OPFS sync worker.
 
-**`tests/compression.spec.ts`** (#670, NFR-PER-1/FR-OF-1/C-2) is the second
+**`tests/compression.spec.ts`** (#670/#688, NFR-PER-1/FR-OF-1/C-2) is the second
 login-free header spec, and it exists because the bundle used to be served with
 **no compression at any layer** — `main.dart.js` (4.4 MB) and the CanvasKit
-`.wasm` (5.8 MB) went over the wire whole. It fetches eight bundle paths in
+`.wasm` (5.8 MB) went over the wire whole. It fetches eleven bundle paths in
 page, each with a `?compression-probe=670` query so the measurement can never be
 confused with the app's own concurrent boot load of the same file, and asserts
 two independent things per path: `Content-Encoding` read off
@@ -93,16 +93,23 @@ chooses to expose to `fetch()` — and `encodedBodySize < decodedBodySize` from
 `PerformanceResourceTiming`, so a header alone can never carry it. (The size has
 to come from timings rather than `Content-Length`: on-the-fly gzip makes these
 responses chunked, so there is no length header.) It prints the real wire sizes,
-which is where #670's "after" measurement legitimately comes from.
+which is where #670's and #688's "after" measurements legitimately come from.
 
 Every probe also pins a `Content-Type`, for the same `try_files` reason as
-above, and two of them are **negative** controls — a PNG and a `.ttf` — because
+above — and since #688 that pin carries a second job: it is what would catch a
+`types {}` block placed in a nested context, which _replaces_ nginx's inherited
+MIME map instead of extending it and would collapse every response to
+`application/octet-stream` with `nginx -t` green.
+
+Two probes are **negative** controls — a PNG and a `.frag` shader — because
 "already-compressed types are excluded" is half the requirement and nginx has no
 negative directive to assert against: the `gzip_types` allow-list _is_ the
-exclusion mechanism. The `.ttf` encodes today's deliberate miss (#688) and
-should be flipped to a positive probe, not deleted, when that lands. What this
-spec structurally cannot see —`text/html` and `application/octet-stream` staying
-**out** of `gzip_types` — is pinned off-browser by
+exclusion mechanism. The second control used to be a `.ttf`, standing for
+nginx's `application/octet-stream` `default_type`; #688 gave `.ttf` a real type
+and the `.frag` took the role over, because dropping it would leave the spec
+unable to tell "octet-stream is excluded" from "octet-stream is listed and
+everything is compressed". What this spec structurally cannot see — `text/html`
+staying **out** of `gzip_types` — is pinned off-browser by
 `client/test/nginx_compression_test.dart`.
 
 **`tests/same-origin-boot.spec.ts`** (#620, NFR-CMP/FR-OF-1/C-2) is the other

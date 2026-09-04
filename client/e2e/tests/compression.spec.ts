@@ -8,7 +8,7 @@ import {
 } from "./helpers";
 
 /**
- * The bundle is served compressed (#670, NFR-PER-1, FR-OF-1, C-2, D-10).
+ * The bundle is served compressed (#670, #688, NFR-PER-1, FR-OF-1, C-2, D-10).
  *
  * Until #670 nothing in the serving path compressed anything: `client/nginx.conf`
  * never enabled `gzip`, the `nginx:1.31-alpine` base ships it commented out in
@@ -33,8 +33,21 @@ import {
  * measured, not inferred. It also has to be measured that way rather than from
  * `Content-Length`: on-the-fly gzip makes these responses chunked, so there is
  * no `Content-Length` to read. The numbers are printed, because #670's third
- * acceptance criterion is a real before/after measurement and a CI run of this
- * spec is where the "after" half legitimately comes from.
+ * acceptance criterion — and #688's — is a real before/after measurement, and a
+ * CI run of this spec is where the "after" half legitimately comes from.
+ *
+ * WHAT #688 ADDED. Enabling gzip only compresses what nginx has a MIME type
+ * for, and the `nginx:1.31-alpine` stock `mime.types` has no `.ttf`/`.otf`
+ * entry while `assets/NOTICES` has no extension at all — so ~1.9 MB of the
+ * bundle kept falling through to the `application/octet-stream` `default_type`,
+ * which `gzip_types` deliberately does not list. #688 typed them (an HTTP-level
+ * `types` block plus one exact-match `location`, see `client/nginx.conf`) and
+ * this spec is where that is proved on the wire: the font probes below are
+ * positive, and the CONTENT-TYPE assertions on `/main.dart.js`,
+ * `/canvaskit/chromium/canvaskit.wasm` and `/icons/Icon-512.png` are what
+ * catches the way that fix goes wrong — a `types {}` in the wrong context
+ * REPLACES the inherited map instead of extending it, collapsing every one of
+ * those to `application/octet-stream` with `nginx -t` still green.
  *
  * WHY EVERY PROBE PINS A CONTENT-TYPE. A `200` proves nothing on this server:
  * nginx's SPA fallback (`try_files $uri $uri/ /index.html`) answers ANY miss
@@ -53,11 +66,17 @@ import {
  * the exclusion mechanism — so the controls are the two ways it can go wrong:
  * naming an already-compressed type (`/icons/Icon-512.png`), and naming
  * nginx's `application/octet-stream` default_type, which would sweep in every
- * unrecognised file at once (`/assets/fonts/Roboto/Roboto-Regular.ttf`). Both
- * are far above `gzip_min_length`, so a missing `Content-Encoding` on them
- * means the TYPE was excluded rather than the file being too small to bother
- * with. The bundle emits no `.woff2` at all (Flutter bundles `.ttf`/`.otf`), so
- * there is no path to probe for that one; `font/woff2` is simply never named.
+ * unrecognised file at once. The second control was `Roboto-Regular.ttf` until
+ * #688 gave `.ttf` a real type; `/assets/shaders/ink_sparkle.frag` inherited
+ * the role, because `.frag` is now the bundle's largest extension the stock
+ * `mime.types` still does not recognise. It was NOT dropped when the font probe
+ * flipped: a compression spec whose only negative control is one already-
+ * compressed format cannot tell "octet-stream is excluded" from "octet-stream
+ * is listed and everything is being compressed". Both controls are far above
+ * `gzip_min_length`, so a missing `Content-Encoding` on them means the TYPE was
+ * excluded rather than the file being too small to bother with. The bundle
+ * emits no `.woff2` at all (Flutter bundles `.ttf`/`.otf`), so there is no path
+ * to probe for that one; `font/woff2` is simply never named.
  *
  * Service workers are blocked suite-wide (playwright.config.ts) and this spec
  * does NOT opt back in — a response replayed out of Cache Storage keeps the
@@ -74,8 +93,8 @@ type Probe = {
   maxWireRatio?: number;
 };
 
-// One probe per asset class #670 names, each the load-bearing representative of
-// its class rather than whatever happened to be in the bundle.
+// One probe per asset class #670 and #688 name, each the load-bearing
+// representative of its class rather than whatever happened to be in the bundle.
 //
 // `text/css` and `image/svg+xml` are in nginx's `gzip_types` but have no probe:
 // a CanvasKit `flutter build web` emits neither today, so the config covers
@@ -117,19 +136,57 @@ const PROBES: Probe[] = [
   // nginx's `gzip_min_length` of 256, so it doubles as the guard on that floor
   // not drifting back up to the kilobyte a stock config uses.
   { path: "/manifest.json", contentType: contains("json"), compressed: true },
+  // The two font faces #688 typed, one per mapping. Roboto is the biggest
+  // (171,676 B -> 96,391 B at level 2, 43.9%) and the one CanvasKit fetches on
+  // EVERY cold boot as its hardcoded default family (#620); MaterialIcons is
+  // the `.otf`, which is a separate `types` entry and would be missed by a fix
+  // that only mapped `.ttf`. Both are PRECACHE-tier, so every client pays them
+  // on every release. This probe was the spec's second negative control until
+  // #688 — the comment below the list says what replaced it.
+  {
+    path: "/assets/fonts/Roboto/Roboto-Regular.ttf",
+    contentType: contains("font/ttf"),
+    compressed: true,
+  },
+  {
+    path: "/assets/fonts/MaterialIcons-Regular.otf",
+    contentType: contains("font/otf"),
+    compressed: true,
+  },
+  // The licences text: 1,450,846 B and 89.2% compressible, the single largest
+  // compressible file the bundle serves. It has no extension, so no `types`
+  // entry can reach it — `client/nginx.conf` types it with an exact-match
+  // `location`, and `text/plain` here is what proves that location is still
+  // matching rather than the file quietly falling back to octet-stream again.
+  // Runtime-tier in the service worker (fetched when the licences page opens),
+  // not precache.
+  {
+    path: "/assets/NOTICES",
+    contentType: contains("text/plain"),
+    compressed: true,
+    // Measured at 10.8% of decoded at level 2. Same reasoning as main.dart.js:
+    // the floor is loose enough that no legal gzip level can fail it (level 1
+    // lands at 11.6%) and exists to catch a change in KIND, not a drift in
+    // ratio.
+    maxWireRatio: 0.5,
+  },
   // Negative control 1: an already-compressed format. Re-compressing it buys
   // ~4.9% for a full pass over 24 KB.
   { path: "/icons/Icon-512.png", contentType: contains("image/png"), compressed: false },
-  // Negative control 2: a file nginx's mime.types has no entry for, so it is
-  // served as the `application/octet-stream` default_type. It is NOT pinned to
-  // that string — only to "did not collapse to the SPA fallback" — because the
-  // way #688 fixes this is precisely by giving `.ttf` a real type. This probe
-  // encodes today's DELIBERATE miss: 461 KB of precached font faces that would
-  // compress ~46%, left uncompressed because listing octet-stream here would
-  // sweep in every binary the bundle serves. When #688 lands, flip this to a
-  // positive probe rather than deleting it.
+  // Negative control 2: a file nginx's mime.types STILL has no entry for, so it
+  // is served as the `application/octet-stream` default_type — the role the
+  // `.ttf` probe above played until #688 typed it. `.frag` is the largest such
+  // extension left in the bundle (8,890 B; the only bigger ones are the
+  // `canvaskit/*.symbols` tables, which no browser ever requests and which cost
+  // 1.3 MB a probe). It is NOT pinned to the octet-stream string — only to "did
+  // not collapse to the SPA fallback" — so that mapping `.frag` one day is a
+  // one-line change here rather than a puzzle.
+  //
+  // What it guards: `application/octet-stream` entering `gzip_types`, which
+  // would sweep in every binary the bundle serves, the PNGs included. That
+  // failure is invisible to every positive probe above.
   {
-    path: "/assets/fonts/Roboto/Roboto-Regular.ttf",
+    path: "/assets/shaders/ink_sparkle.frag",
     contentType: notContains("text/html"),
     compressed: false,
   },
@@ -226,7 +283,7 @@ const kib = (bytes: number) => `${(bytes / 1024).toFixed(1)} KiB`;
 // LOWERING it would be the mistake. It deliberately pulls the 5.8 MB engine and
 // the 4.4 MB application through the gateway a second time — the page load
 // already fetched them, and `no-store` is what makes the measurement honest —
-// which is ~3.9 MB compressed on top of the boot.
+// which with #688's three added probes is ~4.2 MB compressed on top of the boot.
 
 test("the bundle is served gzip-encoded, and already-compressed types are not", async ({
   page,
@@ -259,8 +316,8 @@ test("the bundle is served gzip-encoded, and already-compressed types are not", 
     return headers;
   };
 
-  // Real numbers first, so a CI log carries the measurement #670 asks for even
-  // on a run where everything passes.
+  // Real numbers first, so a CI log carries the measurement #670 and #688 ask
+  // for, even on a run where everything passes.
   const report = PROBES.map(({ path }) => {
     const { encodedBodySize, decodedBodySize } = timingFor(path);
     const encoding = headersFor(path)["content-encoding"] ?? "identity";
@@ -273,7 +330,7 @@ test("the bundle is served gzip-encoded, and already-compressed types are not", 
       `  decoded ${kib(decodedBodySize).padStart(11)}  saved ${saved}`
     );
   }).join("\n");
-  console.log(`transfer sizes as served (#670):\n${report}`);
+  console.log(`transfer sizes as served (#670, #688):\n${report}`);
 
   for (const probe of PROBES) {
     const { path } = probe;
@@ -293,8 +350,7 @@ test("the bundle is served gzip-encoded, and already-compressed types are not", 
         headers["content-encoding"],
         `${path} was compressed. Either gzip_types has grown to cover an already-compressed ` +
           `format, or it picked up nginx's application/octet-stream default_type and now ` +
-          `sweeps in everything (#670) — or #688 landed, in which case this probe should ` +
-          `become a positive one rather than be deleted`,
+          `sweeps in everything, the .png icons included (#670, #688)`,
       ).toBeUndefined();
       continue;
     }

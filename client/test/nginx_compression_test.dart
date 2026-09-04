@@ -18,11 +18,21 @@ import 'package:flutter_test/flutter_test.dart';
 ///  - **`application/octet-stream` must stay ABSENT.** It is nginx's
 ///    `default_type`, so listing it would compress every file the mime.types
 ///    map does not recognise — the `.png` icons included. The e2e covers this
-///    only INDIRECTLY, through a `.ttf` probe that stops covering it the day
-///    #688 gives `.ttf` a real type.
+///    live through `assets/shaders/ink_sparkle.frag`, which inherited that role
+///    from the `.ttf` probe when #688 gave fonts a real type.
 ///  - **The directives must stay at server level.** Everything in this file's
 ///    `server {}` inherits six `add_header` directives, and the whole block
 ///    lives above the first `location {}` on purpose (#89).
+///  - **The `types` block must stay at HTTP level (#688).** A `types {}` inside
+///    `server {}` REPLACES the inherited map instead of extending it, so the
+///    whole bundle would be served as `application/octet-stream` with `nginx -t`
+///    green. The e2e would catch that (every probe pins a Content-Type), but
+///    only after a full cluster bring-up; this is the seconds-long version.
+///  - **No `location {}` may carry an `add_header` (#89).** One there cancels
+///    inheritance of all six server-level headers, COOP/COEP included — the app
+///    then loses cross-origin isolation and PowerSync's wasm/OPFS worker never
+///    starts, with nothing red. #688 adds a third `location`, so this is worth a
+///    gate rather than a comment.
 ///
 /// Neither substitutes for the other, and neither substitutes for reading the
 /// numbers the e2e prints.
@@ -60,6 +70,95 @@ void main() {
       expect(types, contains('application/wasm'));
       expect(types, contains('image/svg+xml'));
       expect(types, contains('text/css'));
+    });
+
+    test('the font faces and NOTICES are covered (#688)', () {
+      // Half of #688: the other half is the MIME mapping that makes these
+      // match anything at all (see the two tests below). Either half alone
+      // leaves ~1.4 MB going over the wire whole.
+      expect(types, contains('font/ttf'));
+      expect(types, contains('font/otf'));
+      // `assets/NOTICES` is typed `text/plain` by its exact-match location.
+      expect(types, contains('text/plain'));
+    });
+
+    test('the types block extends the stock map instead of replacing it', () {
+      // In nginx a `types {}` inherits nothing: a context that declares one
+      // uses only what it declares. At HTTP level — the context the stock
+      // `include /etc/nginx/mime.types;` also populates — a second block
+      // APPENDS. Inside `server {}` it would instead throw the entire stock map
+      // away and serve `text/html`, `.js`, `.css`, `.wasm` and the `.png` icons
+      // all as `application/octet-stream`, with `nginx -t` green.
+      // Indentation is tolerated on purpose: a block that moved INTO `server {}`
+      // must fail the level assertion below with that diagnosis, not be missed
+      // entirely and reported as "there is no types block".
+      final typesBlock = RegExp(r'^[ \t]*types\s*\{', multiLine: true);
+      final match = typesBlock.firstMatch(conf);
+      expect(
+        match,
+        isNotNull,
+        reason:
+            'nginx.conf declares no types block — the bundled .ttf/.otf faces '
+            'are back to the application/octet-stream default_type, which '
+            'gzip_types deliberately does not list (#688).',
+      );
+      expect(
+        match!.start,
+        lessThan(conf.indexOf('server {')),
+        reason:
+            'the types block moved inside server {} — it now REPLACES the base '
+            "image's mime.types rather than extending it, so every response "
+            'this server sends is application/octet-stream (#688).',
+      );
+      // Whitespace-tolerant on purpose: nginx's own mime.types column-aligns
+      // its type map, so someone aligning this block to match would be making a
+      // purely cosmetic edit — it must not turn this gate red.
+      expect(conf, matches(RegExp(r'font/ttf\s+ttf;')));
+      expect(conf, matches(RegExp(r'font/otf\s+otf;')));
+    });
+
+    test('assets/NOTICES is typed by an exact-match location (#688)', () {
+      // It has no extension, so no `types` entry can reach it. `=` keeps the
+      // blast radius at one URI: a server-level `default_type text/plain;`
+      // would re-type every unrecognised file at once, which is the same
+      // mistake as listing application/octet-stream in gzip_types.
+      expect(
+        conf,
+        contains('location = /assets/NOTICES {'),
+        reason:
+            'the licences file is the largest compressible asset the bundle '
+            'serves (1.45 MB, 89.2%) and nothing else can give it a type.',
+      );
+      final block = conf.indexOf('location = /assets/NOTICES {');
+      expect(
+        conf.indexOf('default_type'),
+        greaterThan(block),
+        reason:
+            'a default_type outside that location — at server or http level — '
+            'would re-type EVERY file nginx does not recognise, not just '
+            'NOTICES.',
+      );
+      expect(
+        'default_type'.allMatches(conf).length,
+        1,
+        reason: 'exactly one URI may be typed this way (#688).',
+      );
+    });
+
+    test('no location block carries an add_header (#89)', () {
+      // An `add_header` inside a `location {}` cancels inheritance of all six
+      // server-level headers at once — COOP and COEP included, which costs the
+      // origin its cross-origin isolation and stops PowerSync's wasm/OPFS
+      // worker from starting. `nginx -t` stays green and the pod stays Ready.
+      final firstLocation = conf.indexOf('location ');
+      expect(firstLocation, greaterThan(-1));
+      expect(
+        conf.indexOf('add_header', firstLocation),
+        -1,
+        reason:
+            'an add_header below the first location block cancels COOP/COEP '
+            'inheritance for that location (#89).',
+      );
     });
 
     test('text/html is NOT listed — nginx always compresses it', () {
