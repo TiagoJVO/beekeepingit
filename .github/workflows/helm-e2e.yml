@@ -224,6 +224,17 @@ jobs:
                VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
                npm run build )
           docker build -t "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" admin
+          # Parse admin/nginx.conf in the real base image, in the real `http {}`
+          # context, before anything is deployed — the same one-second gate the
+          # client image gets above (#688), and it earns its place here as of
+          # #677: that file now carries an http-level `map` (its first directive
+          # OUTSIDE `server {}`), and a context mistake there is exactly the class
+          # of error that would otherwise surface tens of minutes later as an
+          # admin pod that never binds :80, read as a deploy failure rather than a
+          # config one. `--entrypoint` because the stock entrypoint would launch
+          # the server instead of validating.
+          docker run --rm --entrypoint nginx \
+            "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" -t
 
       # Build the Go SERVICE images from THIS checkout (#245) — the generalization
       # of the PWA step above to the domain services (identity, organizations,

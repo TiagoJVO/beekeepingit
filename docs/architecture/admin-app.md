@@ -322,7 +322,29 @@ public-client + PKCE design means there is no client secret to hold.
 
 `npm run build` (`tsc` typecheck + Vite) emits a static `dist/` bundle, served by nginx via
 `admin/Dockerfile` with security headers (`admin/nginx.conf`; CSP shipped Report-Only for the
-first release, same rollout as the client — #89). CI wiring:
+first release, same rollout as the client — #89).
+
+**Cache policy (#677, NFR-PER-1).** Vite emits **content-hashed** asset filenames
+(`dist/assets/index-<hash>.js`, `…-<hash>.css`; `vite.config.ts` overrides none of Vite's output
+naming), so `admin/nginx.conf` serves `/assets/*` `max-age=31536000, immutable` while everything
+else — `index.html` and every client-side route that reaches it through the SPA fallback —
+revalidates with `no-cache`, so a release is picked up on the next load. This is the **opposite**
+answer to the client bundle's ([#621](https://github.com/TiagoJVO/beekeepingit/issues/621)), and
+deliberately: `flutter build web` emits **zero** hashed filenames, so there `immutable` has no
+safe target at all. Two values for one header is exactly what tempts a
+`location /assets/ { add_header … }`, and in nginx an `add_header` inside a `location` **cancels
+inheritance of every server-level `add_header`** — all four security headers above would silently
+vanish for the hashed assets with `nginx -t` green and the pod Ready (#89). The policy is
+therefore selected by an **http-level `map $uri $cache_control`** and applied as a single
+server-level header, so there stays exactly one place headers are declared;
+`admin/src/nginxConf.test.ts` gates both that and the "no `location` sets headers of its own"
+invariant, and `helm-e2e.yml` runs `nginx -t` against the built admin image the way it already does
+for the client's. What the admin app does **not** yet have is the client's second layer — a live
+probe of the served headers like `client/e2e/tests/cache-headers.spec.ts`
+([#706](https://github.com/TiagoJVO/beekeepingit/issues/706)); the policy was verified by hand
+against the built container for #677.
+
+CI wiring:
 
 - **Lint + test** — `ci.yml` → `task ci` → `taskfiles/web.yml` auto-discovers `admin/` and
   runs `npm run lint` / `npm test`.
