@@ -540,11 +540,38 @@ the client gates sync on **measured link quality**, not the mere presence of a c
   account screen show "Waiting for better signal" while the gate backs off (EN/PT).
 - **Auto-sync setting (FR-ST-1, #81).** The account/settings screen's Sync section adds a
   device-local "Auto-sync" toggle (`features/settings/sync_settings_repository.dart`, default
-  on) that `powersync_service.dart`'s `applyAutoSyncSetting` honors: disabling it stops the
+  on) that `powersync_service.dart`'s `applySyncPreconditions` honors: disabling it stops the
   gate's probe loop (no further _automatic_ connect/reconnect attempts) without disconnecting an
-  already-connected engine or disturbing manual "sync now" (`SyncGate.requestSync`), which always
-  works regardless. Device-local rather than the server-synced Profile resource — it gates this
+  already-connected engine or disturbing manual "sync now" (`SyncGate.requestSync`), which works
+  regardless of the setting. Device-local rather than the server-synced Profile resource — it gates this
   device's own network use before any network call, and is genuinely per-installation.
+- **Membership precondition (#622, FR-ONB-2/D-3).** Ahead of the quality probe,
+  `applySyncPreconditions` also requires an **active membership** — `hasOrganizationProvider`,
+  i.e. `GET /v1/organizations/me` resolved to an organization — before any connect attempt, and
+  `BeekeepingitConnector.fetchCredentials` returns `null` rather than issuing a
+  `GET /v1/sync/token` for a caller who has none. The sync token is org-scoped, so that request
+  is answered `403` **by design** until the user finishes onboarding; issuing it anyway meant
+  PowerSync's `connect()` plus its own retry loop fired ~8 consecutive 403s (a console error
+  each) at every user sitting on the create-organization step. The `hasOrganizationProvider`
+  listener re-applies the preconditions on the `false → true` edge, so sync starts the moment
+  `POST /v1/organizations` returns 201 — no reload.
+
+  This one is a **precondition, not a quality heuristic**: it is not the gate guessing whether a
+  sync would go well, it is the client declining to send a request that cannot succeed. The
+  server's own membership check on every request remains the authority, and an already-connected
+  engine is never torn down — so "the gate is an optimization, never a correctness mechanism"
+  (above) still holds exactly as written.
+
+  **The one exception to the manual override** (§7.1's "a user-triggered sync now always
+  attempts once, gate or no gate", which stands unchanged for its actual subject — the quality
+  probe): `syncNowProvider` declines too when there is no membership, returning before it reads
+  the sync session. It has to. Its first step is `db.disconnect()`, and reconnecting afterwards
+  needs credentials `fetchCredentials` correctly refuses to mint — so proceeding would leave the
+  engine disconnected. The override exists because the beekeeper on the hill may know things the
+  probe doesn't; a missing membership is not a guess about the link but a fact about the caller,
+  which the server enforces with a `403`. It is also unreachable from the UI: the router keeps a
+  caller with no membership inside onboarding, where there is no account screen and so no "Sync
+  now" button.
 
 ---
 

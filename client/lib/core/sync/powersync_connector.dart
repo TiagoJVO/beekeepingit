@@ -21,10 +21,26 @@ import 'sync_op_draft.dart';
 ///   - uploadData       → POST /v1/sync/batch (the single write-back seam).
 /// Both authenticate with the caller's OIDC access token.
 class BeekeepingitConnector extends PowerSyncBackendConnector {
-  BeekeepingitConnector({required this.getAccessToken, http.Client? client})
-    : _http = client ?? http.Client();
+  BeekeepingitConnector({
+    required this.getAccessToken,
+    required this.hasMembership,
+    http.Client? client,
+  }) : _http = client ?? http.Client();
 
   final Future<String?> Function() getAccessToken;
+
+  /// Whether the caller currently has an active organization membership
+  /// (`hasOrganizationProvider`, i.e. `GET /v1/organizations/me` resolved to an
+  /// org) — the precondition [fetchCredentials] refuses to issue a request
+  /// without (#622; see its doc for why).
+  ///
+  /// **Synchronous by design.** Adding an `await` to the credential path would
+  /// widen the window PowerSync spends holding a half-started connection, for
+  /// an answer that is already resolved state on the client. It is a closure
+  /// rather than a bool so it reads the *current* value at each credential
+  /// fetch — a membership gained mid-session must take effect without
+  /// rebuilding the connector.
+  final bool Function() hasMembership;
   final http.Client _http;
   static const _uuid = Uuid();
 
@@ -63,8 +79,36 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     _http.close();
   }
 
+  /// Mints the short-TTL PowerSync token, or returns `null` to stay
+  /// disconnected — the same "no credentials, no connection, no request"
+  /// contract for both of its preconditions:
+  ///
+  /// - **no session** — logged out; there is no access token to authenticate
+  ///   with in the first place;
+  /// - **no membership** (#622, FR-OF-3, FR-ONB-2/D-3) — the sync token is
+  ///   **org-scoped**, so `GET /v1/sync/token` answers a caller with no
+  ///   organization `403` *by construction*. The request cannot succeed, so it
+  ///   is not worth sending: issuing it anyway made PowerSync's `connect()` and
+  ///   its internal retry loop fire ~8 consecutive 403s — a console error each
+  ///   — at every user sitting on the create-organization step of onboarding.
+  ///   [hasMembership] is checked BEFORE the token fetch for the same reason
+  ///   the parity check in [uploadData] runs before its own: the cheapest place
+  ///   to stop a doomed request is before any of its work starts.
+  ///
+  /// Neither is an error: the connector is re-asked for credentials on the next
+  /// connect attempt, and `powersync_service.dart` re-arms the gate the moment
+  /// a membership arrives, so sync starts without a reload.
+  ///
+  /// **[uploadData] is deliberately NOT gated the same way** — the asymmetry is
+  /// the point. Declining here costs nothing (a connection that could not
+  /// authenticate is simply not opened), whereas declining an upload would have
+  /// to decide what happens to writes the beekeeper already made offline. A
+  /// `403` there classifies as `retry`, so the batch stays queued and is pushed
+  /// once membership is (re-)established — never dropped, never dead-lettered
+  /// (FR-OF-2, D-12).
   @override
   Future<PowerSyncCredentials?> fetchCredentials() async {
+    if (!hasMembership()) return null; // no org yet → stay disconnected
     final token = await getAccessToken();
     if (token == null) return null; // logged out → stay disconnected
 
