@@ -263,6 +263,23 @@ instant readiness:
   CI slowness; the nudge is the intended user action and can be dropped once the
   gate re-probes on reconnect.
 
+## Static checks (run in `task ci`, no cluster needed)
+
+Running this suite needs a deployed slice and a browser, so `taskfiles/web.yml`'s package fan-out
+skips `*/e2e/*` — but **typechecking and format-checking it need neither**, and Playwright's own
+transform strips types _without_ checking them, so before #696 a type error here surfaced (if at
+all) as a runtime failure inside a browser against a real cluster, 40-60 minutes into `helm-e2e`.
+
+`npm run lint` (= `tsc --noEmit` + `prettier --check`) is that gate. `task web:e2e-lint` runs it
+from the repo root — reached by `task lint`, so by `task ci` on every PR — installing this
+package's `node_modules` but **not** the browsers. `npm run format` writes the Prettier fixes.
+[`tsconfig.json`](tsconfig.json) is typecheck-only (nothing emits); it carries `@types/node` for
+the `process`/`Buffer`/`node:crypto` uses here, and `lib: DOM` for the browser globals inside
+`page.evaluate` bodies.
+
+> If `task lint` fails here with `tsc: not found`, your `node_modules` predates #696 — the
+> taskfile only runs `npm ci` when the directory is **absent**. `rm -rf node_modules && npm ci`.
+
 ## Run
 
 ```sh

@@ -94,7 +94,6 @@ export const submitButton = (page: Page) =>
   page.getByRole("button", { name: /log ?in|sign in|continue|next/i });
 
 export async function fillIfPresent(
-  page: Page,
   locator: ReturnType<Page["getByLabel"]>,
   value: string,
   timeout = 30_000,
@@ -146,7 +145,7 @@ export async function submitAuthentikForm(page: Page, user: string, pass: string
   // page. fillIfPresent already tolerates absence, but this makes the wait
   // explicit and generous for the OIDC redirect + Authentik first paint.
   // ── Step 1: identifier (username/email) ───────────────────────────────
-  await fillIfPresent(page, page.getByLabel(/username|email/i), user);
+  await fillIfPresent(page.getByLabel(/username|email/i), user);
 
   // Two-step providers (e.g. Authentik) show the password only after the
   // identifier is submitted; a single-step page already has it, so only click
@@ -162,7 +161,7 @@ export async function submitAuthentikForm(page: Page, user: string, pass: string
   }
 
   // ── Step 2: password ──────────────────────────────────────────────────
-  await fillIfPresent(page, password, pass);
+  await fillIfPresent(password, pass);
   await submitButton(page).first().click();
 }
 

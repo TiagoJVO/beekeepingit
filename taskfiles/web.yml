@@ -27,6 +27,19 @@ vars:
     -not -path '*/.claude/worktrees/*'
     -not -path '*/e2e/*'
 
+  # The complement of the above: the e2e packages the fan-out steps around.
+  # Only `e2e-lint`/`e2e-format` use it, and ONLY for the static half of those
+  # packages — `tsc --noEmit` + Prettier, never `playwright test`. Splitting the
+  # find in two (rather than dropping the exclusion above) is what keeps
+  # `task ci` from inheriting `web:test` → `playwright test` on a suite that
+  # needs a deployed cluster (#696, #23).
+  FIND_E2E_PKGS: >-
+    find . -type f -name package.json
+    -not -path '*/node_modules/*'
+    -not -path '*/.git/*'
+    -not -path '*/.claude/worktrees/*'
+    -path '*/e2e/*'
+
 tasks:
   lint:
     desc: "Lint web packages (npm run lint)"
@@ -36,6 +49,7 @@ tasks:
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] lint $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run lint --if-present); done
+      - task: e2e-lint
 
   format:
     desc: "Format web packages (npm run format)"
@@ -45,6 +59,41 @@ tasks:
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] format $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run format --if-present); done
+      - task: e2e-format
+
+  # --- e2e packages: static checks only (#696) -------------------------------
+  #
+  # An e2e suite is excluded from the fan-out above because RUNNING it needs a
+  # deployed slice and a browser. Typechecking and format-checking it need
+  # neither, and without them ~2.5k lines of TypeScript reach helm-e2e's 40-60
+  # minute live bring-up before a type error is noticed — Playwright's own
+  # transform strips types WITHOUT checking them, so the error surfaces (if at
+  # all) as a runtime failure inside a browser against a real cluster.
+  #
+  # What this DOES install is the package's node_modules (~50MB: typescript,
+  # prettier, @playwright/test for its type declarations) — not the browsers,
+  # which only `npm run install-browsers` fetches (helm-e2e.yml). The pinned
+  # @playwright/test declares no install hook, so nothing pulls them in;
+  # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 is the documented opt-out kept as a guard
+  # in case a future version reintroduces one, where it would otherwise add
+  # ~150MB to every `task lint`.
+  e2e-lint:
+    desc: "Static checks for e2e packages — typecheck + Prettier, no browsers, no cluster"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_E2E_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no e2e package.json — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] e2e lint $d"; (cd "$d" && { [ -d node_modules ] || PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --no-audit --no-fund; } && npm run lint --if-present); done
+
+  e2e-format:
+    desc: "Format e2e packages (npm run format)"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_E2E_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no e2e package.json — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] e2e format $d"; (cd "$d" && { [ -d node_modules ] || PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --no-audit --no-fund; } && npm run format --if-present); done
 
   test:
     desc: "Test web packages (npm test)"
