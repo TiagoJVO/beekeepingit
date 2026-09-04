@@ -60,6 +60,10 @@ jobs:
     # 420s for a cold cluster. The suite-wide `serviceWorkers: "block"` keeps
     # that precache out of every OTHER spec's context, so the job does not pay
     # for it eight times.
+    # Held at 60 again for #670's compression spec: it also logs nobody in, and
+    # its one test is a boot plus one no-store re-fetch of eight bundle paths —
+    # which now includes the 4.4 MB app and the 5.8 MB engine, but compressed,
+    # so ~3.5 MB. Budgeted at 180s in the spec itself.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
