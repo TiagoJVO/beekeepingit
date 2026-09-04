@@ -152,10 +152,18 @@ jobs:
             # AppConfig's dev defaults (client/lib/core/config/app_config.dart).
             # The real per-environment deployable PWA is built by release-deploy.yml
             # with the target env's URLs baked in (D-27, ADR-0018).
+            # The trailing `build_app_shell_cache` step generates the app-shell
+            # precache manifest inside build/web's service worker (#619).
+            # Nothing Flutter emits is content-hashed, so that manifest is what
+            # gives the worker a per-release cache key; without it the worker is
+            # inert and the app cannot start offline. Required after EVERY
+            # `flutter build web` — scripts/check-app-shell-precache-wired.sh
+            # fails the lint gate if a build site ever loses it.
             ( task dart:l10n-check \
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
-              && flutter build web --release --no-web-resources-cdn )
+              && flutter build web --release --no-web-resources-cdn \
+              && dart run tool/build_app_shell_cache.dart build/web )
           elif [ -f "$COMPONENT_PATH/package.json" ]; then
             # npm component (the React admin app, #72/#449): lint → test → build the static
             # Vite bundle into dist/, which the component's Dockerfile then COPYs. Vite bakes

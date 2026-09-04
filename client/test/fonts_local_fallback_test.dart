@@ -126,22 +126,22 @@ void main() {
       );
     });
 
-    test('flutter_bootstrap.js is otherwise byte-for-byte what the default '
-        'bootstrap would have generated', () {
-      // The file exists only to add `config`; everything else must stay exactly
-      // what `generateDefaultFlutterBootstrapScript` emits, so a Flutter bump
-      // that changes the loader contract is a merge conflict rather than a
-      // silent divergence. (The service-worker block is part of that default.
-      // At Flutter 3.44 the generated worker only unregisters itself — it
-      // caches nothing, see #672 — so keeping the block is about matching the
-      // default, not about an offline app shell.)
+    test('flutter_bootstrap.js keeps the default loader contract around that '
+        'one addition', () {
+      // The file adds `config` and removes `serviceWorkerSettings`; everything
+      // else must stay exactly what `generateDefaultFlutterBootstrapScript`
+      // emits, so a Flutter bump that changes the loader contract is a merge
+      // conflict rather than a silent divergence.
+      //
+      // The service-worker block used to be asserted here as part of that
+      // default. It is now deliberately ABSENT (#619): at Flutter 3.44 the
+      // generated worker only unregisters itself, and leaving the loader to
+      // register it would take our own app-shell worker's `/` scope with it.
+      // That absence is owned by app_shell_service_worker_test.dart — this test
+      // is #620's, and asserting #619's property here would blur both.
       final source = bootstrap.readAsStringSync();
       expect(source, contains('{{flutter_js}}'));
       expect(source, contains('{{flutter_build_config}}'));
-      expect(
-        source,
-        contains('serviceWorkerVersion: {{flutter_service_worker_version}}'),
-      );
     });
 
     test('nginx serves the pinned prefix instead of letting it fall through '

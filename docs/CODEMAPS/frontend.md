@@ -231,4 +231,19 @@ every cold load unless one is bundled, and the app's glyph fallback (#620). `web
 pins `fontFallbackBaseUrl` to a same-origin path so the per-code-point Noto fallback can't leave
 the origin either.
 
-E2E: `client/e2e/` (Playwright). Widget/unit tests: `client/test/` mirrors `lib/`.
+## PWA shell / offline boot
+
+`web/service_worker.js` — this repo's own app-shell service worker (#619; Flutter's generated one
+is a self-unregistering deprecation stub, so `web/flutter_bootstrap.js` no longer registers it).
+Registered by `web/sw_register.js` from `web/index.html`. Precaches the boot path (~6.6 MB); the
+CanvasKit variant the browser actually picked is stored lazily, warmed by `sw_register.js`
+reporting the page's loaded resources to the controlling worker (a fetch handler alone misses it —
+the engine loads before any worker controls the first visit). Leaves APIs, the PowerSync stream,
+`/v1/*` + `/sync-stream` navigations and everything cross-origin untouched. Nothing Flutter emits
+is content-hashed (#678), so `tool/build_app_shell_cache.dart` injects a per-file sha-256 — plus a
+digest of `nginx.conf`, since cached responses keep their headers — and a `BUILD_REVISION` into
+the worker after **every** `flutter build web`; that is the release-invalidation key
+(`scripts/check-app-shell-precache-wired.sh` guards the wiring).
+
+E2E: `client/e2e/` (Playwright; service workers blocked by default, `offline-boot.spec.ts` opts
+in). Widget/unit tests: `client/test/` mirrors `lib/`, plus `test/tool/` for the build tooling.

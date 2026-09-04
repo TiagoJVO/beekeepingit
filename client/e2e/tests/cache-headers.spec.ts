@@ -19,10 +19,16 @@ import { test, expect, type Page } from "@playwright/test";
  * STABLE names whose bytes change per release), so a long max-age + immutable
  * would pin users to a stale build with no reload escape.
  *
- * HTTP caching is also the ONLY cache layer today: per #619 the deployed
- * flutter_service_worker.js is Flutter's self-unregistering deprecation stub,
- * so no service worker answers these requests — the app-shell offline story is
- * that issue's job, not this header's.
+ * HTTP caching is no longer the only cache layer: since #619 the app registers
+ * an app-shell service worker that answers bundle paths out of the Cache API.
+ * That worker must NOT be in the picture here. `cache: "no-store"` below is an
+ * HTTP-cache directive and does not bypass a service worker, so a controlled
+ * page would answer most of these probes from Cache Storage — and they would
+ * still PASS, because a stored response keeps the headers it was stored with.
+ * That is worse than failing: this spec's entire claim is that it measured what
+ * nginx put on the wire, and the add_header inheritance canary at the bottom
+ * would silently stop guarding nginx.conf. `playwright.config.ts` therefore
+ * blocks service workers suite-wide, and only offline-boot.spec.ts opts in.
  *
  * WHY every header read goes through the browser: Playwright's Node-side
  * `request` fixture issues plain Node HTTP, which does NOT get the browser
@@ -77,6 +83,14 @@ const BUNDLE_PATHS: BundleEntry[] = [
   { path: "/flutter_bootstrap.js", contentType: contains("javascript") },
   { path: "/flutter.js", contentType: contains("javascript") },
   { path: "/canvaskit/canvaskit.js", contentType: contains("javascript") },
+  // The app-shell service worker (#619). It belongs in this list by the rule
+  // above — another stable, non-content-hashed name — and it is the one file
+  // where staleness is total: the browser's update check is what swaps the
+  // whole cached shell, so a worker served from a stale copy pins users to an
+  // old build with no reload escape. It also needs NO location block of its own
+  // in nginx.conf; `no-cache` is already the server-wide default, and a
+  // location-level add_header would cancel COOP/COEP (see the canary below).
+  { path: "/service_worker.js", contentType: contains("javascript") },
   // Build + PWA metadata.
   { path: "/version.json", contentType: contains("json") },
   { path: "/manifest.json", contentType: contains("json") },

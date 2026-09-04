@@ -40,5 +40,11 @@
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
+  <!-- Registers our own app-shell service worker (#619, FR-OF-1, FR-PL-1).
+       Flutter's generated flutter_service_worker.js is a self-unregistering
+       deprecation stub and flutter_bootstrap.js no longer asks the loader to
+       register it. An external file, not an inline snippet: nginx.conf's CSP
+       has no 'unsafe-inline' in script-src. -->
+  <script src="sw_register.js" defer></script>
 </body>
 </html>
