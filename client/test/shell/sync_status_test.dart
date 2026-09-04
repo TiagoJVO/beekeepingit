@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _connectedIdle = (
@@ -245,6 +247,46 @@ void main() {
             ),
           ),
         ),
+      );
+    });
+  });
+
+  group('syncNowProvider — membership precondition (#622)', () {
+    test('with no membership: declines immediately, without ever reaching for '
+        'the sync session — a manual sync must not disconnect an engine the '
+        'connect precondition would then refuse to reconnect', () async {
+      final container = ProviderContainer(
+        overrides: [hasOrganizationProvider.overrideWithValue(false)],
+      );
+      addTearDown(container.dispose);
+
+      // `powerSyncProvider` never completes in this suite
+      // (test/flutter_test_config.dart stubs the database open with a
+      // never-completing future), so *completing at all* IS the assertion:
+      // a "sync now" that read the session would hang here — and in
+      // production would have run `db.disconnect()` first.
+      await container
+          .read(syncNowProvider)()
+          .timeout(const Duration(seconds: 2));
+    });
+
+    test('with a membership: the same call does await the sync session — the '
+        'guard above is about the missing membership, not about skipping the '
+        'disconnect/connect cycle', () async {
+      final container = ProviderContainer(
+        overrides: [hasOrganizationProvider.overrideWithValue(true)],
+      );
+      addTearDown(container.dispose);
+
+      // Mirror image of the test above: with the precondition met the call
+      // parks on the (never-completing, stubbed) session open, so the timeout
+      // firing is what proves the early return is membership-driven rather
+      // than unconditional.
+      await expectLater(
+        container
+            .read(syncNowProvider)()
+            .timeout(const Duration(milliseconds: 200)),
+        throwsA(isA<TimeoutException>()),
       );
     });
   });
