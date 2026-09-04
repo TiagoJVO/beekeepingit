@@ -58,11 +58,11 @@ release contents in chat — the release notes are that summary.
 
 ## Environments
 
-| Env       | Runs on                      | Namespace              | Hosts                                                                                                                            | Chart source `ref`                                  | Deploys when                                                                 | GitHub env (gate)                                                                   |
-| --------- | ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `dev`     | local k3d (`dev-up.sh`)      | `beekeepingit-dev`     | `app/auth/admin.beekeepingit.local:8443`                                                                                         | `branch: main` — deliberate, post-merge integration | every merge to `main` (only if GitOps was bootstrapped; `dev-up.sh` doesn't) | none                                                                                |
-| `staging` | Scaleway Kapsule (D-26)      | `beekeepingit-staging` | `beekeepingit-rc.melargil.pt` + the `auth.` prefix (Cloudflare DNS, LE cert); the `admin.` prefix has **no A record yet** (#556) | `tag: <release>` — moved by the promotion PR        | a `*-rc*` release's promotion PR merges                                      | `staging-gate` (ungated; secrets + `APP_HOST`/`AUTH_HOST`, optionally `ADMIN_HOST`) |
-| `prod`    | none — inert scaffold (D-26) | `beekeepingit-prod`    | `*.beekeepingit.example` placeholders                                                                                            | `tag: v0.0.0` placeholder                           | never, until `Q-DR` and #90 land                                             | `production-gate` (required reviewer; no secrets set today)                         |
+| Env       | Runs on                      | Namespace              | Hosts                                                                                       | Chart source `ref`                                  | Deploys when                                                                 | GitHub env (gate)                                                       |
+| --------- | ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `dev`     | local k3d (`dev-up.sh`)      | `beekeepingit-dev`     | `app/auth/admin.beekeepingit.local:8443`                                                    | `branch: main` — deliberate, post-merge integration | every merge to `main` (only if GitOps was bootstrapped; `dev-up.sh` doesn't) | none                                                                    |
+| `staging` | Scaleway Kapsule (D-26)      | `beekeepingit-staging` | `beekeepingit-rc.melargil.pt` + the `auth.` and `admin.` prefixes (Cloudflare DNS, LE cert) | `tag: <release>` — moved by the promotion PR        | a `*-rc*` release's promotion PR merges                                      | `staging-gate` (ungated; secrets + `APP_HOST`/`AUTH_HOST`/`ADMIN_HOST`) |
+| `prod`    | none — inert scaffold (D-26) | `beekeepingit-prod`    | `*.beekeepingit.example` placeholders                                                       | `tag: v0.0.0` placeholder                           | never, until `Q-DR` and #90 land                                             | `production-gate` (required reviewer; no secrets set today)             |
 
 Plain `staging` / `production` GitHub environments also exist, unprotected and empty: they are the
 **deploy record** written by the gitops repo's `notify-deploy` workflow, not a place for secrets.
@@ -121,8 +121,7 @@ gh api repos/TiagoJVO/beekeepingit-gitops/contents/clusters/staging/flux-system.
    step 7: `curl -sI https://beekeepingit-rc.melargil.pt/main.dart.js | grep -i last-modified`.
 
 2. **Draft the notes** to the scratchpad. Convention (see rc13): prose, led by what a staging
-   user will notice, issue numbers inline; end with any manual post-deploy step the user must run
-   (the authentik nudge, if the blueprint changed). Short.
+   user will notice, issue numbers inline. Short.
 
 3. **Cut the release.** Target the sha, not `main`, so a concurrent merge cannot move it:
 
@@ -280,21 +279,8 @@ creating one a **second** render is needed
 - `environments/<env>.yaml` is not what runs. #556: staging's gitops values never got
   `gateway.adminHost` / `global.adminOrigin`, the dev default leaked into the ACME order, and cert
   renewal failed while the mirror looked right. The chart now refuses to render such a value
-  (`gateway.assertPublicHostnames`), which makes **turning the admin host on a strictly ordered
-  four-step operation**:
-  1. `gh variable set ADMIN_HOST --env staging-gate --body admin.beekeepingit-rc.melargil.pt`.
-  2. Run `cluster-ops` (`up` or `scale-up`) and confirm `cloudflare: A admin.… -> <ip> (created)`
-     in the job log. Setting the variable alone creates nothing.
-  3. Land the gitops PR adding **both** `gateway.adminHost` and `global.adminOrigin` to
-     `apps/staging/beekeepingit-helmrelease.yaml`.
-  4. Only then promote a chart containing the guard.
-
-  The order is load-bearing, not tidiness: adding `gateway.adminHost` while the name has no A
-  record does not fix the ACME failure, it only swaps a `rejectedIdentifier` rejection for a
-  failed HTTP-01 challenge — and **one** failed authorization invalidates the entire three-SAN
-  order, so app and auth TLS go down with the admin host. `flux get helmreleases -A` is the check
-  that a promotion actually reconciled (a failed render leaves Flux serving the previous release
-  while the promotion PR and `notify-deploy` both look green).
+  (`gateway.assertPublicHostnames`). Bringing a new host up is order-dependent for the same
+  reason — `infra/README.md` has that order.
 
 - The `GitRepository` `ref` is the only chart pin: Flux ignores `chart.spec.version` for git
   sources. `reconcileStrategy` must stay `Revision` — `Chart.yaml` is frozen at `0.1.0`, so
