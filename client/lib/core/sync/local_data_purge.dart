@@ -102,6 +102,12 @@ final membershipLossPurgeProvider = Provider<void>((ref) {
 void _purge(Ref ref) {
   () async {
     try {
+      // Safe only because a Dart async body runs synchronously up to its
+      // first `await`: this read is evaluated in the same turn as the
+      // `ref.listen` callback that called `_purge`, where the provider is
+      // mounted by construction. Inserting any `await` above it would turn it
+      // into the post-disposal read hazard #675 is about. (The `ref.invalidate`
+      // further down is past an await, and is `ref.mounted`-guarded already.)
       final store = await ref.read(localStoreProvider.future);
       await store.clear();
     } catch (_) {

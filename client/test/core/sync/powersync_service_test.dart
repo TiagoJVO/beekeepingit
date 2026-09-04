@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
 import 'package:beekeepingit_client/core/sync/sync_gate.dart';
@@ -17,6 +18,7 @@ class _FakeProbe implements ConnectivityProbe {
 
   final bool result;
   int checkCalls = 0;
+  int disposeCalls = 0;
 
   @override
   Future<bool> check() async {
@@ -25,7 +27,19 @@ class _FakeProbe implements ConnectivityProbe {
   }
 
   @override
-  void dispose() {}
+  void dispose() => disposeCalls++;
+}
+
+/// A minimal [AuthController] stand-in returning a fixed token — mirrors
+/// `test/features/organization/organization_repository_test.dart`'s own fake,
+/// so the #675 composition test can exercise a *real* `Ref` (and a real
+/// disposal) without any OIDC discovery or network.
+class _FakeAuthController extends AuthController {
+  @override
+  Future<AuthSession?> build() async => null;
+
+  @override
+  Future<String?> accessToken() async => 'tok';
 }
 
 void main() {
@@ -137,23 +151,349 @@ void main() {
       await guard.waitForPrior().timeout(const Duration(milliseconds: 50));
     });
 
-    test('each new registerTeardown supersedes the previous one for the '
-        'purposes of the next waitForPrior call', () async {
+    test('waitForPrior awaits EVERY teardown still in flight, not just the '
+        'most recently registered one', () async {
+      // The previous shape of this test only asserted that the *second*
+      // teardown had run, which the old overwriting `_pending = teardown()`
+      // satisfied while silently dropping the first from the wait. Two
+      // disposals in quick succession are real here (logout into a fresh
+      // login; #125's purge landing on top of one), and a dropped teardown
+      // means the next session can open the database while the previous
+      // `close()` is still holding the file. The slow-then-fast ordering is
+      // what makes the bug observable: with the old code `waitForPrior`
+      // returned as soon as the *fast* one finished.
       final guard = TeardownGuard();
-      final order = <String>[];
+      final done = <String>[];
 
       guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        order.add('first');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        done.add('slow-first');
       });
       guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        order.add('second');
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        done.add('fast-second');
       });
 
       await guard.waitForPrior();
 
-      expect(order, contains('second'));
+      expect(
+        done,
+        containsAll(<String>['slow-first', 'fast-second']),
+        reason:
+            'waitForPrior returned while an earlier teardown was still '
+            'in flight — the next PowerSyncDatabase could open against a '
+            'file the previous close() still holds',
+      );
+    });
+  });
+
+  group('sessionScopedAccessToken (#675 — the connector outlives the provider '
+      'that built it, so its token read must be session-scoped; FR-OF-1, '
+      'NFR-MNT-1)', () {
+    test('reads the current token on every call — nothing is cached or '
+        'captured, because an access token expires and the session that owns '
+        'it is the only thing that can mint a fresh one', () async {
+      var token = 'first';
+      var reads = 0;
+
+      final getAccessToken = sessionScopedAccessToken(
+        sessionAlive: () => true,
+        readAccessToken: () async {
+          reads++;
+          return token;
+        },
+      );
+
+      expect(await getAccessToken(), 'first');
+      expect(reads, 1);
+
+      token = 'second';
+
+      expect(
+        await getAccessToken(),
+        'second',
+        reason:
+            'a closure that captured the value would keep handing PowerSync '
+            'an expired token forever',
+      );
+      expect(reads, 2);
+    });
+
+    test('once the session is gone the token resolves to null AND the reader '
+        'is never called — that is what keeps a later refactor from reaching '
+        'into a disposed notifier (#675)', () async {
+      var alive = true;
+      var reads = 0;
+
+      final getAccessToken = sessionScopedAccessToken(
+        sessionAlive: () => alive,
+        readAccessToken: () async {
+          reads++;
+          return 'tok';
+        },
+      );
+
+      expect(await getAccessToken(), 'tok');
+      final readsWhileAlive = reads;
+
+      alive = false;
+
+      expect(
+        await getAccessToken(),
+        isNull,
+        reason:
+            'null is BeekeepingitConnector.fetchCredentials\' own "no '
+            'credentials — stay disconnected" answer',
+      );
+      expect(
+        reads,
+        readsWhileAlive,
+        reason:
+            'the whole point: after disposal the read must not happen at all, '
+            'not merely have its result discarded',
+      );
+    });
+
+    test('the liveness check and the read land in the same synchronous turn — '
+        'a call issued while the session was alive still resolves with the '
+        'token even though the session died before it was awaited (pins the '
+        'deliberately non-async shape, #675)', () async {
+      var alive = true;
+      final pendingRead = Completer<String?>();
+
+      final getAccessToken = sessionScopedAccessToken(
+        sessionAlive: () => alive,
+        readAccessToken: () => pendingRead.future,
+      );
+
+      // Issued while alive; awaited only after the session is gone.
+      final inFlight = getAccessToken();
+      alive = false;
+      pendingRead.complete('tok');
+
+      expect(
+        await inFlight,
+        'tok',
+        reason:
+            'an implementation that re-checked liveness after an await would '
+            'drop a perfectly valid in-flight credential fetch',
+      );
+    });
+
+    test('composed with a real Ref: after the container is disposed the '
+        'guarded closure answers null where a bare ref.read throws — the '
+        'regression #675 is about, pinned end to end', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(_FakeAuthController.new),
+        ],
+      );
+      // A throwaway stand-in for powerSyncProvider's own body: it builds the
+      // two closures from the same `ref`, so what is compared is exactly the
+      // wiring, not two different lifecycles.
+      final closures =
+          Provider<
+            ({
+              Future<String?> Function() guarded,
+              Future<String?> Function() unguarded,
+            })
+          >((ref) {
+            return (
+              guarded: sessionScopedAccessToken(
+                sessionAlive: () => ref.mounted,
+                readAccessToken: () =>
+                    ref.read(authControllerProvider.notifier).accessToken(),
+              ),
+              unguarded: () =>
+                  ref.read(authControllerProvider.notifier).accessToken(),
+            );
+          });
+      final (:guarded, :unguarded) = container.read(closures);
+
+      // Sanity check: both work while the session is alive.
+      expect(await guarded(), 'tok');
+      expect(await unguarded(), 'tok');
+
+      container.dispose();
+
+      expect(
+        await guarded(),
+        isNull,
+        reason:
+            'PowerSync asking for credentials during the fire-and-forget '
+            'teardown must get "stay disconnected", not an exception',
+      );
+
+      // Control assertion, not a behavioural requirement: this documents the
+      // hazard #675 exists for. Matched on the message rather than the type
+      // because riverpod 3.4.1 marks UnmountedRefException `@internal`, so
+      // naming it here would trip `invalid_use_of_internal_member`.
+      expect(
+        unguarded,
+        throwsA(
+          predicate<Object>(
+            (e) => e.toString().contains('after it has been disposed'),
+          ),
+        ),
+      );
+    });
+  });
+
+  // Read this before trusting the two subscription tests below as evidence for
+  // #675. `statusSub.cancel()` was ALREADY synchronous before that change:
+  // [TeardownGuard.registerTeardown] invokes its callback immediately, and a
+  // Dart async body runs synchronously up to its first await, so in
+  // `await statusSub.cancel()` the call itself was always evaluated in the
+  // dispose turn. Both tests therefore pass against the pre-#675 code and are
+  // FORWARD-looking guards — they fail if someone later moves the cancel below
+  // an await — not proof that #675 fixed them. The test that actually
+  // discriminates is the gate/probe one: those two genuinely moved out of the
+  // async half.
+  group('sessionTeardown (#675 — what a stream or listener can reach is '
+      'detached in the SYNCHRONOUS half of ref.onDispose; FR-OF-1, '
+      'NFR-MNT-1)', () {
+    test('cancels the status subscription synchronously, with no await in '
+        'between — a forward-looking guard: this fails if cancel() is ever '
+        'moved below an await, where the rearm callback it feeds could still '
+        'read a disposed ref (it was already synchronous before #675)', () {
+      final controller = StreamController<bool>();
+      addTearDown(controller.close);
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      final statusSub = rearmGateOnDisconnect(
+        connectedStream: controller.stream,
+        rearm: () {},
+        onConnectedChanged: (_) {},
+      );
+
+      final disposeSession = sessionTeardown(
+        statusSub: statusSub,
+        gate: gate,
+        probe: probe,
+        disconnect: () async {},
+        close: () async {},
+        disposeConnector: () {},
+        // A local guard, never the process-wide one: this test must not
+        // leave a pending teardown behind for an unrelated test to await.
+        guard: TeardownGuard(),
+      );
+      disposeSession();
+
+      expect(controller.hasListener, isFalse);
+    });
+
+    test('(also pre-#675 behaviour, kept as a guard) after disposal no further '
+        'status event can reach the rearm callback '
+        '— the callback that reads autoSyncEnabledProvider off the very ref '
+        'being disposed (#675)', () async {
+      final controller = StreamController<bool>();
+      addTearDown(controller.close);
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      var rearms = 0;
+      final statusSub = rearmGateOnDisconnect(
+        connectedStream: controller.stream,
+        rearm: () => rearms++,
+        onConnectedChanged: (_) {},
+      );
+
+      final disposeSession = sessionTeardown(
+        statusSub: statusSub,
+        gate: gate,
+        probe: probe,
+        disconnect: () async {},
+        close: () async {},
+        disposeConnector: () {},
+        guard: TeardownGuard(),
+      );
+      disposeSession();
+
+      // The exact shape production sees: the engine reports one last
+      // connected → disconnected transition while it is being shut down.
+      controller.add(true);
+      controller.add(false);
+      await pumpEventQueue();
+
+      expect(rearms, 0);
+    });
+
+    test('THE discriminating guard for #675: disposes the gate and the probe '
+        'synchronously, where they previously went a microtask late — so a '
+        'probe passing mid-teardown can no longer call connect() while '
+        'disconnect()/close() are already in flight', () async {
+      final controller = StreamController<bool>();
+      addTearDown(controller.close);
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      final statusSub = rearmGateOnDisconnect(
+        connectedStream: controller.stream,
+        rearm: () {},
+        onConnectedChanged: (_) {},
+      );
+
+      final disposeSession = sessionTeardown(
+        statusSub: statusSub,
+        gate: gate,
+        probe: probe,
+        disconnect: () async {},
+        close: () async {},
+        disposeConnector: () {},
+        guard: TeardownGuard(),
+      );
+      disposeSession();
+
+      expect(probe.disposeCalls, 1);
+
+      // A disposed gate ignores rearm(), so the probe loop never restarts.
+      gate.rearm();
+      await pumpEventQueue();
+
+      expect(probe.checkCalls, 0);
+    });
+
+    test('the async remainder still runs disconnect → close → disposeConnector '
+        'in that order, and waitForPrior does not resolve until it has '
+        'finished (the TeardownGuard contract is unchanged)', () async {
+      final controller = StreamController<bool>();
+      addTearDown(controller.close);
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      final statusSub = rearmGateOnDisconnect(
+        connectedStream: controller.stream,
+        rearm: () {},
+        onConnectedChanged: (_) {},
+      );
+      final guard = TeardownGuard();
+      final order = <String>[];
+
+      final disposeSession = sessionTeardown(
+        statusSub: statusSub,
+        gate: gate,
+        probe: probe,
+        disconnect: () async {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          order.add('disconnect');
+        },
+        close: () async {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          order.add('close');
+        },
+        disposeConnector: () => order.add('disposeConnector'),
+        guard: guard,
+      );
+      disposeSession();
+
+      expect(
+        order,
+        isEmpty,
+        reason:
+            'sanity check: dispose returned without awaiting the async '
+            'remainder, mirroring ref.onDispose being a void Function()',
+      );
+
+      await guard.waitForPrior();
+
+      expect(order, ['disconnect', 'close', 'disposeConnector']);
     });
   });
 

@@ -59,8 +59,10 @@ and it deliberately does **not** wait for the Flutter app to boot (it only needs
 a same-origin document to fetch from, so it retries `/` just while a cold gateway
 still answers its own 5xx page, rather than using `gotoAppRoot`'s 120s glass-pane
 wait — otherwise an unrelated app-boot regression would report as a cache-headers
-failure). It is the only place the response headers served **through the gateway,
-from the real nginx container** (`client/nginx.conf`) are asserted. It reads `/`,
+failure). It and `tests/compression.spec.ts` are the only places the response
+headers served **through the gateway, from the real nginx container**
+(`client/nginx.conf`) are asserted; they share that navigation helper, and the
+content-type expectations, out of `tests/helpers.ts`. It reads `/`,
 `/index.html`, an SPA-fallback route, `main.dart.js`, the Flutter loader scripts,
 `canvaskit/canvaskit.js`, `service_worker.js`, `version.json`, `manifest.json` and a bundled asset
 through in-page same-origin `fetch(…, { cache: "no-store" })` (Playwright's
@@ -78,6 +80,37 @@ nginx's `add_header` **inheritance trap** (#89): an `add_header` inside a
 `Cross-Origin-Embedder-Policy: require-corp` still arrive — COOP/COEP named
 explicitly because they break first: losing cross-origin isolation takes
 `SharedArrayBuffer`, and with it PowerSync's wasm/OPFS sync worker.
+
+**`tests/compression.spec.ts`** (#670/#688, NFR-PER-1/FR-OF-1/C-2) is the second
+login-free header spec, and it exists because the bundle used to be served with
+**no compression at any layer** — `main.dart.js` (4.4 MB) and the CanvasKit
+`.wasm` (5.8 MB) went over the wire whole. It fetches eleven bundle paths in
+page, each with a `?compression-probe=670` query so the measurement can never be
+confused with the app's own concurrent boot load of the same file, and asserts
+two independent things per path: `Content-Encoding` read off
+`page.on("response")` — the protocol-level response, not what the renderer
+chooses to expose to `fetch()` — and `encodedBodySize < decodedBodySize` from
+`PerformanceResourceTiming`, so a header alone can never carry it. (The size has
+to come from timings rather than `Content-Length`: on-the-fly gzip makes these
+responses chunked, so there is no length header.) It prints the real wire sizes,
+which is where #670's and #688's "after" measurements legitimately come from.
+
+Every probe also pins a `Content-Type`, for the same `try_files` reason as
+above — and since #688 that pin carries a second job: it is what would catch a
+`types {}` block placed in a nested context, which _replaces_ nginx's inherited
+MIME map instead of extending it and would collapse every response to
+`application/octet-stream` with `nginx -t` green.
+
+Two probes are **negative** controls — a PNG and a `.frag` shader — because
+"already-compressed types are excluded" is half the requirement and nginx has no
+negative directive to assert against: the `gzip_types` allow-list _is_ the
+exclusion mechanism. The second control used to be a `.ttf`, standing for
+nginx's `application/octet-stream` `default_type`; #688 gave `.ttf` a real type
+and the `.frag` took the role over, because dropping it would leave the spec
+unable to tell "octet-stream is excluded" from "octet-stream is listed and
+everything is compressed". What this spec structurally cannot see — `text/html`
+staying **out** of `gzip_types` — is pinned off-browser by
+`client/test/nginx_compression_test.dart`.
 
 **`tests/same-origin-boot.spec.ts`** (#620, NFR-CMP/FR-OF-1/C-2) is the other
 spec that logs nobody in. It watches every request a cold, cache-less context makes
@@ -262,6 +295,23 @@ instant readiness:
   responsiveness gap (see the code comment by the nudge and the PR notes), not just
   CI slowness; the nudge is the intended user action and can be dropped once the
   gate re-probes on reconnect.
+
+## Static checks (run in `task ci`, no cluster needed)
+
+Running this suite needs a deployed slice and a browser, so `taskfiles/web.yml`'s package fan-out
+skips `*/e2e/*` — but **typechecking and format-checking it need neither**, and Playwright's own
+transform strips types _without_ checking them, so before #696 a type error here surfaced (if at
+all) as a runtime failure inside a browser against a real cluster, 40-60 minutes into `helm-e2e`.
+
+`npm run lint` (= `tsc --noEmit` + `prettier --check`) is that gate. `task web:e2e-lint` runs it
+from the repo root — reached by `task lint`, so by `task ci` on every PR — installing this
+package's `node_modules` but **not** the browsers. `npm run format` writes the Prettier fixes.
+[`tsconfig.json`](tsconfig.json) is typecheck-only (nothing emits); it carries `@types/node` for
+the `process`/`Buffer`/`node:crypto` uses here, and `lib: DOM` for the browser globals inside
+`page.evaluate` bodies.
+
+> If `task lint` fails here with `tsc: not found`, your `node_modules` predates #696 — the
+> taskfile only runs `npm ci` when the directory is **absent**. `rm -rf node_modules && npm ci`.
 
 ## Run
 

@@ -53,6 +53,12 @@ day one.
 - **Web app** → add the package's `package.json` exposing `lint` / `format` / `test` / `build`
   scripts (the admin app is `admin/package.json`); `task web:*` discovers every `package.json` in
   the repo and fans out to them. Keep the package's own eslint/prettier config local.
+- **End-to-end suite** (a `package.json` under an `e2e/` path) → the fan-out above deliberately
+  skips it, because running it needs a deployed slice and browsers. Its **static** half is not
+  skipped: `task web:e2e-lint` (reached from `task lint`, so from `task ci`) installs the package
+  without browsers and runs its `lint` script — `tsc --noEmit` plus a Prettier check, never
+  `playwright test`. Give the package a `tsconfig.json` and a `lint` script of that shape
+  ([`client/e2e`](../../client/e2e/README.md) is the example, #696).
 - **Flutter client** → add the package's `pubspec.yaml`, add `flutter`/`dart` to
   [`mise.toml`](../../mise.toml), and `include:` the shared
   [`analysis_options.yaml`](../../analysis_options.yaml) plus `flutter_lints` in the package.
@@ -72,15 +78,17 @@ checks); Claude cannot — `.claude/settings.json` denies it.
 
 ## Linter/formatter configs
 
-| Language / area  | Config                                                                         | Tool              |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------- |
-| Go               | [`.golangci.yml`](../../.golangci.yml)                                         | golangci-lint     |
-| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                         | dart analyze      |
-| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                     | markdownlint-cli2 |
-| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`               | prettier          |
-| GitHub Actions   | —                                                                              | actionlint        |
-| Secrets          | —                                                                              | gitleaks          |
-| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh) | yq (+ bash)       |
+| Language / area  | Config                                                                                   | Tool              |
+| ---------------- | ---------------------------------------------------------------------------------------- | ----------------- |
+| Go               | [`.golangci.yml`](../../.golangci.yml)                                                   | golangci-lint     |
+| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                                   | dart analyze      |
+| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                               | markdownlint-cli2 |
+| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`                         | prettier          |
+| TypeScript       | package-local: `admin/{tsconfig.json,eslint.config.js}`, `client/e2e/tsconfig.json`      | tsc, eslint       |
+| GitHub Actions   | —                                                                                        | actionlint        |
+| Secrets          | —                                                                                        | gitleaks          |
+| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh)           | yq (+ bash)       |
+| SW route drift   | [`scripts/check-service-worker-routes.sh`](../../scripts/check-service-worker-routes.sh) | bash + awk        |
 
 Note: the deploy-URL check exists because the PWA's OIDC/gateway/PowerSync URLs are Dart
 _compile-time_ constants, so they are written twice — once as `--dart-define`s in
@@ -88,6 +96,23 @@ _compile-time_ constants, so they are written twice — once as `--dart-define`s
 hostnames in `infra/helm/beekeepingit/environments/<env>.yaml`. There is no shared source; the
 check (`task repo:deploy-urls`) fails when the two copies disagree, so a one-sided edit can't ship
 a PWA pointed at the wrong host (#369, [D-27](../../requirements/decisions.md)).
+
+Note: the service-worker route check is the same shape one layer up. `client/web/service_worker.js`
+answers a navigation from the cached app shell unless the path is in its `SERVER_ROUTED_PREFIXES`
+list — a hand-maintained mirror of the gateway chart's app-host `routes`/`powersyncRoute`. A route
+added to the chart alone fails silently (every `fetch` still works; only a browser navigation sees
+the cached shell where the server's answer belongs), so `task repo:service-worker-routes` reads
+both copies and fails on drift in either direction (#683, FR-OF-1,
+[ADR-0026](../adr/0026-hand-written-app-shell-service-worker.md)). It reads the chart with `awk`
+rather than `yq` so it also runs in a bare shell without mise.
+
+Note: no `.ts` file is format-checked by `task repo:*` — `repo:format-check` **globs only**
+`md`/`yml`/`yaml`/`json`. TypeScript is Prettier-checked by its own package's `lint` script
+instead (`admin`'s, and `client/e2e`'s — #696). Which config each package resolves differs:
+Prettier stops at the nearest config and does **not** merge, so `admin/` uses its own
+`admin/.prettierrc.json` while `client/e2e/` has none and inherits the root `.prettierrc.yaml`.
+The two produce identical output today (`printWidth` and `singleQuote` match; admin's
+`trailingComma`/`semi` are Prettier 3 defaults).
 
 Note: `.prettierignore` excludes `infra/helm/**/templates/**` — Helm chart templates embed Go
 template syntax (`{{ .Values.x }}`) inside `.yaml` files, which is not valid standalone YAML and

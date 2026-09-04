@@ -246,7 +246,19 @@ the engine loads before any worker controls the first visit). Leaves APIs, the P
 is content-hashed (#678), so `tool/build_app_shell_cache.dart` injects a per-file sha-256 — plus a
 digest of `nginx.conf`, since cached responses keep their headers — and a `BUILD_REVISION` into
 the worker after **every** `flutter build web`; that is the release-invalidation key
-(`scripts/check-app-shell-precache-wired.sh` guards the wiring).
+(`scripts/check-app-shell-precache-wired.sh` guards the wiring). The `/v1/*` + `/sync-stream`
+exclusion is a hand-maintained mirror of the gateway chart's app-host routes, guarded by
+`scripts/check-service-worker-routes.sh` (#683).
+
+`nginx.conf` also decides what the bundle costs on the wire: `Cache-Control: no-cache` (#621) plus,
+since #670, on-the-fly `gzip` — `main.dart.js` and the CanvasKit `.wasm` transfer at 33% / 42% of
+their size, ~6.3 MB off a cold load. Not `gzip_static`: the precache manifest above would pick up
+every `.gz` twin as its own entry. `gzip_comp_level` is 2, held down by the pwa pod's 100m CPU cap
+(#693). The font faces and `assets/NOTICES` compress too, since #688 — the stock mime.types types
+neither, so the file adds an **http-level** `types` block (`.ttf`/`.otf`; at server level it would
+_replace_ the stock map, not extend it) and one exact-match `location` for the extensionless
+`NOTICES`. Pinned by `client/test/nginx_compression_test.dart` (fast gate) and
+`client/e2e/tests/compression.spec.ts`.
 
 E2E: `client/e2e/` (Playwright; service workers blocked by default, `offline-boot.spec.ts` opts
 in). Widget/unit tests: `client/test/` mirrors `lib/`, plus `test/tool/` for the build tooling.
