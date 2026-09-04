@@ -666,6 +666,12 @@ jobs:
           # iss/aud override. Absent locally → the spec self-skips. The admin
           # host is warmed above and mapped to loopback in playwright.config.ts.
           E2E_ADMIN_ORIGIN: https://admin.beekeepingit.local:8443
+          # The IdP's own origin. Only same-origin-boot.spec.ts (#620) reads it,
+          # to allow-list the one first-party host that is not the app origin
+          # while it fails the boot on any third party. Set explicitly rather
+          # than left to the spec's default so this host is configured, not
+          # assumed, alongside the other two above.
+          E2E_AUTH_ORIGIN: https://auth.beekeepingit.local:8443
         run: npm test
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:

@@ -165,9 +165,11 @@ flutter pub get
 flutter build web --no-web-resources-cdn
 ```
 
-`--no-web-resources-cdn` is mandatory in this repo: it bundles CanvasKit and fonts locally instead
-of fetching them from Google's CDN at runtime, which an offline-first PWA cannot depend on. If a
-build only fails without that flag, the fix is the flag, not the code.
+`--no-web-resources-cdn` is mandatory in this repo: it bundles the CanvasKit engine payload locally
+instead of fetching it from Google's CDN at runtime, which an offline-first PWA cannot depend on.
+If a build only fails without that flag, the fix is the flag, not the code. It does **not** cover
+fonts — the engine's own font fetches from `fonts.gstatic.com` are closed separately, in
+`client/pubspec.yaml` and `client/web/flutter_bootstrap.js` (#620).
 
 ## Key Principles
 

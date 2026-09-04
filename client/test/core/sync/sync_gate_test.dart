@@ -232,8 +232,9 @@ void main() {
       expect(gate.state, SyncGateState.waitingForSignal);
       expect(probe.callCount, 1);
 
-      // `applyAutoSyncSetting(enabled: false)` then `true` (#81), landing
-      // mid-backoff — the user's toggle shouldn't inherit the old schedule.
+      // `applySyncPreconditions(autoSyncEnabled: false)` then `true` (#81),
+      // landing mid-backoff — the user's toggle shouldn't inherit the old
+      // schedule.
       gate.stop();
       gate.start();
       await pumpEventQueue();
@@ -371,7 +372,7 @@ void main() {
       expect(probe.callCount, 1);
 
       // Auto-sync toggled off and back on inside the probe's own window
-      // (FR-ST-1's `applyAutoSyncSetting`) — the second `start()` begins a
+      // (FR-ST-1's `applySyncPreconditions`) — the second `start()` begins a
       // fresh loop while the first is still parked on its probe.
       gate.stop();
       gate.start();
@@ -415,7 +416,8 @@ void main() {
       );
       addTearDown(gate.dispose);
 
-      // Never started (or stopped by `applyAutoSyncSetting(enabled: false)`).
+      // Never started (or stopped by
+      // `applySyncPreconditions(autoSyncEnabled: false)`).
       restored.add(null);
       await pumpEventQueue();
       expect(probe.callCount, 0);

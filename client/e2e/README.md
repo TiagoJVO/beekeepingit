@@ -79,6 +79,31 @@ nginx's `add_header` **inheritance trap** (#89): an `add_header` inside a
 explicitly because they break first: losing cross-origin isolation takes
 `SharedArrayBuffer`, and with it PowerSync's wasm/OPFS sync worker.
 
+**`tests/same-origin-boot.spec.ts`** (#620, NFR-CMP/FR-OF-1/C-2) is the other
+spec that logs nobody in. It watches every request a cold, cache-less context makes
+while the app boots and first paints, and fails on any host that is neither the
+app nor the auth origin. It exists because CanvasKit fetched Roboto from
+`fonts.gstatic.com` on every cold load — the engine downloads a default family,
+whose name it hardcodes, whenever `FontManifest.json` declares none, and
+`--no-web-resources-cdn` does **not** suppress that. Only a real browser against
+the real bundle can prove the request is gone.
+
+Note what each half is good for. This spec proves the **outcome** ("nothing left
+the origin"), and it is also the only thing in CI that would notice
+`--no-web-resources-cdn` being dropped from a build command. It does **not**
+distinguish the two settings that produce that outcome — the engine builds its
+Roboto URL on the same `fontFallbackBaseUrl` the bootstrap pins, so deleting the
+bundled family from `pubspec.yaml` would keep this spec green.
+`client/test/fonts_local_fallback_test.dart` is what pins each setting, and it
+runs in the fast gate. The second test here covers what the Dart one cannot see:
+that the deployed bundle really carries the pinned config, and that nginx answers
+`/font-fallback/…` with a **404** rather than the SPA's index.html (which the
+engine would download in full and then fail to parse as a font).
+
+Because it asserts an _absence_, it also asserts two presences first — the font
+manifest and the bundled Roboto were both actually fetched — so a boot that died
+before loading fonts fails loudly instead of passing with an empty list.
+
 The fresh-client **notes** assertion doubles as the regression guard for the
 PowerSync sync-rules column list
 (`infra/helm/beekeepingit/charts/powersync/values.yaml`): the

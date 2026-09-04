@@ -175,11 +175,19 @@ from the list it sits in.
 powerSyncProvider: open PowerSyncDatabase(appSchema) → BeekeepingitConnector, gated by SyncGate
 BeekeepingitConnector (powersync_connector.dart):
   fetchCredentials → GET /v1/sync/token   (OIDC access token → short-TTL PowerSync token)
+     only once the caller has an active membership (#622) — hasOrganizationProvider; without
+     one it returns null and sends nothing (the org-scoped token endpoint 403s by design)
   uploadData       → POST /v1/sync/batch  (drains CRUD queue as {ops:[...]})
      200 → complete + clear dead-letter + notify superseded (LWW loss)
      400/422 → retain in sync_rejected_ops dead-letter + surface (D-12) + complete
      else → throw → stays queued (idempotent forward-retry)
 SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reconnect (FR-OF-3)
+  powersync_service.dart's applySyncPreconditions arms it only when auto-sync is on AND a
+  membership exists (#81, #622); the hasOrganizationProvider listener starts sync on the
+  false→true edge (org created) with no reload; connectIfAllowed re-checks membership right
+  before db.connect() (SyncGate.requestSync bypasses the loop's own generation check)
+  manual "sync now" (shell/sync_status.dart's syncNowProvider) bypasses the QUALITY gate but
+  declines with no membership, before disconnecting — unreachable from the UI (#622)
 lww_delete.dart: every synced delete goes through deleteWithLwwStamp() — stamps the device
   delete time into the trackMetadata `_metadata` column so the op's LWW comparator survives
   retries AND app restarts; read back in _toOp via CrudEntry.metadata (#276, sync.md §4.5)
@@ -218,5 +226,9 @@ arrive JSON-encoded as TEXT, same convention as `activities.attributes`).
 
 `lib/theming/` — `app_theme.dart` (light/dark, system mode), `brand_tokens.dart`.
 Bundled fonts (offline, no CDN): Archivo (body), Playfair Display (display). Melargil brand (D-18).
+Plus Roboto — not a brand face: it is the family CanvasKit downloads from `fonts.gstatic.com` on
+every cold load unless one is bundled, and the app's glyph fallback (#620). `web/flutter_bootstrap.js`
+pins `fontFallbackBaseUrl` to a same-origin path so the per-code-point Noto fallback can't leave
+the origin either.
 
 E2E: `client/e2e/` (Playwright). Widget/unit tests: `client/test/` mirrors `lib/`.
