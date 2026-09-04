@@ -110,6 +110,14 @@ const SHELL_DOCUMENT = "/index.html";
 // app navigates to one today — every API call is `fetch`, which never reaches
 // the navigation branch — but a downloaded export, a presigned-object redirect
 // or a `.well-known` endpoint would, and would silently receive the app instead.
+//
+// This list is a hand-maintained mirror of that chart, so
+// `scripts/check-service-worker-routes.sh` (in `task lint`, #683) reads the array
+// below and the chart's app-host `routes`/`powersyncRoute` and fails when they
+// disagree in either direction. Adding a gateway route on the app host therefore
+// cannot ship without this line moving with it. An exclusion the chart cannot
+// declare — a cert-manager ACME solver Ingress, say — goes in that script's
+// NOT_CHART_ROUTED list with a note saying why.
 const SERVER_ROUTED_PREFIXES = ["/v1/", "/sync-stream"];
 
 // The message `client/web/sw_register.js` posts. See the handler.
@@ -285,6 +293,21 @@ async function precache() {
       // that, and the app would stop syncing with nothing else failing. It is
       // also why nginx.conf's bytes feed BUILD_REVISION: these headers are
       // frozen into the cache until the next update check.
+      //
+      // Since #670 those headers include `Content-Encoding: gzip` over a body
+      // the browser has ALREADY decoded — decoding happens in the network stack
+      // before this worker ever sees the response, and the Cache API stores
+      // decoded bodies. That is safe only because a response handed back from a
+      // service worker is not run through the decoding pipeline a second time.
+      // `offline-boot.spec.ts` is the canary: it precaches these responses and
+      // then requires the app to actually paint offline.
+      //
+      // On-the-fly gzip also clears `Content-Length` (nginx cannot know the
+      // compressed size up front, so the response is chunked), clears
+      // `Accept-Ranges`, and weakens the `ETag` to `W/"…"`. None of it matters
+      // here — nothing in this file reads a length, the range bail-out above
+      // returns before any of this, and `If-None-Match` compares weakly, so the
+      // 304s the `cache: "no-cache"` note below depends on still happen.
       await cache.put(request, response);
     }
   };
@@ -355,10 +378,16 @@ async function cacheFirst(request, pathname, store) {
 // back. Falling through to the network is always safe.
 async function matchCached(pathname) {
   try {
-    // `ignoreVary`: nginx does not send `Vary` on static files today, and
-    // `Accept-Encoding` is a forbidden header name so both sides read null
-    // either way — but a future `gzip_vary` must not turn every lookup into a
-    // silent miss, i.e. a silently non-offline app.
+    // `ignoreVary`: since #670 nginx DOES send `Vary: Accept-Encoding` on every
+    // compressed static response (`gzip_vary on`) — the day this option was
+    // written for. It turns out not to be load-bearing even now, and the reason
+    // is worth keeping rather than assuming: `Accept-Encoding` is a FORBIDDEN
+    // header name, so neither the stored `Request` nor the one synthesised from
+    // the bare pathname below can carry it, the UA adds it below the JS layer,
+    // and the Cache API's varied-header comparison reads null on both sides and
+    // matches. This stays as free insurance against a future `Vary` naming a
+    // header that is NOT forbidden, which would otherwise turn every lookup
+    // into a silent miss — i.e. a silently non-offline app.
     return await caches.match(pathname, { cacheName: CACHE_NAME, ignoreVary: true });
   } catch {
     return undefined;

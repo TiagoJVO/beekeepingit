@@ -20,12 +20,21 @@ vars:
   # `*/e2e/*` is excluded: end-to-end suites (e.g. client/e2e — Playwright)
   # need the full slice deployed + browsers, so they run in their own job, not
   # the repo-wide `task ci` (#23).
+  # `client/tool/icons` is excluded for the same reason: it is design-time
+  # tooling that regenerates the app icon set from the committed vector master
+  # (#682), pulling a large platform-specific Skia binary (@napi-rs/canvas). It
+  # is not part of building or testing the app — run it explicitly via
+  # `task web:icons` / `task web:icons-check` below.
   FIND_WEB_PKGS: >-
     find . -type f -name package.json
     -not -path '*/node_modules/*'
     -not -path '*/.git/*'
     -not -path '*/.claude/worktrees/*'
     -not -path '*/e2e/*'
+    -not -path '*/tool/icons/*'
+
+  # The icon generator's package (see client/tool/icons/README.md).
+  WEB_ICONS_DIR: client/tool/icons
 
 tasks:
   lint:
@@ -63,3 +72,26 @@ tasks:
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] build $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build --if-present); done
+
+  icons:
+    desc: "Regenerate the branded PWA icon set from the committed vector master (#682, FR-PL-1)"
+    cmds:
+      - |
+        set -e
+        d="{{.WEB_ICONS_DIR}}"
+        echo "› [web] icons: regenerating client/web/icons/* + favicon.png from $d/melargil-logo-master.pdf"
+        (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run generate)
+        echo "› [web] icons: review the diff — a change here changes the shipped app icon."
+
+  icons-check:
+    desc: "Verify the committed app icons are byte-identical to what the generator produces (#682)"
+    cmds:
+      # Not part of `task lint`/`ci`: Skia rasterisation is only confirmed
+      # byte-stable on the platform that produced the shipped set, so a
+      # repo-wide gate could fail on artwork that is perfectly correct. See
+      # client/tool/icons/README.md ("Known limit") and #687.
+      - |
+        set -e
+        d="{{.WEB_ICONS_DIR}}"
+        echo "› [web] icons-check $d"
+        (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check)

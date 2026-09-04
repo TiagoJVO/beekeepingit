@@ -148,9 +148,19 @@ void main() {
       // false for these.
       final source = worker.readAsStringSync();
 
+      // Deliberately NOT pinned to the exact literal. Which prefixes belong in
+      // that array is decided by the gateway chart, and
+      // scripts/check-service-worker-routes.sh (#683) is what holds the two in
+      // agreement — reading the array out of this file and the app-host routes
+      // out of infra/helm/beekeepingit/charts/gateway/values.yaml. Asserting the
+      // literal here would make this a THIRD hand-maintained copy: adding a
+      // gateway route would then correctly update the chart and the worker and
+      // still turn this test red, for no defect. What this test owns is the part
+      // the shell gate structurally cannot see — that the list exists, is
+      // non-empty, and is actually CONSULTED by the navigation branch.
       expect(
         source,
-        contains('const SERVER_ROUTED_PREFIXES = ["/v1/", "/sync-stream"];'),
+        matches(RegExp(r'const SERVER_ROUTED_PREFIXES = \["/[^\]]*\];')),
       );
       expect(
         source,
