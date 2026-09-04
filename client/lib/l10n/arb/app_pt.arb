@@ -1,6 +1,7 @@
 {
   "@@locale": "pt",
   "appTitle": "BeekeepingIT",
+  "appLogoLabel": "Logótipo BeekeepingIT",
   "loginPrompt": "Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.",
   "loginButton": "Iniciar sessão",
   "loginWithGoogleButton": "Continuar com a Google",

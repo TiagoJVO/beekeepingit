@@ -70,6 +70,15 @@ logo master, with the bee isolated from the wordmark by colour, so the set can b
 at any size without losing crispness. The maskable pair insets the bee to ~62% of the canvas so
 it survives Android's circle/squircle crop; the plain pair fills ~86%.
 
+**The in-app mark is the same file (#686).** The login screen used to draw a Material honeycomb
+glyph on a honey tile, so an installed launch put a bee in the title bar and a honeycomb on the
+screen below it within a second of each other. It now renders `BrandMark`
+(`client/lib/theming/brand_widgets.dart`), which draws
+`client/assets/brand/app-icon-512.png` — a byte-identical copy of `web/icons/Icon-512.png`.
+A copy rather than a reference because `web/` is the web platform folder, not an asset root;
+`client/test/brand_mark_asset_test.dart` fails if the two ever diverge, so **regenerating the
+icon set (#682) must re-copy it**.
+
 ## 2. Served caching policy (as built)
 
 The container that serves the built bundle (`client/nginx.conf`, the `pwa` Helm chart) sends

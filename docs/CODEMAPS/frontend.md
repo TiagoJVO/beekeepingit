@@ -225,6 +225,9 @@ arrive JSON-encoded as TEXT, same convention as `activities.attributes`).
 ## Theming / brand
 
 `lib/theming/` — `app_theme.dart` (light/dark, system mode), `brand_tokens.dart`.
+One brand mark (#686): `BrandMark` (`brand_widgets.dart`) draws the bundled
+`assets/brand/app-icon-512.png`, a byte-identical copy of the PWA icon `web/icons/Icon-512.png`,
+so the in-app mark and the installed app's icon cannot diverge (`test/brand_mark_asset_test.dart`).
 Bundled fonts (offline, no CDN): Archivo (body), Playfair Display (display). Melargil brand (D-18).
 Plus Roboto — not a brand face: it is the family CanvasKit downloads from `fonts.gstatic.com` on
 every cold load unless one is bundled, and the app's glyph fallback (#620). `web/flutter_bootstrap.js`

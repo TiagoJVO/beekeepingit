@@ -1,7 +1,12 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
+import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:beekeepingit_client/theming/brand_dimens.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/image_asset.dart';
 
 /// Widget-level guards for the shared design-system building blocks
 /// (lib/theming/brand_widgets.dart), mirroring the repo convention of testing
@@ -13,6 +18,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// tappable variants must fire their callbacks.
 Widget _host(Widget child) => MaterialApp(
   theme: AppTheme.light(),
+  home: Scaffold(body: Center(child: child)),
+);
+
+/// [_host] plus the real localization delegates, for the widgets that read
+/// their own strings from [AppLocalizations] (BrandMark's semantic label).
+Widget _localizedHost(Widget child, {Locale? locale}) => MaterialApp(
+  theme: AppTheme.light(),
+  locale: locale,
+  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  supportedLocales: kSupportedLocales,
   home: Scaffold(body: Center(child: child)),
 );
 
@@ -133,5 +148,54 @@ void main() {
     expect(find.text('Change password'), findsOneWidget);
     await tester.tap(find.text('Members & invitations'));
     expect(tappedOrg, isTrue);
+  });
+
+  group('BrandMark (#686)', () {
+    testWidgets('renders the bundled bee artwork — the same file the app icon '
+        'ships — rather than a Material glyph', (tester) async {
+      await tester.pumpWidget(_localizedHost(const BrandMark()));
+      await tester.pumpAndSettle();
+
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(assetNameOf(image), kBrandMarkAsset);
+      // The honeycomb glyph it replaces must not come back alongside it.
+      expect(find.byIcon(Icons.hive_rounded), findsNothing);
+    });
+
+    testWidgets('carries a localized semantic label (FR-AX-1, NFR-I18N-1)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_localizedHost(const BrandMark()));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('BeekeepingIT logo'), findsOneWidget);
+
+      await tester.pumpWidget(
+        _localizedHost(const BrandMark(), locale: const Locale('pt', 'PT')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Logótipo BeekeepingIT'), findsOneWidget);
+    });
+
+    testWidgets('honours the requested size and keeps the icon squircle at it '
+        '— a fixed radius would clamp to a circle below 56px', (tester) async {
+      await tester.pumpWidget(_localizedHost(const BrandMark(size: 48)));
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(BrandMark)), const Size(48, 48));
+      final clip = tester.widget<ClipRRect>(find.byType(ClipRRect));
+      // 28/96 of 48 = 14 — still a squircle. Half of 48 (24) would be a
+      // circle, which is the one shape the app icon is not.
+      expect(
+        clip.borderRadius,
+        BorderRadius.circular(
+          48 * (BrandDimens.radiusBrandMark / BrandDimens.sizeBrandMark),
+        ),
+      );
+      expect(
+        (clip.borderRadius as BorderRadius).topLeft.x,
+        lessThan(24),
+        reason: 'a radius of half the box would render a circle',
+      );
+    });
   });
 }
