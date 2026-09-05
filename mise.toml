@@ -20,7 +20,7 @@ task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
 lefthook = "2.1.10"      # fast, cross-platform git hooks (lefthook.yml)
 
 # --- Per-language linters/formatters ---
-golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 follow-up, #85:
+golangci-lint = "2.13.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 follow-up, #85:
                             # v1's last release, 1.64.8, was built with go1.24.1 and can't lint
                             # go1.25+ modules — a hard blocker once real go.mod's landed).
 
