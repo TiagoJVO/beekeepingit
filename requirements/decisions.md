@@ -988,6 +988,47 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   product owner on 2026-09-03. **Touches:** FR-UX-1, FR-UX-2, FR-TD-1, FR-JO-1, FR-AP-2, FR-AX-1,
   D-18, D-19, D-29, #658, EPIC-20 (#618).
 
+## D-36 — Third-party map tiles: the location disclosure is accepted and disclosed, not gated
+
+- **Decision (user, 2026-09-05):** the app keeps fetching map tiles directly from the
+  third-party providers `D-16` chose (Esri World Imagery as the satellite default, OSM as the
+  streets alternative), and **discloses that in the privacy notice** rather than adding a consent
+  gate or proxying the requests. This is an explicit acceptance of a known disclosure, replacing
+  the previous state in which nobody had decided it.
+- **What is actually disclosed**, so the notice can be written accurately and so a future
+  revisit starts from facts rather than a re-derivation:
+  - A tile URL's `{z}/{x}/{y}` **is** the coordinate. Opening a map tells the provider which
+    patch of the world is being viewed — i.e. roughly where an organization's apiaries are — plus
+    the requesting user's IP address.
+  - It is **not limited to saved apiaries**: the location picker fetches tiles too, so candidate
+    sites a user pans over while siting a new apiary are disclosed the same way.
+  - Our shipped `Referrer-Policy: strict-origin-when-cross-origin` sends the **deployment's own
+    origin** as `Referer` on each tile request, which is what links the traffic to this product
+    rather than leaving it anonymous.
+  - **Esri is a US company**, so this is a transfer outside the EU/EEA and the notice must say so
+    (`NFR-CMP-1`).
+- **Why this was defensible to accept:** a Portugal-first, pre-production, single-tenant
+  deployment, with the alternatives each carrying a cost disproportionate to the exposure — a
+  consent gate buys transparency but not privacy and still needs UI/i18n/a11y work; a gateway
+  proxy removes the per-user IP but not the coordinates, costs a service plus bandwidth, and
+  **may breach OSM's tile usage policy**, which restricts proxied/bulk use; self-hosting solves
+  everything but has no free redistributable global **satellite** basemap, which is precisely the
+  layer `D-16` made the default because field users read terrain.
+- **Where the text lands:** `#487` (M8) already owns privacy-policy versioning and surfacing per
+  `D-33`. The wording above is the input to it; this decision does not create a separate story.
+- **What this does NOT settle.** `Q-MAP` stays open on the **production-traffic tile provider**
+  (the public Esri/OSM demo endpoints are not meant for production load) and on **offline-tile
+  caching**. If that question is later answered with a gateway proxy or a self-hosted provider,
+  the disclosure shrinks or disappears as a side effect — at which point this decision should be
+  revisited rather than treated as a commitment to the current shape.
+  - One licensing fact for that decision, surfaced while fixing `#671`: `flutter_map`'s
+    `userAgentPackageName` **cannot work on web** — `User-Agent` is a forbidden header name for
+    XHR — so OSM's usage-policy requirement for an identifiable User-Agent is **not satisfied by
+    the PWA today**. That is a provider-choice problem, not a privacy one.
+- **Supersedes:** none. **Narrows:** `Q-MAP` (its GDPR/consent dimension is settled here; its
+  licensing and production-load dimensions stay open). **Touches:** `D-16`, `D-33` (`#487`),
+  `NFR-CMP-1`, `NFR-SEC-1`, `FR-AP-3`, Context `C-2`, `#671`, `#487`.
+
 ---
 
 ## Open Spikes

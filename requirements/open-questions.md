@@ -38,6 +38,16 @@ where there's a sensible one.
   needed before real traffic; and (2) the **offline-tile caching strategy** (what to pre-cache,
   storage budget, refresh). This has licensing and cost implications; does not block M2/M3
   (online-only map ships first).
+- **Not open here (settled 2026-09-05):** the **privacy/GDPR dimension** of fetching tiles from
+  third parties. Doing so discloses which patch of the world a user is viewing — i.e. roughly
+  where an organization keeps its apiaries — plus the user IP, to Esri (US) and OSM. That was
+  never anyone's decision until it was made explicitly in
+  [D-36](decisions.md#d-36--third-party-map-tiles-the-location-disclosure-is-accepted-and-disclosed-not-gated):
+  accepted and disclosed in the privacy notice, not gated behind consent and not proxied. It is
+  recorded here only so this question is not re-opened on privacy grounds by mistake. Note the
+  coupling in the other direction: answering the provider question above with a gateway proxy or
+  a self-hosted provider would shrink or remove that disclosure as a side effect, which is a
+  point in their favour rather than a separate requirement.
 
 ---
 
