@@ -35,6 +35,93 @@ String activitySummaryLine(AppLocalizations l10n, Activity activity) {
   return parts.isEmpty ? l10n.activityNoAttributesSummary : parts.join(' · ');
 }
 
+/// The COMPACT, phone-sized headline for one activity (#632, FR-AC-5/6,
+/// FR-UX-1) — the date's companion in a narrow row's subtitle, where
+/// [activitySummaryLine]'s every-attribute join is what made a single honey
+/// harvest render as nine wrapped lines at 375px.
+///
+/// Returns at most TWO parts, deliberately: the row answers "what happened
+/// here, and how much of it" at a glance, and everything it drops is one tap
+/// away on the activity detail screen ([activityDetailRows]).
+///
+/// The headline per type, and why:
+///
+/// * **harvest** — the **honey supers** count. FR-AC-1 names it "the primary
+///   yield metric (more reliably measured in the field than the kg amount)",
+///   so it is the harvest's headline by requirement, not by taste. It is also
+///   a required attribute, so a conforming harvest always has one; a harvest
+///   that somehow carries only kilograms falls back to those rather than
+///   showing a bare date.
+/// * **feeding** — the **feed type** and the **feed amount**: this type's two
+///   required attributes, and jointly the whole substance of a feeding ("what
+///   went in, and how much").
+/// * **treatment** — the **product applied** and the **disease/condition**,
+///   whichever of the two are present. A detection-only report (#291) has no
+///   product, and there the condition detected IS the headline; a
+///   general/preventive treatment has no condition, and there the product is.
+///   When neither is recorded, the **treatment context** label carries the
+///   row instead, so the reason for the visit still shows.
+/// * **generic** — nothing. FR-AC-1 gives the generic type no attributes
+///   beyond free-text notes, and notes are excluded from a row (see this
+///   file's own doc). The caller then shows the date alone, which is honest —
+///   rather than [activitySummaryLine]'s "No additional details" filler, which
+///   would cost a phone row's whole second line to say nothing.
+///
+/// Where a label is needed at all, it is a deliberately SHORT one (`Supers: 4`,
+/// not `Honey supers harvested: 4`). That is a second, compact vocabulary
+/// alongside the form's own field labels, which this file otherwise avoids —
+/// but at 375px the long label alone consumes the line, and the same trade-off
+/// is already made by the journey stats screen's `journeyStatsDetail*` labels.
+/// Controlled-vocabulary values (`feed_type`, `treatment_type`, `disease`) are
+/// self-describing and carry no label.
+String activityHeadlineLine(AppLocalizations l10n, Activity activity) =>
+    _headlineParts(l10n, activity.type, activity.attributes).join(' · ');
+
+List<String> _headlineParts(
+  AppLocalizations l10n,
+  String type,
+  Map<String, dynamic> attrs,
+) {
+  switch (type) {
+    case activityTypeHarvest:
+      if (attrs['honey_supers'] != null) {
+        return [
+          '${l10n.activityHeadlineSupersLabel}: '
+              '${_attributeText(l10n, attrs['honey_supers'])}',
+        ];
+      }
+      if (attrs['honey_kg'] != null) {
+        return [
+          l10n.activityHeadlineHoneyKgValue(
+            _attributeText(l10n, attrs['honey_kg']),
+          ),
+        ];
+      }
+      return const [];
+    case activityTypeFeeding:
+      return [
+        if (attrs['feed_type'] != null)
+          feedTypeLabel(l10n, '${attrs['feed_type']}'),
+        if (attrs['feed_amount'] != null)
+          '${l10n.activityHeadlineFeedAmountLabel}: '
+              '${_attributeText(l10n, attrs['feed_amount'])}',
+      ];
+    case activityTypeTreatment:
+      final applied = [
+        if (attrs['treatment_type'] != null)
+          treatmentTypeLabel(l10n, '${attrs['treatment_type']}'),
+        if (attrs['disease'] != null)
+          diseaseConditionLabel(l10n, '${attrs['disease']}'),
+      ];
+      if (applied.isNotEmpty) return applied;
+      final context = attrs['treatment_context'] as String?;
+      if (context == null) return const [];
+      return [treatmentContextLabel(l10n, context) ?? context];
+    default: // activityTypeGeneric, and any unknown future type
+      return const [];
+  }
+}
+
 List<String> _typeSpecificParts(
   AppLocalizations l10n,
   String type,

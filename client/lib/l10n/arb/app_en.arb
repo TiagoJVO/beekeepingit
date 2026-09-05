@@ -1587,6 +1587,23 @@
   "@activityNoAttributesSummary": {
     "description": "Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)"
   },
+  "activityHeadlineSupersLabel": "Supers",
+  "@activityHeadlineSupersLabel": {
+    "description": "Deliberately short label for the honey-supers count in the COMPACT (phone) activity row headline (#632). The long form the add/edit form and the detail screen use is activityHoneySupersLabel; at 375px that label alone fills the line."
+  },
+  "activityHeadlineHoneyKgValue": "{value} kg",
+  "@activityHeadlineHoneyKgValue": {
+    "description": "Compact activity-row headline for a harvest that recorded kilograms but no supers count (#632) — the unit carries the meaning, so no label is needed",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "activityHeadlineFeedAmountLabel": "Amount",
+  "@activityHeadlineFeedAmountLabel": {
+    "description": "Deliberately short label for the feed amount in the COMPACT (phone) activity row headline (#632). The long form is activityFeedAmountLabel."
+  },
   "activityLoadError": "Couldn't load the activity: {error}",
   "@activityLoadError": {
     "description": "Error toast when loading an existing activity for editing throws (#40)",
