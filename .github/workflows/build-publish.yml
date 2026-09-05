@@ -233,6 +233,14 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Re-resolve the base image on every build. Without this, buildx is free
+          # to reuse a cached FROM, which keeps the `apk --no-cache upgrade` layer
+          # below it cached too — and that layer exists precisely to pull Alpine
+          # security fixes so the Trivy gate passes. The step whose job is patching
+          # CVEs was the one least likely to re-run. Caught on 2026-09-05, when
+          # 7 HIGH util-linux CVEs (CVE-2026-53612 et al, fixed in 2.42.3-r0)
+          # failed every image build while the cached layer still held 2.42.1-r0.
+          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -263,6 +271,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          pull: true
           cache-from: type=gha
 
   # Stable, always-reporting roll-up of the matrixed `build` job above, so the image
