@@ -232,7 +232,11 @@ Bundled fonts (offline, no CDN): Archivo (body), Playfair Display (display). Mel
 Plus Roboto — not a brand face: it is the family CanvasKit downloads from `fonts.gstatic.com` on
 every cold load unless one is bundled, and the app's glyph fallback (#620). `web/flutter_bootstrap.js`
 pins `fontFallbackBaseUrl` to a same-origin path so the per-code-point Noto fallback can't leave
-the origin either.
+the origin either. Behind that path sits one face, `web/font-fallback/NotoEmoji-Regular.ttf`
+(monochrome Noto Emoji, #673/D-37): `nginx.conf` and `web/service_worker.js` both map the engine's
+whole `notocoloremoji/`/`notoemoji/` chunk directory onto it — the chunk filenames are hashed and
+re-rolled per engine — and it is runtime-tier, never precached. Emoji renders; CJK/Arabic/Hebrew
+stay missing-glyph boxes by decision. `test/emoji_glyph_fallback_test.dart`.
 
 ## PWA shell / offline boot
 

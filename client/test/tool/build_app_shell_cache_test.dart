@@ -57,6 +57,8 @@ void main() {
     write('canvaskit/chromium/canvaskit.js', 'engine-loader');
     write('assets/NOTICES', 'licences');
     write('assets/AssetManifest.bin.json', '{}');
+    write('font-fallback/NotoEmoji-Regular.ttf', 'emoji-face-bytes');
+    write('font-fallback/OFL.txt', 'licence');
     write('flutter_service_worker.js', 'self.registration.unregister();');
     write('canvaskit/canvaskit.js.symbols', 'symbolication-table');
     write('.last_build_id', 'abc');
@@ -100,11 +102,36 @@ void main() {
           '/canvaskit/chromium/canvaskit.js',
           '/assets/NOTICES',
           '/assets/AssetManifest.bin.json',
+          '/font-fallback/NotoEmoji-Regular.ttf',
+          '/font-fallback/OFL.txt',
         ]),
       );
       expect(
         cache.precache.map((entry) => entry.url),
         isNot(contains(startsWith('/canvaskit/'))),
+      );
+    });
+
+    test('defers the emoji glyph-fallback face too — it is a fallback for text '
+        'most users never type, and precaching it would cost every install '
+        '(#673, D-37)', () {
+      writeBundle();
+
+      final cache = generateAppShellCache(bundle);
+
+      expect(
+        cache.precache.map((entry) => entry.url),
+        isNot(contains(startsWith('/font-fallback/'))),
+        reason:
+            'A new BUILD_REVISION re-primes every installed shell, so the '
+            'install tier is paid once per client per RELEASE — not once ever.',
+      );
+      // It is still IN the manifest: that is what `web/service_worker.js`
+      // checks before it claims the engine's chunk URLs, and what makes its
+      // bytes part of BUILD_REVISION.
+      expect(
+        cache.runtime.map((entry) => entry.url),
+        contains('/font-fallback/NotoEmoji-Regular.ttf'),
       );
     });
 

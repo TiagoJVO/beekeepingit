@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/ttf_cmap.dart';
 
 /// Regression guard for #620 (NFR-CMP, FR-OF-1, C-2): the app must not fetch a
 /// font from Google on a cold load.
@@ -71,9 +72,9 @@ void main() {
     test('the bundled Roboto covers code points the brand faces do not, so '
         'glyph fallback still resolves without the network', () {
       final families = _declaredFontFamilies(pubspec.readAsStringSync());
-      final roboto = _codePoints(_regularFaceOf(families, 'Roboto'));
-      final archivo = _codePoints(_regularFaceOf(families, 'Archivo'));
-      final playfair = _codePoints(
+      final roboto = codePointsCoveredBy(_regularFaceOf(families, 'Roboto'));
+      final archivo = codePointsCoveredBy(_regularFaceOf(families, 'Archivo'));
+      final playfair = codePointsCoveredBy(
         _regularFaceOf(families, 'Playfair Display'),
       );
 
@@ -152,13 +153,28 @@ void main() {
       final prefix = '/${_pinnedFallbackBaseUrl(bootstrap.readAsStringSync())}';
       final conf = nginxConf.readAsStringSync();
 
+      // Matched as a BLOCK, not as a substring: since #673 two longer
+      // locations (`$prefix` + `notocoloremoji/`, `notoemoji/`) also contain
+      // the literal `location ^~ $prefix`, so a substring check would survive
+      // this generic block being deleted — and deleting it is exactly what
+      // sends a CJK fallback request to the SPA rule.
+      final block = RegExp(
+        'location\\s+\\^~\\s+${RegExp.escape(prefix)}\\s*\\{([^}]*)\\}',
+      ).firstMatch(conf);
       expect(
-        conf,
-        contains('location ^~ $prefix'),
+        block,
+        isNotNull,
         reason:
             'Without its own location, $prefix hits `try_files \$uri \$uri/ '
             '/index.html` and every fallback attempt downloads index.html and '
             'fails to parse it as a font.',
+      );
+      expect(
+        block?.group(1),
+        contains(r'try_files $uri =404'),
+        reason:
+            'The block has to answer a miss with a fast 404. Anything else and '
+            'the engine parses a response body that is not a font.',
       );
       expect(conf, contains("font-src 'self'"));
     });
@@ -241,75 +257,4 @@ String _pinnedFallbackBaseUrl(String bootstrapSource) {
   }
   // The regex cannot match without capturing group 1.
   return match.group(1)!;
-}
-
-/// The code points [fontPath]'s `cmap` maps to a real glyph.
-///
-/// Reads the Windows Unicode subtable (platform 3, encoding 1 or 10) in format
-/// 4 or 12 — enough for the TrueType faces this app bundles, and far cheaper
-/// than pulling in a font-parsing dependency for one assertion.
-Set<int> _codePoints(String fontPath) {
-  final bytes = File(fontPath).readAsBytesSync();
-  final data = ByteData.sublistView(Uint8List.fromList(bytes));
-
-  int? cmapOffset;
-  final tableCount = data.getUint16(4);
-  for (var i = 0; i < tableCount; i++) {
-    final record = 12 + i * 16;
-    final tag = String.fromCharCodes(bytes.sublist(record, record + 4));
-    if (tag == 'cmap') cmapOffset = data.getUint32(record + 8);
-  }
-  if (cmapOffset == null) return <int>{};
-
-  int? subtable;
-  final subtableCount = data.getUint16(cmapOffset + 2);
-  for (var i = 0; i < subtableCount; i++) {
-    final record = cmapOffset + 4 + i * 8;
-    final platform = data.getUint16(record);
-    final encoding = data.getUint16(record + 2);
-    if (platform == 3 && (encoding == 1 || encoding == 10)) {
-      subtable = cmapOffset + data.getUint32(record + 4);
-    }
-  }
-  if (subtable == null) return <int>{};
-
-  final covered = <int>{};
-  switch (data.getUint16(subtable)) {
-    case 4:
-      final segmentBytes = data.getUint16(subtable + 6);
-      final ends = subtable + 14;
-      final starts = ends + segmentBytes + 2;
-      final deltas = starts + segmentBytes;
-      final rangeOffsets = deltas + segmentBytes;
-      for (var i = 0; i < segmentBytes ~/ 2; i++) {
-        final start = data.getUint16(starts + i * 2);
-        final end = data.getUint16(ends + i * 2);
-        if (start == 0xFFFF) continue;
-        final delta = data.getInt16(deltas + i * 2);
-        final rangeOffset = data.getUint16(rangeOffsets + i * 2);
-        for (var c = start; c <= end; c++) {
-          int glyph;
-          if (rangeOffset == 0) {
-            glyph = (c + delta) & 0xFFFF;
-          } else {
-            final index = rangeOffsets + i * 2 + rangeOffset + (c - start) * 2;
-            if (index + 1 >= data.lengthInBytes) continue;
-            glyph = data.getUint16(index);
-            if (glyph != 0) glyph = (glyph + delta) & 0xFFFF;
-          }
-          if (glyph != 0) covered.add(c);
-        }
-      }
-    case 12:
-      final groups = data.getUint32(subtable + 12);
-      for (var i = 0; i < groups; i++) {
-        final group = subtable + 16 + i * 12;
-        final start = data.getUint32(group);
-        final end = data.getUint32(group + 4);
-        for (var c = start; c <= end; c++) {
-          covered.add(c);
-        }
-      }
-  }
-  return covered;
 }

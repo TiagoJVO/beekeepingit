@@ -1031,6 +1031,56 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-37 — Glyph fallback never leaves our origin; emoji is bundled, other scripts stay boxes
+
+- **Decision (user, 2026-09-04, on `#673`):** the web engine's glyph fallback is **pinned to our
+  own origin and stays there** — no font is ever fetched from `fonts.gstatic.com`, on any path,
+  under any condition. What `#620` traded away to get that is bought back only for **emoji**: a
+  **monochrome Noto Emoji** face is served from the fallback prefix itself, so an emoji a user
+  typed renders without a third-party request. **CJK, Arabic, Hebrew and every other script the
+  bundled faces miss keep rendering as the missing-glyph box**, deliberately.
+- **What the trade actually was**, since until now it lived only in code comments — which is half
+  of what `#673` asked for. CanvasKit reaches Google two ways, and neither is suppressed by
+  `--no-web-resources-cdn` (that flag localises only the engine payload): it downloads its
+  hardcoded default family `Roboto` on **every cold load** when `FontManifest.json` declares none,
+  and it downloads a Noto font **per uncovered code point** from `fontFallbackBaseUrl` (default
+  `https://fonts.gstatic.com/s/`). `#620` closed both — Roboto is bundled, the base URL is pinned
+  to the relative `font-fallback/` — at the cost of coverage beyond Archivo/Playfair/Roboto's
+  ~896 code points.
+- **Why the disclosure is the side that wins:** an IP address handed to a third party, without
+  consent, on the **boot path** of a Portugal-first product (`C-2`, `NFR-CMP-1`/GDPR), for a fetch
+  that in this app's own premise — used in the field, with no signal (`FR-OF-1`) — would simply
+  fail. Unlike the map tiles of `D-36`, this one is avoidable at no functional cost, so it is
+  avoided rather than disclosed.
+- **Why emoji specifically is bought back, and nothing else:** users type emoji into apiary names
+  and into the free-text notes an apiary carries (`FR-AP-8`), so it is the case this product
+  actually reaches; the two product locales (`D-34`: `pt-PT`, `en-GB`) are fully covered by the bundled
+  brand faces, so no supported UI language depends on the fallback at all (`NFR-I18N-1`). A CJK or
+  Arabic face is 5–15 MB for text no user of a Portugal-only product enters; **adding a locale
+  whose script the brand faces do not cover means revisiting this line**, not inheriting it.
+  **Monochrome, not colour:** Noto Color Emoji is ~10 MB against 865 KB, and a family declared in
+  `pubspec.yaml` is downloaded eagerly at boot by `loadAssetFonts` — so the colour build is
+  excluded on size, and _any_ `pubspec.yaml` declaration is excluded on principle. The face is
+  served **lazily from the fallback prefix** instead.
+- **The cost is deliberately on first use, not on boot** (`NFR-PER-1`): the face is in the service
+  worker's **runtime** tier, so it is stored the first time an emoji is actually rendered and is
+  offline-available from then on, rather than downloaded by every install — which, since a release
+  re-primes every installed shell, is a per-release cost for a fallback most users never trigger.
+  The residual gap is narrow and is not a regression: a client that has never rendered an emoji and
+  is offline the first time it meets one still sees the box, exactly as every build before this.
+- **Where it is enforced:** `client/web/font-fallback/NotoEmoji-Regular.ttf` (with its `OFL.txt`),
+  served for the engine's whole emoji family prefix by `client/nginx.conf` and, offline, by
+  `client/web/service_worker.js` — matching the **prefix** rather than the twelve opaque,
+  engine-versioned chunk filenames the engine builds, so a Flutter bump cannot silently reopen the
+  box. Guarded by `client/test/emoji_glyph_fallback_test.dart`,
+  `client/test/fonts_local_fallback_test.dart` and, in a real browser against the deployed bundle,
+  `client/e2e/tests/same-origin-boot.spec.ts`.
+- **Supersedes:** none. **Touches:** `NFR-CMP` (`NFR-CMP-1`), `FR-OF-1`, `FR-AP-8`, `NFR-I18N-1`,
+  `NFR-PER-1`, Context `C-2`, `D-10`, `D-34`, `D-36` (the same disclosure question, decided the
+  other way where the cost of avoiding it was affordable), `#620`, `#673`.
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

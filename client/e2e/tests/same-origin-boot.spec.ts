@@ -101,9 +101,11 @@ test.describe("cold boot stays on our own origins (#620)", () => {
     );
     expect(bootstrap).toMatch(/fontFallbackBaseUrl\s*:\s*["']font-fallback\/["']/);
 
-    // Half two: nginx routes that prefix itself. Nothing is bundled under it, so
-    // the engine must get a 404 and move on rather than the SPA's index.html,
-    // which it would download in full and then fail to parse as a font.
+    // Half two: nginx routes that prefix itself. Nothing is bundled for the
+    // CJK/Arabic/Hebrew families (D-37 scopes the bundled fallback to emoji —
+    // see the next test), so the engine must get a 404 and move on rather than
+    // the SPA's index.html, which it would download in full and then fail to
+    // parse as a font.
     //
     // Fetched from inside the page: only the browser has the
     // `--host-resolver-rules` mapping that makes the app host resolve (see
@@ -118,5 +120,46 @@ test.describe("cold boot stays on our own origins (#620)", () => {
 
     expect(probe.status).toBe(404);
     expect(probe.body).not.toContain("flutter_bootstrap.js");
+  });
+
+  test("an emoji fallback chunk URL is answered by the bundled face, same-origin (#673)", async ({
+    page,
+  }) => {
+    await gotoAppRoot(page);
+
+    // The exact URL shape the engine builds for an emoji it cannot render:
+    // `fontFallbackBaseUrl` + the Noto manifest's entry for the family, which
+    // is always one of twelve Google-Fonts subset chunks of `notocoloremoji/`
+    // (flutter_web_sdk/.../engine/font_fallback_data.dart, requested by
+    // `_FallbackFontDownloadQueue.startDownloads`). The hash below is that
+    // manifest's, but its VALUE is deliberately not what is under test:
+    // client/nginx.conf maps the family directory, not twelve filenames, so
+    // this passes for whatever chunk a future engine asks for. Only a change of
+    // family directory would break it — and client/test/emoji_glyph_fallback_
+    // test.dart is what catches that against the pinned SDK.
+    //
+    // Fetched from inside the page for the same reason as the probe above: only
+    // the browser has the host-resolver mapping for the app host.
+    const chunk = await page.evaluate(async () => {
+      const response = await fetch(
+        "/font-fallback/notocoloremoji/v32/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.3.woff2",
+      );
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return {
+        status: response.status,
+        type: response.headers.get("content-type"),
+        length: bytes.byteLength,
+        // TrueType's `sfntVersion`. CanvasKit parses these bytes with FreeType,
+        // which sniffs the content rather than the URL, so answering a .woff2
+        // request with TrueType is exactly what this deployment intends.
+        magic: [...bytes.slice(0, 4)],
+      };
+    });
+
+    expect(chunk.status).toBe(200);
+    expect(chunk.magic).toEqual([0x00, 0x01, 0x00, 0x00]);
+    expect(chunk.type).toContain("font/ttf");
+    // The whole face, not a stub or the SPA document.
+    expect(chunk.length).toBeGreaterThan(500_000);
   });
 });
