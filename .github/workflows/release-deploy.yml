@@ -135,7 +135,7 @@ jobs:
       - name: Set up toolchains from mise.toml
         id: mise
         continue-on-error: true
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       # Retried once. The mise setup downloads a release binary from GitHub and
       # has failed transiently in CI: release-deploy run 33490109770 lost an
@@ -147,7 +147,7 @@ jobs:
       # again. A second failure fails the job, as it should.
       - name: Set up toolchains from mise.toml (retry)
         if: steps.mise.outcome == 'failure'
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       - name: Lint, test & build artifact (release can be cut from any commit)
         env:
@@ -217,7 +217,7 @@ jobs:
       - name: Set up toolchains from mise.toml
         id: mise
         continue-on-error: true
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       # Retried once. The mise setup downloads a release binary from GitHub and
       # has failed transiently in CI: release-deploy run 33490109770 lost an
@@ -229,7 +229,7 @@ jobs:
       # again. A second failure fails the job, as it should.
       - name: Set up toolchains from mise.toml (retry)
         if: steps.mise.outcome == 'failure'
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       - name: Compute image ref (ghcr requires a lowercased owner)
         id: img
@@ -335,7 +335,7 @@ jobs:
       - name: Set up toolchains from mise.toml
         id: mise
         continue-on-error: true
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       # Retried once. The mise setup downloads a release binary from GitHub and
       # has failed transiently in CI: release-deploy run 33490109770 lost an
@@ -347,7 +347,7 @@ jobs:
       # again. A second failure fails the job, as it should.
       - name: Set up toolchains from mise.toml (retry)
         if: steps.mise.outcome == 'failure'
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       - name: Compute image ref (ghcr requires a lowercased owner)
         id: img
