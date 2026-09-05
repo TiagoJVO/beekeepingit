@@ -64,7 +64,7 @@ dev_dependencies:
   # Direct dev dependency so tests can fake GeolocatorPlatform.instance
   # (apiary_map_screen_test.dart, #34) — otherwise only a transitive dep of
   # geolocator.
-  geolocator_platform_interface: ^4.2.8
+  geolocator_platform_interface: ^4.3.0
   # Fake time for tests of code whose behavior IS a schedule — SyncGate's
   # probe → exponential-backoff loop (sync_gate_test.dart, FR-OF-3, #697).
   # Asserting such a schedule against a real `Future.delayed` window makes the
