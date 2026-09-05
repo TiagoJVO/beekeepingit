@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../theming/brand_tokens.dart';
+
 /// Shared field-first, gloves-friendly action buttons (FR-UX-1, FR-AX-1, #79,
 /// #80). Every screen with a primary/secondary/destructive action
 /// (login, apiary form, profile, organization, account, members) was
@@ -98,11 +100,19 @@ class _PrimaryActionButtonState extends State<PrimaryActionButton> {
   @override
   Widget build(BuildContext context) {
     final disabled = widget.onPressed == null || widget.busy || _inFlight;
+    // `busy` also disables the button, and a disabled FilledButton drops the
+    // honey fill for Material's `onSurface @ 12%` grey — so the spinner is
+    // drawn in `onSurface`, the ink that ground is built from. Left to
+    // inherit `colorScheme.primary` it was honey on that grey (1.46:1 in
+    // light); pinned to the on-honey ink it would be 1.15:1 in dark.
     final child = widget.busy
-        ? const SizedBox(
+        ? SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           )
         : Text(widget.label);
 
@@ -110,16 +120,23 @@ class _PrimaryActionButtonState extends State<PrimaryActionButton> {
         ? const Size.fromHeight(kFieldActionButtonHeight)
         : const Size(kFieldActionButtonHeight, kFieldActionButtonHeight);
 
+    // The honey fill lives here (and in the FAB theme), not in
+    // `colorScheme.primary`: honey reads as a background paired with the dark
+    // `onHoney` ink (6.5:1), but not as a foreground on a light ground
+    // (1.84:1 on cream), so the scheme's accent role is plum instead (#627).
+    // "Honey is the only primary action" — docs/design/prototype.md.
+    final style = FilledButton.styleFrom(
+      minimumSize: minimumSize,
+      backgroundColor: BrandTokens.honey,
+      foregroundColor: BrandTokens.onHoney,
+    );
+
     final onPressed = disabled ? null : _handlePressed;
 
     final button = widget.icon == null || widget.busy
-        ? FilledButton(
-            style: FilledButton.styleFrom(minimumSize: minimumSize),
-            onPressed: onPressed,
-            child: child,
-          )
+        ? FilledButton(style: style, onPressed: onPressed, child: child)
         : FilledButton.icon(
-            style: FilledButton.styleFrom(minimumSize: minimumSize),
+            style: style,
             onPressed: onPressed,
             icon: Icon(widget.icon),
             label: child,

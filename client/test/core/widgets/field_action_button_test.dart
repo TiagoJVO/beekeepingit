@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:beekeepingit_client/theming/brand_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/a11y_matchers.dart';
@@ -264,5 +267,157 @@ void main() {
         expect(reEnabled.onPressed, isNotNull);
       },
     );
+  });
+
+  // "Honey is the only primary action. Secondary = outlined plum."
+  // (docs/design/prototype.md, docs/design/melargil-flutter-style.md). #627:
+  // in light mode the secondary button had been drawing its label in honey on
+  // cream (1.84:1). These assert the colors the buttons actually *render*,
+  // under the real AppTheme, in both brightnesses.
+  group('primary/secondary color roles (#627, FR-AX-1, FR-UX-1, D-18)', () {
+    Widget themed(ThemeData theme, Widget child) => MaterialApp(
+      theme: theme,
+      home: Scaffold(
+        body: Padding(padding: const EdgeInsets.all(8), child: child),
+      ),
+    );
+
+    Color? labelColor(WidgetTester tester, String text) =>
+        tester.renderObject<RenderParagraph>(find.text(text)).text.style?.color;
+
+    Color? iconColor(WidgetTester tester, IconData icon) =>
+        IconTheme.of(tester.element(find.byIcon(icon))).color;
+
+    ShapeBorder? buttonShape(WidgetTester tester, Type buttonType) => tester
+        .widget<Material>(
+          find.descendant(
+            of: find.byType(buttonType),
+            matching: find.byType(Material),
+          ),
+        )
+        .shape;
+
+    for (final (name, theme) in <(String, ThemeData)>[
+      ('light', AppTheme.light()),
+      ('dark', AppTheme.dark()),
+    ]) {
+      testWidgets('$name: the primary action keeps the honey fill', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          themed(theme, PrimaryActionButton(label: 'Save', onPressed: () {})),
+        );
+
+        final material = tester.widget<Material>(
+          find.descendant(
+            of: find.byType(FilledButton),
+            matching: find.byType(Material),
+          ),
+        );
+        expect(material.color, BrandTokens.honey);
+        expect(labelColor(tester, 'Save'), BrandTokens.onHoney);
+      });
+
+      testWidgets('$name: the secondary action is outlined, never honey', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          themed(
+            theme,
+            SecondaryActionButton(label: 'Cancel', onPressed: () {}),
+          ),
+        );
+
+        final label = labelColor(tester, 'Cancel');
+        final shape = buttonShape(tester, OutlinedButton) as OutlinedBorder;
+        expect(label, isNot(BrandTokens.honey));
+        expect(shape.side.color, isNot(BrandTokens.honey));
+        expect(shape.side.width, greaterThan(0));
+        if (theme.brightness == Brightness.light) {
+          // Outlined plum on cream: label and border are both plum 700.
+          expect(label, BrandTokens.plum700);
+          expect(shape.side.color, BrandTokens.plum700);
+        } else {
+          // Plum *is* the dark ground, so the label takes the body cream and
+          // the border the scheme's plum-500 outline.
+          expect(label, BrandTokens.cream);
+          expect(shape.side.color, BrandTokens.plum500);
+        }
+      });
+
+      // Material's own button defaults define `iconColor` separately from
+      // `foregroundColor` (FilledButton -> onPrimary, OutlinedButton ->
+      // primary), and a style that pins only the foreground leaves the icon
+      // on that default — a white icon beside a dark-brown label on the honey
+      // primary, and a honey icon beside a cream label on the dark secondary.
+      // The icon must always match the label it sits next to.
+      testWidgets('$name: an icon matches its label on both button kinds', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          themed(
+            theme,
+            Column(
+              children: [
+                PrimaryActionButton(
+                  label: 'Save',
+                  icon: Icons.check,
+                  onPressed: () {},
+                ),
+                SecondaryActionButton(
+                  label: 'Cancel',
+                  icon: Icons.close,
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        );
+
+        expect(iconColor(tester, Icons.check), BrandTokens.onHoney);
+        expect(iconColor(tester, Icons.check), labelColor(tester, 'Save'));
+        expect(iconColor(tester, Icons.close), isNot(BrandTokens.honey));
+        expect(iconColor(tester, Icons.close), labelColor(tester, 'Cancel'));
+      });
+
+      // `busy` also disables the button, and a disabled FilledButton drops the
+      // honey fill for Material's `onSurface @ 12%` grey — so the spinner must
+      // read on THAT ground, not on honey. Pinning it to the on-honey ink
+      // would leave it at 1.15:1 in dark mode.
+      testWidgets('$name: the busy spinner reads on the disabled ground', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          themed(
+            theme,
+            PrimaryActionButton(label: 'Save', busy: true, onPressed: () {}),
+          ),
+        );
+
+        final indicator = tester.widget<CircularProgressIndicator>(
+          find.byType(CircularProgressIndicator),
+        );
+        expect(indicator.color, theme.colorScheme.onSurface);
+      });
+    }
+
+    testWidgets('destructive secondary still overrides to the error color, '
+        'icon included', (tester) async {
+      final theme = AppTheme.light();
+      await tester.pumpWidget(
+        themed(
+          theme,
+          SecondaryActionButton(
+            label: 'Delete',
+            icon: Icons.delete_outline,
+            destructive: true,
+            onPressed: () {},
+          ),
+        ),
+      );
+
+      expect(labelColor(tester, 'Delete'), theme.colorScheme.error);
+      expect(iconColor(tester, Icons.delete_outline), theme.colorScheme.error);
+    });
   });
 }
