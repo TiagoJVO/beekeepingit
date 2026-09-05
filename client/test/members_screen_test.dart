@@ -233,8 +233,7 @@ void main() {
         throw const ApiException(
           statusCode: 409,
           code: 'resource.conflict',
-          detail:
-              'this email already has a pending invitation to this organization',
+          detail: 'this email already has a pending invitation to this organization',
         );
       },
     );

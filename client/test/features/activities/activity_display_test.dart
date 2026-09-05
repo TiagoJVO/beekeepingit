@@ -96,25 +96,22 @@ void main() {
       expect(line, contains('General / preventive'));
     });
 
-    test(
-      'treatment: a detection-only report with no treatment_type still summarizes '
-      'cleanly (#291 AC: detection can be logged with no treatment applied yet)',
-      () {
-        final line = activitySummaryLine(
-          _l10n,
-          _activity(
-            type: 'treatment',
-            attributes: {
-              'treatment_context': 'detection_only',
-              'disease': 'Varroose',
-            },
-          ),
-        );
-        expect(line, contains('Detection only (no treatment yet)'));
-        expect(line, contains('Disease / condition: Varroosis'));
-        expect(line, isNot(contains('null')));
-      },
-    );
+    test('treatment: a detection-only report with no treatment_type still summarizes '
+        'cleanly (#291 AC: detection can be logged with no treatment applied yet)', () {
+      final line = activitySummaryLine(
+        _l10n,
+        _activity(
+          type: 'treatment',
+          attributes: {
+            'treatment_context': 'detection_only',
+            'disease': 'Varroose',
+          },
+        ),
+      );
+      expect(line, contains('Detection only (no treatment yet)'));
+      expect(line, contains('Disease / condition: Varroosis'));
+      expect(line, isNot(contains('null')));
+    });
 
     test('generic with no attributes falls back to the "no details" text', () {
       final line = activitySummaryLine(_l10n, _activity(type: 'generic'));

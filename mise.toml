@@ -13,7 +13,7 @@
 # --- Language toolchains (baseline for the first services/apps) ---
 go = "1.27.1"   # current stable. Carries the 1.26.6 stdlib CVE fixes (CVE-2026-56862/-56860/-56859 — crypto/tls, net/url, encoding/xml DoS) and the earlier GO-2026-5856 crypto/tls fix, so this is no longer a CVE pin holding us back but simply the version we track; 1.25+ needed since #85 (pgx v5/minio-go v7)
 node = "24"
-flutter = "3.44.8"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
+flutter = "3.47.2"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Was 3.44.8, itself bumped from 3.35.5 for #23 (PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks — still satisfied here). Moving this pin is also the ONLY way `intl` in client/pubspec.yaml can move: flutter_localizations from this SDK depends on an exact intl version, so the two travel together (#680 broke main by bumping intl alone).
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)

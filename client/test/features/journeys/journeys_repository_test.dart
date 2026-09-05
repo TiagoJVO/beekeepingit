@@ -945,34 +945,31 @@ void main() {
       },
     );
 
-    test(
-      'includes both open and closed matches (the picker itself splits/hides them)',
-      () async {
-        seedJourney(
-          id: 'open-1',
-          mainActivityType: 'harvest',
-          createdAt: '2026-06-01T00:00:00Z',
-        );
-        seedPlanItem('open-1', 'a1');
-        seedJourney(
-          id: 'closed-1',
-          mainActivityType: 'harvest',
-          status: journeyStatusClosed,
-          createdAt: '2026-06-02T00:00:00Z',
-        );
-        seedPlanItem('closed-1', 'a1');
+    test('includes both open and closed matches (the picker itself splits/hides them)', () async {
+      seedJourney(
+        id: 'open-1',
+        mainActivityType: 'harvest',
+        createdAt: '2026-06-01T00:00:00Z',
+      );
+      seedPlanItem('open-1', 'a1');
+      seedJourney(
+        id: 'closed-1',
+        mainActivityType: 'harvest',
+        status: journeyStatusClosed,
+        createdAt: '2026-06-02T00:00:00Z',
+      );
+      seedPlanItem('closed-1', 'a1');
 
-        final matches = await repo
-            .watchMatching(
-              apiaryId: 'a1',
-              activityType: 'harvest',
-              organizationId: 'org-a',
-            )
-            .first;
+      final matches = await repo
+          .watchMatching(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
 
-        expect(matches.map((j) => j.id).toSet(), {'open-1', 'closed-1'});
-      },
-    );
+      expect(matches.map((j) => j.id).toSet(), {'open-1', 'closed-1'});
+    });
 
     test(
       'excludes another organization\'s matching journey (FR-TEN-2)',

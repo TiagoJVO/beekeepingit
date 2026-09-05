@@ -625,34 +625,27 @@ void main() {
     test('filterApiariesByQuery matches either name OR place_label — a query '
         'need not appear in both', () {
       final apiaries = [_apiary('a', 'Encosta Norte', placeLabel: 'Alcácer')];
-      expect(
-        filterApiariesByQuery(apiaries, 'encosta').map((a) => a.id),
-        ['a'],
-        reason: 'name-only match still works',
-      );
-      expect(
-        filterApiariesByQuery(apiaries, 'alcacer').map((a) => a.id),
-        ['a'],
-        reason: 'place_label-only match, diacritic-folded',
-      );
+      expect(filterApiariesByQuery(apiaries, 'encosta').map((a) => a.id), [
+        'a',
+      ], reason: 'name-only match still works');
+      expect(filterApiariesByQuery(apiaries, 'alcacer').map((a) => a.id), [
+        'a',
+      ], reason: 'place_label-only match, diacritic-folded');
     });
 
-    test(
-      'sortApiariesByDistance orders ascending and puts no-location entries last',
-      () {
-        final apiaries = [
-          _apiary('far', 'Far', lon: 10, lat: 0),
-          _apiary('none', 'No Location'),
-          _apiary('near', 'Near', lon: 0.01, lat: 0),
-        ];
-        final sorted = sortApiariesByDistance(
-          apiaries,
-          originLon: 0,
-          originLat: 0,
-        );
-        expect(sorted.map((a) => a.id).toList(), ['near', 'far', 'none']);
-      },
-    );
+    test('sortApiariesByDistance orders ascending and puts no-location entries last', () {
+      final apiaries = [
+        _apiary('far', 'Far', lon: 10, lat: 0),
+        _apiary('none', 'No Location'),
+        _apiary('near', 'Near', lon: 0.01, lat: 0),
+      ];
+      final sorted = sortApiariesByDistance(
+        apiaries,
+        originLon: 0,
+        originLat: 0,
+      );
+      expect(sorted.map((a) => a.id).toList(), ['near', 'far', 'none']);
+    });
 
     test('sortApiariesByName orders alphabetically', () {
       final apiaries = [_apiary('z', 'Zulu'), _apiary('a', 'Alpha')];

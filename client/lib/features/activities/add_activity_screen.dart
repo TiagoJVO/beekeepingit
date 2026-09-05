@@ -253,9 +253,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.activityLoadError('$e'))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.activityLoadError('$e'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -476,9 +475,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   String? _effectiveJourneyId() {
     switch (_journeyTouch) {
       case _JourneyTouch.none:
-        return splitJourneyCandidates(
-          _lastKnownJourneyMatches,
-        ).autoSelected?.id;
+        return splitJourneyCandidates(_lastKnownJourneyMatches)
+            .autoSelected
+            ?.id;
       case _JourneyTouch.deselected:
         return null;
       case _JourneyTouch.selected:

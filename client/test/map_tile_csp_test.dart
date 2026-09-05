@@ -84,9 +84,10 @@ void main() {
     });
 
     test('connect-src names no third-party host the app does not call', () {
-      final sources = _cspDirective(
-        nginxConf.readAsStringSync(),
-      ).split(RegExp(r'\s+')).where((source) => source.isNotEmpty).toSet();
+      final sources = _cspDirective(nginxConf.readAsStringSync())
+          .split(RegExp(r'\s+'))
+          .where((source) => source.isNotEmpty)
+          .toSet();
       final unexplained = sources.difference(<String>{
         "'self'",
         ...mapTileCspOrigins,

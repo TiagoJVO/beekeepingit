@@ -153,9 +153,8 @@ class _JourneyQuickCreateSheetState
         defaultAttributes: defaultAttributes,
       );
       if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pop((id: id, name: name, defaultAttributes: defaultAttributes));
+      Navigator.of(context)
+          .pop((id: id, name: name, defaultAttributes: defaultAttributes));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);

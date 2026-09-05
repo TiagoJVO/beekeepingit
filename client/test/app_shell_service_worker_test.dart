@@ -202,25 +202,22 @@ void main() {
   });
 
   group('serving', () {
-    test(
-      'nginx gives the worker no location block of its own — one would '
-      'cancel inheritance of every server-level header, COOP/COEP included',
-      () {
-        final conf = nginxConf.readAsStringSync();
+    test('nginx gives the worker no location block of its own — one would '
+        'cancel inheritance of every server-level header, COOP/COEP included', () {
+      final conf = nginxConf.readAsStringSync();
 
-        // The trap (#89, guarded live by cache-headers.spec.ts): in nginx an
-        // `add_header` inside a `location {}` cancels inheritance of ALL
-        // server-level `add_header` directives. Losing COOP/COEP loses
-        // cross-origin isolation, SharedArrayBuffer, and with it PowerSync's
-        // wasm/OPFS sync worker — silently. The worker script needs nothing
-        // special anyway: `Cache-Control: no-cache` is already the server-wide
-        // default, which is exactly right for the file whose update check drives
-        // every release.
-        expect(conf, isNot(contains('location = /service_worker.js')));
-        expect(conf, isNot(contains('location /service_worker.js')));
-        expect(conf, contains('add_header Cache-Control "no-cache" always;'));
-      },
-    );
+      // The trap (#89, guarded live by cache-headers.spec.ts): in nginx an
+      // `add_header` inside a `location {}` cancels inheritance of ALL
+      // server-level `add_header` directives. Losing COOP/COEP loses
+      // cross-origin isolation, SharedArrayBuffer, and with it PowerSync's
+      // wasm/OPFS sync worker — silently. The worker script needs nothing
+      // special anyway: `Cache-Control: no-cache` is already the server-wide
+      // default, which is exactly right for the file whose update check drives
+      // every release.
+      expect(conf, isNot(contains('location = /service_worker.js')));
+      expect(conf, isNot(contains('location /service_worker.js')));
+      expect(conf, contains('add_header Cache-Control "no-cache" always;'));
+    });
   });
 }
 

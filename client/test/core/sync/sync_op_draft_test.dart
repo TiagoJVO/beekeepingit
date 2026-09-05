@@ -84,9 +84,8 @@ void main() {
     test('reports an entity-level rule under the column it names', () {
       // The apiary location rule is reported as `data.location`, a synthetic
       // path with no column of its own — the form binds one control for it.
-      final errors = apiaryPut({
-        'name': 'Montargil',
-      }).validateColumns(const {'name', 'location'});
+      final errors = apiaryPut({'name': 'Montargil'})
+          .validateColumns(const {'name', 'location'});
 
       expect(errors.keys, ['location']);
       expect(errors['location']!.code, 'required');

@@ -89,9 +89,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           .read(profileProvider.notifier)
           .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -104,9 +103,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.profileSaveError('$e'))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.profileSaveError('$e'))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

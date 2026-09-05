@@ -156,9 +156,8 @@ int _byStaleness(ApiaryVisitRecency a, ApiaryVisitRecency b) {
     final byDate = aVisit.compareTo(bVisit);
     if (byDate != 0) return byDate;
   }
-  final byName = normalizeForSearch(
-    a.apiary.name,
-  ).compareTo(normalizeForSearch(b.apiary.name));
+  final byName = normalizeForSearch(a.apiary.name)
+      .compareTo(normalizeForSearch(b.apiary.name));
   if (byName != 0) return byName;
   return a.apiary.id.compareTo(b.apiary.id);
 }

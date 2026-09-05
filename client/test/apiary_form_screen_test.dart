@@ -373,55 +373,52 @@ void main() {
       },
     );
 
-    testWidgets(
-      'the pinned Save keeps its semantics label and the location-required '
-      'error still surfaces from it',
-      (tester) async {
-        tester.view.physicalSize = shortViewport;
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('the pinned Save keeps its semantics label and the location-required '
+        'error still surfaces from it', (tester) async {
+      tester.view.physicalSize = shortViewport;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final repo = _FakeApiariesRepository();
-        await tester.pumpWidget(
-          _buildApp(apiaries: const [], repositoryOverride: repo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(apiaries: const [], repositoryOverride: repo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
 
-        await tester.enterText(
-          find.byKey(const Key('apiary-name-field')),
-          'Encosta Nova',
-        );
-        final toggle = find.byKey(const Key('apiary-toggle-map-button'));
-        await tester.ensureVisible(toggle);
-        await tester.pumpAndSettle();
-        await tester.tap(toggle);
-        await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Encosta Nova',
+      );
+      final toggle = find.byKey(const Key('apiary-toggle-map-button'));
+      await tester.ensureVisible(toggle);
+      await tester.pumpAndSettle();
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
 
-        expectHasSemanticsLabel(tester, const Key('apiary-save-button'));
+      expectHasSemanticsLabel(tester, const Key('apiary-save-button'));
 
-        // Saving with the picker expanded but no pin still surfaces the
-        // mandatory-location error (#341) rather than doing nothing.
-        await tester.tap(find.byKey(const Key('apiary-save-button')));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
+      // Saving with the picker expanded but no pin still surfaces the
+      // mandatory-location error (#341) rather than doing nothing.
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-        final error = find.byKey(const Key('apiary-location-required-error'));
-        await tester.ensureVisible(error);
-        await tester.pumpAndSettle();
-        expect(error, findsOneWidget);
-        expect(repo.created, isEmpty);
-      },
-    );
+      final error = find.byKey(const Key('apiary-location-required-error'));
+      await tester.ensureVisible(error);
+      await tester.pumpAndSettle();
+      expect(error, findsOneWidget);
+      expect(repo.created, isEmpty);
+    });
   });
 
   testWidgets(
@@ -887,48 +884,45 @@ void main() {
       expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
     });
 
-    testWidgets(
-      'a denied/unavailable location shows the permission-denied message, '
-      'not a crash',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('a denied/unavailable location shows the permission-denied message, '
+        'not a crash', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [],
-            locationService: const _FakeDeviceLocationService(
-              DeviceLocationPermissionDenied(),
-            ),
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationPermissionDenied(),
           ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('apiary-use-current-location-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-use-current-location-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('apiary-location-permission-denied')),
-          findsOneWidget,
-        );
-        expect(tester.takeException(), isNull);
-      },
-    );
+      expect(
+        find.byKey(const Key('apiary-location-permission-denied')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('map-picker recenter (#420)', () {
@@ -1347,57 +1341,51 @@ void main() {
   });
 
   group('error handling on create/update/delete/load (HIGH finding)', () {
-    testWidgets(
-      'a failing create() resets busy and shows an error toast instead of '
-      'hanging on an indefinite spinner',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('a failing create() resets busy and shows an error toast instead of '
+        'hanging on an indefinite spinner', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final repo = _FakeApiariesRepository(throwOnCreate: true);
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [],
-            repositoryOverride: repo,
-            // Location is mandatory (#341) — set one so save reaches create().
-            locationService: const _FakeDeviceLocationService(
-              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
-            ),
+      final repo = _FakeApiariesRepository(throwOnCreate: true);
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          repositoryOverride: repo,
+          // Location is mandatory (#341) — set one so save reaches create().
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
           ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
 
-        await tester.enterText(
-          find.byKey(const Key('apiary-name-field')),
-          'Encosta Nova',
-        );
-        await _setLocationViaCurrentLocation(tester);
-        await tester.tap(find.byKey(const Key('apiary-save-button')));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Encosta Nova',
+      );
+      await _setLocationViaCurrentLocation(tester);
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        // Still on the form — a failed create must not navigate away.
-        expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
-        // Not stuck on an indefinite busy spinner.
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(
-          find.textContaining('Could not save the apiary'),
-          findsOneWidget,
-        );
-      },
-    );
+      // Still on the form — a failed create must not navigate away.
+      expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+      // Not stuck on an indefinite busy spinner.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Could not save the apiary'), findsOneWidget);
+    });
 
     testWidgets(
       'a failing update() (edit mode) resets busy and shows an error toast',
@@ -1500,40 +1488,32 @@ void main() {
       expect(repo.deleteCalled, isTrue);
     });
 
-    testWidgets(
-      'a failing initial load (edit mode) resets busy and shows an error '
-      'instead of an indefinite spinner',
-      (tester) async {
-        final repo = _FakeApiariesRepository(throwOnGetById: true);
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4),
-            ],
-            repositoryOverride: repo,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+    testWidgets('a failing initial load (edit mode) resets busy and shows an error '
+        'instead of an indefinite spinner', (tester) async {
+      final repo = _FakeApiariesRepository(throwOnGetById: true);
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4)],
+          repositoryOverride: repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
 
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(
-          find.textContaining('Could not load the apiary'),
-          findsOneWidget,
-        );
-      },
-    );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Could not load the apiary'), findsOneWidget);
+    });
   });
 
   testWidgets(

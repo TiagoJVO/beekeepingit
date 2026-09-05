@@ -5,7 +5,14 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  # Tracks the Dart the pinned Flutter SDK ships (3.47.2 -> Dart 3.13.2), and it
+  # has to: `dart format` picks its style from the resolved language version, so
+  # a constraint below the toolchain makes formatting differ between a resolved
+  # tree (task dart:l10n-check, which runs `flutter pub get` first) and an
+  # unresolved one (task dart:format-check, which deliberately does not). Those
+  # two CI gates then demand opposite bytes for lib/l10n/gen and no tree can pass
+  # both. Keeping this in step with mise.toml's flutter pin keeps them agreeing.
+  sdk: ^3.13.0
 
 dependencies:
   flutter:
@@ -14,22 +21,24 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.1
   go_router: ^17.2.3
-  # EXACT, not a caret range, and not bumpable on its own: flutter_localizations
-  # from the pinned Flutter SDK depends on `intl 0.20.2` exactly, so any other
-  # version fails `flutter pub get` outright — "version solving failed", no build,
-  # no tests. #680 bumped it to 0.20.3 and broke main until it was reverted here.
-  # It moves only when the Flutter pin in mise.toml moves (#521), and the two have
-  # to travel in the same commit.
-  intl: 0.20.2
+  # EXACT, not a caret range, and never bumpable on its own: flutter_localizations
+  # from the pinned Flutter SDK depends on one exact intl version, so any other
+  # value fails `flutter pub get` outright — "version solving failed", no build,
+  # no tests. #680 bumped it alone and broke main until it was reverted.
+  # This value is dictated by the `flutter` pin in mise.toml and changes only in
+  # the same commit as that pin — as here, where Flutter 3.47.2 is what allows
+  # 0.20.3. Dependabot cannot see the SDK-side pin, so it is told to leave intl
+  # alone in .github/dependabot.yml.
+  intl: 0.20.3
   http: ^1.6.0
   powersync: ^2.3.2
   # Direct dependency so powersync_local_store.dart can import
   # package:sqlite3/common.dart (the Row type) directly — powersync 2.x
   # deprecated its package:powersync/sqlite3_common.dart re-export;
   # otherwise only a transitive dep of powersync.
-  sqlite3: ^3.5.0
+  sqlite3: ^3.5.2
   crypto: ^3.0.7
-  meta: ^1.18.0
+  meta: ^1.19.0
   web: ^1.1.1
   uuid: ^4.6.0
   # Provider-agnostic OIDC: discovery (`Issuer.discover`) + Authorization Code

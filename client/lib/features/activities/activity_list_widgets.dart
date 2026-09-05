@@ -109,9 +109,8 @@ class ActivityFilterBar extends StatelessWidget {
                       dateRange == null
                           ? l10n.activityFilterDateRangeUnset
                           : l10n.activityFilterDateRangeValue(
-                              LocaleFormatting.of(
-                                context,
-                              ).date(dateRange!.start),
+                              LocaleFormatting.of(context)
+                                  .date(dateRange!.start),
                               LocaleFormatting.of(context).date(dateRange!.end),
                             ),
                     ),

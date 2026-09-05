@@ -51,29 +51,25 @@ void main() {
       expect(result.whereType<SyncResultAppNotification>(), hasLength(1));
     });
 
-    test(
-      'a disabled event produces no notification even though its condition is true',
-      () {
-        final prefs = _FakeLocalPrefs();
-        NotificationPreferencesRepository(
-          prefs: prefs,
-        ).setEnabled(notificationEventTodoDueReminder, false);
-        final checker = NotificationChecker(
-          dedupStore: NotificationDedupStore(prefs: prefs),
-          preferences: NotificationPreferencesRepository(prefs: prefs),
-          settings: NotificationSettingsRepository(prefs: prefs),
-        );
+    test('a disabled event produces no notification even though its condition is true', () {
+      final prefs = _FakeLocalPrefs();
+      NotificationPreferencesRepository(prefs: prefs)
+          .setEnabled(notificationEventTodoDueReminder, false);
+      final checker = NotificationChecker(
+        dedupStore: NotificationDedupStore(prefs: prefs),
+        preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
+      );
 
-        final result = checker.check(
-          todos: [_overdueTodo('t1')],
-          today: DateTime(2026, 7, 27),
-          pendingCount: 3,
-          rejectedOpIds: const {},
-        );
+      final result = checker.check(
+        todos: [_overdueTodo('t1')],
+        today: DateTime(2026, 7, 27),
+        pendingCount: 3,
+        rejectedOpIds: const {},
+      );
 
-        expect(result, isEmpty);
-      },
-    );
+      expect(result, isEmpty);
+    });
 
     test('dedup state persists across calls (simulating the app reopening): '
         'the same condition does not re-notify on the second check', () {
@@ -111,33 +107,29 @@ void main() {
       expect(secondOpen, isEmpty);
     });
 
-    test(
-      'the org-wide reminder audience is preserved end-to-end regardless of assignee',
-      () {
-        final prefs = _FakeLocalPrefs();
-        final checker = NotificationChecker(
-          dedupStore: NotificationDedupStore(prefs: prefs),
-          preferences: NotificationPreferencesRepository(prefs: prefs),
-          settings: NotificationSettingsRepository(prefs: prefs),
-        );
+    test('the org-wide reminder audience is preserved end-to-end regardless of assignee', () {
+      final prefs = _FakeLocalPrefs();
+      final checker = NotificationChecker(
+        dedupStore: NotificationDedupStore(prefs: prefs),
+        preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
+      );
 
-        final result = checker.check(
-          todos: [_overdueTodo('t1', assigneeId: 'a-different-member')],
-          today: DateTime(2026, 7, 27),
-          pendingCount: 0,
-          rejectedOpIds: const {},
-        );
+      final result = checker.check(
+        todos: [_overdueTodo('t1', assigneeId: 'a-different-member')],
+        today: DateTime(2026, 7, 27),
+        pendingCount: 0,
+        rejectedOpIds: const {},
+      );
 
-        expect(result.whereType<TodoDueAppNotification>(), hasLength(1));
-      },
-    );
+      expect(result.whereType<TodoDueAppNotification>(), hasLength(1));
+    });
 
     test('the master switch off suppresses every notification even though '
         'the per-event preference is enabled (#500, FR-ST-1, D-24)', () {
       final prefs = _FakeLocalPrefs();
-      NotificationSettingsRepository(
-        prefs: prefs,
-      ).setNotificationsEnabled(false);
+      NotificationSettingsRepository(prefs: prefs)
+          .setNotificationsEnabled(false);
       final checker = NotificationChecker(
         dedupStore: NotificationDedupStore(prefs: prefs),
         preferences: NotificationPreferencesRepository(prefs: prefs),

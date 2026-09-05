@@ -104,42 +104,39 @@ Organization _org(String id) => Organization(
 
 void main() {
   group('membershipLossPurgeProvider', () {
-    test(
-      'purges the local store when a resolved org disappears (membership revoked)',
-      () async {
-        final platform = _FakeSessionPlatform();
-        final store = _FakeLocalStoreEngine();
-        final controller = _FakeOrganizationController(_org('org-1'));
+    test('purges the local store when a resolved org disappears (membership revoked)', () async {
+      final platform = _FakeSessionPlatform();
+      final store = _FakeLocalStoreEngine();
+      final controller = _FakeOrganizationController(_org('org-1'));
 
-        final container = ProviderContainer(
-          overrides: [
-            organizationProvider.overrideWith(() => controller),
-            authPlatformProvider.overrideWithValue(platform),
-            localStoreProvider.overrideWith((ref) async => store),
-          ],
-        );
-        addTearDown(container.dispose);
+      final container = ProviderContainer(
+        overrides: [
+          organizationProvider.overrideWith(() => controller),
+          authPlatformProvider.overrideWithValue(platform),
+          localStoreProvider.overrideWith((ref) async => store),
+        ],
+      );
+      addTearDown(container.dispose);
 
-        // Start the listener and let the initial (has-an-org) resolution settle.
-        container.listen(membershipLossPurgeProvider, (_, _) {});
-        await container.read(organizationProvider.future);
-        await Future<void>.delayed(Duration.zero);
+      // Start the listener and let the initial (has-an-org) resolution settle.
+      container.listen(membershipLossPurgeProvider, (_, _) {});
+      await container.read(organizationProvider.future);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(platform.readSession('bk.last_org_id'), 'org-1');
-        expect(store.clearCalls, 0, reason: 'no loss yet — must not purge');
+      expect(platform.readSession('bk.last_org_id'), 'org-1');
+      expect(store.clearCalls, 0, reason: 'no loss yet — must not purge');
 
-        // Membership revoked: the next resolution comes back with no org.
-        controller.resolveTo(null);
-        await Future<void>.delayed(Duration.zero);
+      // Membership revoked: the next resolution comes back with no org.
+      controller.resolveTo(null);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(store.clearCalls, 1);
-        expect(
-          platform.readSession('bk.last_org_id'),
-          isNull,
-          reason: 'the stale marker is cleared once the purge fires',
-        );
-      },
-    );
+      expect(store.clearCalls, 1);
+      expect(
+        platform.readSession('bk.last_org_id'),
+        isNull,
+        reason: 'the stale marker is cleared once the purge fires',
+      );
+    });
 
     test(
       'first-time onboarding (no org yet, no prior marker) does not purge',

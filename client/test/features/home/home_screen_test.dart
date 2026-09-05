@@ -207,9 +207,12 @@ Future<void> _pumpBounded(WidgetTester tester) async {
   }
 }
 
-String _location(WidgetTester tester) => GoRouter.of(
-  tester.element(find.byType(AppShell)),
-).routeInformationProvider.value.uri.toString();
+String _location(WidgetTester tester) =>
+    GoRouter.of(tester.element(find.byType(AppShell)))
+        .routeInformationProvider
+        .value
+        .uri
+        .toString();
 
 /// Every row title inside [section], in the order the section lays them out.
 ///

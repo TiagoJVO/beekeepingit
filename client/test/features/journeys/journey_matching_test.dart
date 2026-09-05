@@ -89,37 +89,34 @@ void main() {
     });
   });
 
-  group('JourneyPickerCandidates.autoSelected (#46 AC: auto-match hit/miss)', () {
-    test('auto-match HIT: picks the first (newest) open match', () {
-      final newest = _journey('newest');
-      final older = _journey('older');
-      final candidates = JourneyPickerCandidates(
-        open: [newest, older],
-        closed: const [],
-      );
+  group(
+    'JourneyPickerCandidates.autoSelected (#46 AC: auto-match hit/miss)',
+    () {
+      test('auto-match HIT: picks the first (newest) open match', () {
+        final newest = _journey('newest');
+        final older = _journey('older');
+        final candidates = JourneyPickerCandidates(
+          open: [newest, older],
+          closed: const [],
+        );
 
-      expect(candidates.autoSelected, same(newest));
-    });
+        expect(candidates.autoSelected, same(newest));
+      });
 
-    test(
-      'auto-match MISS: no open matches at all -> null, even with closed matches present',
-      () {
+      test('auto-match MISS: no open matches at all -> null, even with closed matches present', () {
         final candidates = JourneyPickerCandidates(
           open: const [],
           closed: [_journey('closed-only', status: journeyStatusClosed)],
         );
 
         expect(candidates.autoSelected, isNull);
-      },
-    );
+      });
 
-    test('auto-match MISS: no candidates whatsoever -> null', () {
-      expect(JourneyPickerCandidates.empty.autoSelected, isNull);
-    });
+      test('auto-match MISS: no candidates whatsoever -> null', () {
+        expect(JourneyPickerCandidates.empty.autoSelected, isNull);
+      });
 
-    test(
-      'never auto-selects a closed journey even if it were (incorrectly) in `open`',
-      () {
+      test('never auto-selects a closed journey even if it were (incorrectly) in `open`', () {
         // Defensive: splitJourneyCandidates is what's responsible for routing
         // by status, but autoSelected itself must only ever look at `open` —
         // this pins that contract directly against the type, independent of
@@ -131,7 +128,7 @@ void main() {
         );
         expect(candidates.autoSelected, isNot(onlyClosed));
         expect(candidates.autoSelected, isNull);
-      },
-    );
-  });
+      });
+    },
+  );
 }

@@ -578,9 +578,8 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       Future<TokenResponse> fetchToken() async {
         final issuer = await _issuer();
         final idToken = _readLocalWithMigration(platform, _kIdToken);
-        final credential = _client(
-          issuer,
-        ).createCredential(refreshToken: refreshToken, idToken: idToken);
+        final credential = _client(issuer)
+            .createCredential(refreshToken: refreshToken, idToken: idToken);
         return credential.getTokenResponse(true);
       }
 

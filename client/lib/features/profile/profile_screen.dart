@@ -59,9 +59,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           .read(profileProvider.notifier)
           .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
       final complete = ref.read(profileCompleteProvider);
       if (complete) {
         // Re-fetch the organization state before moving on (#366): for a
@@ -103,9 +102,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         final msg = unrendered.isNotEmpty
             ? unrendered.map((k) => _fieldErrors[k]).join('\n')
             : e.detail;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.profileSaveError(msg))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.profileSaveError(msg))));
       }
     } on Exception catch (_) {
       // Narrowed to `Exception` (not a bare `catch`, which also matches
@@ -117,9 +115,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       // `ApiException.detail`/field messages above are structured enough to
       // show to the user verbatim.
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.profileGenericError)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.profileGenericError)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

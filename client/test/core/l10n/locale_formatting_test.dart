@@ -57,9 +57,8 @@ void main() {
       // Every month renders as a name, not digits, in both locales.
       for (var month = 1; month <= 12; month++) {
         for (final locale in const ['pt_PT', 'en_GB']) {
-          final formatted = LocaleFormatting.forLocale(
-            locale,
-          ).date(DateTime(2026, month, 15));
+          final formatted = LocaleFormatting.forLocale(locale)
+              .date(DateTime(2026, month, 15));
           expect(
             formatted,
             matches(RegExp(r'^15 \D')),

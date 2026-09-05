@@ -201,17 +201,14 @@ void main() {
       );
     });
 
-    test(
-      'disease outside the DGAV-DDO-informed candidate vocabulary is rejected (#291)',
-      () {
-        final errors = validateActivityAttributes(activityTypeTreatment, {
-          'treatment_context': treatmentContextDiseaseSpecific,
-          'treatment_type': 'Timol',
-          'disease': 'Made-up disease',
-        });
-        expect(hasFieldCode(errors, 'attributes.disease', 'invalid'), isTrue);
-      },
-    );
+    test('disease outside the DGAV-DDO-informed candidate vocabulary is rejected (#291)', () {
+      final errors = validateActivityAttributes(activityTypeTreatment, {
+        'treatment_context': treatmentContextDiseaseSpecific,
+        'treatment_type': 'Timol',
+        'disease': 'Made-up disease',
+      });
+      expect(hasFieldCode(errors, 'attributes.disease', 'invalid'), isTrue);
+    });
   });
 
   group('validateActivityAttributes: generic', () {

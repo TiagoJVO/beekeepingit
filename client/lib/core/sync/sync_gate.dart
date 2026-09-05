@@ -45,14 +45,13 @@ class SyncGate {
   /// `connectivity_signal.dart`). Optional: with no stream the gate behaves
   /// exactly as before, which is what most unit tests want.
   SyncGate({
-    required ConnectivityProbe probe,
-    required Future<void> Function() onGatePassed,
+    required this._probe,
+    required this._onGatePassed,
     Stream<void>? onConnectivityRestored,
     this.initialBackoff = const Duration(seconds: 2),
     this.maxBackoff = const Duration(minutes: 2),
     this.backoffMultiplier = 2,
-  }) : _probe = probe,
-       _onGatePassed = onGatePassed {
+  }) {
     _restoredSub = onConnectivityRestored?.listen(
       (_) => _handleConnectivityRestored(),
       // The hint is best-effort by construction (a platform that can't
