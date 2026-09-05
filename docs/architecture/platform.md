@@ -24,17 +24,21 @@ Postgres+PostGIS, the OIDC IdP, MinIO and the gateway landed with `#84` (see bel
 **Keycloak** at `#84` and was later **replaced by Authentik** (D-7 revised,
 [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)). PowerSync's
 _infra_ (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
-placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector exist yet
-(see `FOLLOWUPS.md`). The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
+placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector existed yet.
+The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
 Sync Rules + connector land with `#23`/`#106`. All deploy through the umbrella chart below rather
 than standing up their own release.
 
 One thing doesn't: the **CloudNativePG operator** (below) is cluster-scoped, so — like Traefik —
 it's installed once by `up.sh` itself rather than through the umbrella chart.
 
-- **CloudNativePG operator**: `up.sh` also does `helm repo add cnpg
-https://cloudnative-pg.github.io/charts` + `helm upgrade --install cnpg-operator
-cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster bring-up. It's a
+- **CloudNativePG operator**: `up.sh` also does
+  `helm upgrade --install cnpg-operator oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg -n cnpg-system --create-namespace`,
+  right after cluster bring-up. The chart is pulled from CNPG's **OCI registry**, not the classic
+  `https://cloudnative-pg.github.io/charts` Helm repo: that URL now redirects to
+  `cloudnative-pg.io`, whose DNS delegation is broken, so `helm repo add` fails outright — while
+  the same releases are pushed to `ghcr.io/cloudnative-pg/charts` by upstream's own release
+  workflow (`infra/cluster/scw-cluster-prereqs.sh` uses the same source for Kapsule). It's a
   prerequisite for the umbrella chart's `postgres` subchart (its `Cluster` custom resource), not a
   subchart itself — installing/upgrading it on every per-environment `helm upgrade beekeepingit`
   would be wrong for something meant to serve every environment on the cluster (see
@@ -166,13 +170,12 @@ Platform Overview" — collector accepted spans/logs/metric-points per second + 
 targets up) is added via Grafana's values-driven `dashboards`/`dashboardProviders`
 keys, no hand-written ConfigMap template.
 
-Since no service emits real telemetry yet (`#23`, the walking-skeleton services, is
-still pending), [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)
+The services now emit real telemetry through the shared template (`#23`), but the observability
+stack is not yet deployed alongside them, so [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)
 fires one correlated trace+log+metric through the collector (via OTel's `telemetrygen`)
 as a stand-in, to prove the pipeline and the trace↔log correlation end-to-end now. The
 literal "walking-skeleton traces visible" AC gets closed for real once `#23` ships and
-wires its Go service's OTel SDK to `otel-collector:4317` (tracked in
-[`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
+wires its Go service's OTel SDK to `otel-collector:4317` (tracked in `#610`).
 
 [`infra/grafana-open.sh`](../../infra/grafana-open.sh) is a dev convenience for reaching
 Grafana itself: it reads the chart-generated admin password out of the
@@ -229,6 +232,9 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
 - GitOps-manifest validation (`kubeconform` against the Flux CRD schemas) moved to the
   `beekeepingit-gitops` repo's own `gitops-ci.yml` when the manifests were split out (D-27/ADR-0018).
+  That workflow's `chart-pin` job also asserts, on every gitops PR, that the staging and prod
+  `beekeepingit` `GitRepository` is pinned to a release `tag:` (dev opts out by annotation) and
+  that the umbrella `HelmRelease` sources its chart from it (`#611`).
 
 Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
 tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,
@@ -247,9 +253,14 @@ updated once a change merges. See that repo's README for layout and day-to-day o
 **Release-triggered promotion** closes the CI/CD loop (D-27,
 [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md), superseding the image-automation plan
 in [ADR-0014](../adr/0014-cicd-pipeline.md) §4): a published Release makes CI build the release
-version's images and open a tag-bump **PR** against the GitOps manifests; a human merges it and Flux
-reconciles. Flux stays **read-only** — no image-automation controllers, no standing git-write
-credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
+version's images and open a promotion **PR** against the GitOps manifests; a human merges it and Flux
+reconciles. That PR moves **both halves of the release** — the image tags in `apps/<env>/` **and**
+the `beekeepingit` `GitRepository`'s `ref` in `clusters/<env>/`, so the umbrella **chart** is taken
+from the release rather than from `main` (the source `ref` is the only pin available: Flux ignores
+`chart.spec.version` for a git source). A merge to `main` therefore changes **nothing** on a live
+cluster; merging the promotion PR is the deploy, and reverting it rolls chart and images back
+together (ADR-0018 addendum, 2026-08-31). Flux stays **read-only** — no image-automation
+controllers, no standing git-write credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
 `production-gate` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
 cluster) and stays a manual `helm ... -f environments/dev.yaml` loop. The `-gate` environments only
 record "approved to publish" — the plain `staging`/`production` environments on this repo instead
@@ -264,8 +275,8 @@ certManager.enabled`, cert-manager + Let's Encrypt, ADR-0017) and live on `stagi
   still uses the self-signed cert, since a local k3d cluster has no public endpoint for an ACME
   challenge to reach.
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
-  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
-  `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
+  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap since
+  `apiaries`/`organizations` don't exist until `#23`/`#106`.
 - End-to-end **release→deploy** — the release-triggered PR-based promotion (D-27,
   [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) is designed but **not yet exercised
   end-to-end**: `release-deploy.yml`'s tag-bump-PR step and the `beekeepingit-gitops` repo split are

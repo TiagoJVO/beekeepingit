@@ -56,8 +56,12 @@ the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit
 - **Registration** — **self-service enrollment since #366** ([auth.md §8.11](auth.md)): blueprint
   flow `beekeepingit-enrollment`, linked from the login page via the default identification
   stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
-  (the #361 machinery) and a UUID `upn` is assigned at creation (§4). The provider/client
-  contract above is unchanged — enrollment is IdP-side flow config.
+  (the #361 machinery) and a UUID `upn` is assigned at creation (§4). **Since #365 registration is
+  also open via a federation source** ([auth.md §8.15](auth.md)): blueprint flow
+  `beekeepingit-source-enrollment`, referenced by each source's `enrollment_flow`, SSO-gated and
+  fed exclusively by the #364 resolver's properties (upstream address strictly verified, UUID
+  `upn` at creation, no prompts). The provider/client contract above is unchanged either way —
+  enrollment is IdP-side flow config.
 - **`platform-operator`** — an Authentik **group** (not a membership role); the dev/CI seed user has
   been a member since the Authentik cut-over (#191). It is the ops/infra marker **and**, since
   [#465](https://github.com/TiagoJVO/beekeepingit/issues/465), the **platform tier's** authority
@@ -181,9 +185,10 @@ all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
   The **seed user's `upn` = `11111111-1111-4111-8111-111111111111`** (continuity: `oidc_sub`
   keeps its prior value). _Rejected: `user_email` (mutable PII as identity key); `user_uuid` /
   `hashed_user_id` (unpinnable / secret-key-derived → not reproducible)._
-  **Forward-requirement — implemented by #366:** the self-service enrollment flow assigns a UUID
-  `upn` per user at creation (an expression policy on its `user_write` binding, fail closed: no
-  account is created without one — [auth.md §8.11](auth.md)).
+  **Forward-requirement — implemented by #366 and #365:** every self-service enrollment assigns a
+  UUID `upn` per user at creation — #366's flow via an expression policy on its `user_write`
+  binding, #365's source enrollment via the resolver's enroll branch with a guard policy on the
+  write binding; both fail closed: no account is created without one ([auth.md §8.11/§8.15](auth.md)).
 - **`aud` → services expect `beekeepingit-pwa`.** Authentik's default `aud` is the client id, so
   set **`OIDC_AUDIENCE=beekeepingit-pwa`** (no custom audience mapper for the pwa). A stale value =
   silent 401s. The **admin client** (`beekeepingit-admin`, §3.1) is the one exception that needs an
@@ -195,9 +200,13 @@ all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
 
 Present: `sub, iss, aud, azp, exp, iat, email, email_verified, name, given_name (=full name),
 preferred_username, groups` — plus **`platform_operator`** on **admin-client tokens only** (§3.2).
-**Absent by default:** `family_name`, `locale`. The app collects
-profile (name/locale) during onboarding (FR-ONB-1), so it does **not** depend on IdP profile
-claims; add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
+**Absent by default:** `family_name`, `locale`. `locale` is still collected during onboarding;
+since the #365 follow-up the app **does** consume `name` and `email` — **fail-soft**, as seeds for
+the profile row at first sight ([auth.md §8.16](auth.md)). That is standard-OIDC consumption, not
+an IdP dependency: a provider that omits `name` yields an empty field the user fills, and the
+`email` seed is gated on `email_verified`. It does mean the profile scope mapping's `name` is now
+**load-bearing contract** rather than incidental — losing it degrades to an empty field, never an
+error. Add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
 optional.
 
 > **`email_verified` is REAL state since #361** ([auth.md §8.10](auth.md), ADR-0019). Authentik's
@@ -297,7 +306,15 @@ optional.
   single-audience services with no services change. Since #465 it additionally declares the
   **`scope-platform-operator`** mapping (the verified `platform_operator` claim, §3.2 — admin
   provider only) and a third seed user, `non.operator@beekeepingit.local`, deliberately outside the
-  `platform-operator` group so the claim's negative case is provable in e2e.
+  `platform-operator` group so the claim's negative case is provable in e2e. Since #363 it declares
+  the **Google federation source** (plus the dev/CI stand-in and the `beekeepingit_idp` hint chain),
+  and since #364 the **`mapping-federation-account-link`** OAuth-source property mapping every
+  federation source attaches — the single place that decides which local account an upstream
+  identity may reach ([auth.md §8.14](auth.md)) — with the sources' `user_matching_mode` set to
+  `username_link` to route the match through it. Since #365 it also declares the
+  **source-enrollment flow** `beekeepingit-source-enrollment` (SSO-gated, guarded `user_write`,
+  the reused default user-login stage) that each source's `enrollment_flow` references — the write
+  path for the resolver's enroll branch ([auth.md §8.15](auth.md)).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -354,7 +371,8 @@ optional.
   must go red in CI: the live pin is the same `admin-token.spec.ts` (operator ⇒ `true`, non-operator
   ⇒ `false`) plus `slice.spec.ts`'s assertion that a PWA token never carries it, and the static pin is
   `scripts/check-platform-operator-mapping.sh` (`task repo:lint`).
-- **Upstream federation (#363, auth.md §8.13)** adds four things to the watch-list, all pinned to
+- **Upstream federation (#363, [auth.md §8.13](auth.md)) and account linking (#364,
+  [auth.md §8.14](auth.md))** add the following to the watch-list, all pinned to
   authentik **2026.5.4** and all re-checkable on a version bump:
   - **`BlueprintEntry.conditions` skip validation entirely** (`Importer._validate_single` returns
     before the serializer runs). That is what lets the Google source entry — whose serializer
@@ -371,11 +389,57 @@ optional.
     (the PR #414 shape, reached by a different route). A structural YAML parse does **not** catch
     it, because the tag constructors only run inside authentik. Static pin:
     `scripts/check-federation-source-posture.sh` fails on any single-element `!Env`.
-  - **Google's source type drops `verified_email`** (`get_base_user_properties` returns only
-    `email`/`name`), which is why `user_matching_mode` **must** stay `identifier` and never an
-    `email_*` mode. If a bump starts surfacing the upstream's verification state, revisit
-    [#364](https://github.com/TiagoJVO/beekeepingit/issues/364) — do not silently switch modes.
-    Same static pin.
+  - **Google's source type drops `verified_email` from the BASE PROPERTIES** — but not from the
+    payload. `get_base_user_properties` returns only `email`/`name`, which is why no `email_*`
+    matching mode may ever be used; the raw userinfo, which **does** carry `verified_email`, is
+    handed to property mappings as `info`. That is what #364 reads
+    ([auth.md §8.14](auth.md)). Two things must hold on a bump: `GoogleType.profile_url` stays
+    `https://www.googleapis.com/oauth2/v1/userinfo` (the endpoint that returns
+    `verified_email`; `GoogleType` is not `urls_customizable`, so nothing in the blueprint can
+    compensate if upstream repoints it), and `SourceMapper.build_object_properties` keeps passing
+    the raw `info` through to mappings. If either changed, every Google login would be **denied**
+    — visibly broken, not silently permissive — and the fix belongs in the resolver, not in a
+    matching mode. Same static pin.
+  - **Account linking (#364, [auth.md §8.14](auth.md))** rides four more 2026.5.4 internals, all in
+    `authentik/core/sources/matcher.py` + `mapper.py`:
+    (a) `SourceMatcher.get_action` checks the existing `(source, identifier)` connection **first**,
+    before any property — that is the subject match;
+    (b) with a non-`identifier` mode, an **empty/absent** matchable property yields `Action.DENY` —
+    the fail-closed hinge the whole resolver hangs on — while a **present but unmatched** value
+    yields `Action.ENROLL`, which is how #365's generated-username branch opens registration
+    without ever letting the upstream pick an account;
+    (c) `matching_objects.first()` is used unguarded, which is why the mode must be
+    `username_link` (the only **unique** matchable property) and never `email_link` — this
+    deployment allows duplicate emails by design;
+    (d) `build_object_properties` merges mapping results **over** the base properties (mappings
+    ordered by **name**) and then drops `None`-valued keys (`delete_none_values`), which is how the
+    resolver both steers and withholds. A bump changing any of these must go red: the live pin is
+    `infra/ci/authentik-federation-probe.py` (run by `helm-e2e.yml`), which drives the real
+    `SourceFlowManager` through the verified/unverified/history/ambiguous/superuser cases; the
+    static pin is `scripts/check-federation-source-posture.sh` (`task repo:lint`), which asserts
+    `username_link` **and** that the resolver mapping is attached by `!KeyOf` and is the source's
+    only one.
+  - **A null FK's loudness is the SERIALIZER's choice, not the model's** (#599,
+    [auth.md §8.17](auth.md)). All three of the providers' cross-file references are `null=True` on
+    the model, but `OAuth2ProviderSerializer` has `authorization_flow`/`invalidation_flow`
+    `required=True, allow_null=False` and `signing_key` `required=False, allow_null=True` — so only
+    `signing_key` could be silently nulled by an `!Find` that lost its race (no RS256 key → HS256
+    fallback → **empty JWKS**). All three are now reached by `!KeyOf` at identifiers-only pin
+    entries, whose lack of `attrs` is what makes a missing target raise. **Two** upstream properties
+    must hold on a bump, not one: that nullability table (a relaxation on either flow would make the
+    old spelling silent again), **and** that an identifiers-only create still cannot validate — i.e.
+    `FlowSerializer` still requires `name`/`title`/`designation` and `CertificateKeyPairSerializer`
+    still requires `certificate_data`. If either serializer started defaulting those, a pin would
+    _invent_ the object instead of raising: a stage-less authorization flow (which authentik
+    auto-completes — a silent consent skip) or a keypair with no key. Static
+    pin: `scripts/check-federation-source-posture.sh`; live pin:
+    `infra/ci/authentik-federation-probe.py`, which also asserts both providers advertise the **same
+    `kid`** — the shared-signing-key property this section calls load-bearing, now structural
+    (one pin entry) rather than two lookups agreeing.
+  - **`attributes.known_emails`** is the per-account known-email history (#364). Its **only** writer
+    is the `beekeepingit-mark-email-verified` expression policy (#361's stamp, same restored
+    flow-token gate); entries are lowercase by construction because the resolver's JSONB `@>`
+    lookup is **case-sensitive**. Anything that seeds this attribute by hand must lowercase it.
   - **The `beekeepingit_idp` hint chain** depends on `SESSION_KEY_GET`/`NEXT_ARG_NAME` still being
     how `FlowExecutorView` stores the pending authorize request, and on `xak-flow-redirect` still
     auto-following. A bump that changes either degrades "Continue with Google" to a plain login —
@@ -408,7 +472,7 @@ unit tests, docs, backlog) needs **no** token.
 | **B — Backend**      | `services/**`                                           | ❌                 |
 | **C — Client**       | `client/**`                                             | e2e ✅ (semaphore) |
 | **D — Docs**         | `docs/**`, `README.md`, `CLAUDE.md`, requirements sweep | ❌                 |
-| **E — Backlog**      | GitHub Issues, `FOLLOWUPS.md` (coordinator-run)         | ❌                 |
+| **E — Backlog**      | GitHub Issues + the session ledger (coordinator-run)    | ❌                 |
 
 Shared files are single-owner to avoid conflicts: `README.md`/`CLAUDE.md`/all `docs/**` → **WS-D**;
-`FOLLOWUPS.md` + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.
+the session ledger + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.

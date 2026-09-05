@@ -81,7 +81,7 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 	)
 	// postgis/postgis (not the plain postgres:16-alpine other services use):
 	// this service's schema needs the postgis extension (location
-	// geography(Point,4326), 00003_add_apiary_location.sql) — matching the
+	// geography(Point,4326), 00008_baseline.sql (previously 00003_add_apiary_location.sql)) — matching the
 	// real cluster's CNPG postgis operand image (infra/helm/beekeepingit/
 	// charts/postgres/values.yaml), just a standalone build of the same
 	// extension rather than the CNPG-specific image.
@@ -2500,8 +2500,12 @@ type apiaryView struct {
 	HiveCount  int32         `json:"hive_count"`
 	Location   *geoPointView `json:"location,omitempty"`
 	PlaceLabel *string       `json:"place_label,omitempty"`
-	Notes      *string       `json:"notes,omitempty"`
-	DistanceM  *float64      `json:"distance_m,omitempty"`
+	// RegistrationNumber (FR-AP-9, #296) is the apiary-level OVERRIDE of
+	// the organization's beekeeper registration-number default; absent when
+	// the apiary simply inherits it.
+	RegistrationNumber *string  `json:"registration_number,omitempty"`
+	Notes              *string  `json:"notes,omitempty"`
+	DistanceM          *float64 `json:"distance_m,omitempty"`
 }
 
 func (f *apiariesFixture) getApiary(t *testing.T, id string) apiaryView {
@@ -2555,7 +2559,7 @@ func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name s
 // createPostgisExtension enables postgis on the test database, standing in
 // for the postgres chart's bootstrap (cluster.yaml's postInitApplicationSQL
 // runs `CREATE EXTENSION IF NOT EXISTS postgis;` once, cluster-wide, before
-// any service's migrations run) — 00003_add_apiary_location.sql's
+// any service's migrations run) — 00008_baseline.sql (previously 00003_add_apiary_location.sql)'s
 // `geography(Point, 4326)` column needs the extension to already exist.
 func createPostgisExtension(ctx context.Context, t *testing.T, cfg dbaccess.Config) {
 	t.Helper()
@@ -2566,5 +2570,136 @@ func createPostgisExtension(ctx context.Context, t *testing.T, cfg dbaccess.Conf
 	defer conn.Close(ctx)
 	if _, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS postgis"); err != nil {
 		t.Fatalf("create postgis extension: %v", err)
+	}
+}
+
+// createBodyWithRegistrationNumber is createBodyWithPlaceLabel's counterpart
+// for the apiary registration-number override (FR-AP-9, #296) — same
+// "separate helper, don't widen createBody" reason.
+func createBodyWithRegistrationNumber(id, name string, hiveCount *int32, loc *geoPointView, registrationNumber string) map[string]any {
+	body := createBody(id, name, hiveCount, loc)
+	body["registration_number"] = registrationNumber
+	return body
+}
+
+// patchRegistrationNumber is patchPlaceLabel's counterpart for the apiary
+// registration-number override (FR-AP-9, #296), on the sync-apply wire shape.
+func patchRegistrationNumber(id, registrationNumber string, ts time.Time) api.Op {
+	data, _ := json.Marshal(map[string]any{"registration_number": registrationNumber})
+	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
+}
+
+// TestApiariesRest_RegistrationNumber_CreateAndUpdateRoundTrip is
+// FR-AP-9's REST AC for the apiary-level OVERRIDE (#296): optional on create,
+// present on read when set, independently updatable, clearable. The
+// organization-level DEFAULT lives in the organizations service — this column
+// exists only for an organization covering several beekeepers, where different
+// apiaries carry different beekeepers' numbers.
+func TestApiariesRest_RegistrationNumber_CreateAndUpdateRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	// Create without it: omitted from the response, like place_label/notes.
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Nova", nil, nil))
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	if strings.Contains(recCreate.Body.String(), `"registration_number"`) {
+		t.Fatalf("create response unexpectedly contains a registration_number key: %s", recCreate.Body.String())
+	}
+
+	// Create a second apiary carrying a different beekeeper's number up front.
+	id2 := uuid.NewString()
+	recCreate2 := f.do(t, http.MethodPost, "/v1/apiaries", createBodyWithRegistrationNumber(id2, "Monte Alto", int32Ptr(4), nil, "PT-654321"))
+	if recCreate2.Code != http.StatusCreated {
+		t.Fatalf("create-with-registration-number status = %d, want 201, body = %s", recCreate2.Code, recCreate2.Body.String())
+	}
+	var created2 apiaryView
+	if err := json.Unmarshal(recCreate2.Body.Bytes(), &created2); err != nil {
+		t.Fatalf("decode create-with-registration-number response: %v", err)
+	}
+	if created2.RegistrationNumber == nil || *created2.RegistrationNumber != "PT-654321" {
+		t.Fatalf("created apiary registration_number = %v, want %q", created2.RegistrationNumber, "PT-654321")
+	}
+
+	// PATCH sets it on the apiary created without one; other fields untouched.
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"registration_number": "PT-123456"})
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	var updated apiaryView
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.RegistrationNumber == nil || *updated.RegistrationNumber != "PT-123456" {
+		t.Fatalf("updated apiary registration_number = %v, want %q", updated.RegistrationNumber, "PT-123456")
+	}
+	if updated.Name != "Encosta Nova" {
+		t.Fatalf("updated apiary name = %q, want unchanged %q", updated.Name, "Encosta Nova")
+	}
+
+	// Persisted, not just echoed.
+	if got := f.getApiary(t, id); got.RegistrationNumber == nil || *got.RegistrationNumber != "PT-123456" {
+		t.Fatalf("get apiary registration_number = %v, want %q", got.RegistrationNumber, "PT-123456")
+	}
+
+	// Clearing back to empty drops the override, so the apiary inherits the
+	// organization's default again.
+	recClear := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"registration_number": ""})
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear-registration-number status = %d, want 200, body = %s", recClear.Code, recClear.Body.String())
+	}
+	if got := f.getApiary(t, id); got.RegistrationNumber != nil {
+		t.Fatalf("get apiary registration_number = %v after clearing, want absent", got.RegistrationNumber)
+	}
+}
+
+// TestApiariesRest_RegistrationNumber_ValidationRejectsTooLong keeps the
+// REST path and sync.go's validateApiaryOp on the same 50-character rule
+// (maxRegistrationNumberLength), matching the column's own CHECK.
+func TestApiariesRest_RegistrationNumber_ValidationRejectsTooLong(t *testing.T) {
+	f := newApiariesFixture(t)
+	tooLong := strings.Repeat("9", 51)
+
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBodyWithRegistrationNumber(uuid.NewString(), "Foo", nil, nil, tooLong))
+	if recCreate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create with too-long registration number status = %d, want 422, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"registration_number": tooLong})
+	if recUpdate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update with too-long registration number status = %d, want 422, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+}
+
+// TestApiariesSlice_RegistrationNumber_SyncApplyRoundTrip is FR-AP-9's
+// offline AC ("the per-apiary override syncs offline"): the field flows
+// through the sync-apply patch path like place_label, and the change lands in
+// the audit log's changed_fields (FR-HIS-1).
+func TestApiariesSlice_RegistrationNumber_SyncApplyRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+	if got := f.apply(t, patchRegistrationNumber(id, "PT-123456", t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("patch registration-number result = %+v, want applied", got.Results[0])
+	}
+	if a := f.getApiary(t, id); a.RegistrationNumber == nil || *a.RegistrationNumber != "PT-123456" {
+		t.Fatalf("apiary registration_number = %v, want %q", a.RegistrationNumber, "PT-123456")
+	}
+
+	// A stale re-send is superseded, never a silent overwrite (LWW, §4.3).
+	if got := f.apply(t, patchRegistrationNumber(id, "PT-000000", t0)); got.Results[0].Result != "superseded" {
+		t.Fatalf("stale patch result = %+v, want superseded", got.Results[0])
+	}
+	if a := f.getApiary(t, id); a.RegistrationNumber == nil || *a.RegistrationNumber != "PT-123456" {
+		t.Fatalf("apiary registration_number = %v after a stale patch, want unchanged %q", a.RegistrationNumber, "PT-123456")
 	}
 }

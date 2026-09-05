@@ -44,7 +44,7 @@ flux install
 #    re-run after cloning, after changing a dependency version, AND after editing any
 #    local subchart's templates/values (helm installs the packaged charts/*.tgz
 #    snapshot under this dir, not the live source — a stale snapshot silently
-#    installs old content otherwise, see FOLLOWUPS.md).
+#    installs old content otherwise).
 helm dependency build infra/helm/beekeepingit
 
 # 4. Install (or upgrade) the platform. Deliberately no `--wait`: PowerSync can't
@@ -53,6 +53,21 @@ helm dependency build infra/helm/beekeepingit
 #    time) has granted it access to `powersync_storage` — and Helm only runs
 #    post-install hooks *after* `--wait` is satisfied for the main resources, so
 #    waiting here would deadlock PowerSync against its own grant.
+#
+#    The post-install/post-upgrade hooks run in this order (ADR-0023/#541,
+#    ADR-0024/#545):
+#      0. schema-grants     the powersync database grant FIRST, then schema
+#                           USAGE/CREATE for each `<schema>_migrator` and USAGE
+#                           (CREATE revoked) for each `<schema>_svc`
+#      1. migrator-adopt    OFF by default — the one-off #545 ownership
+#                           transition, one Job per schema. See "Transitioning
+#                           an existing cluster" below
+#      2. <service>-migrate one Job per DB-backed service, running that service's
+#                           migrations as its own `<schema>_migrator`
+#      3. table-grants      one Job per schema, as that schema's migrator: table
+#                           DML grants, history-table and goose-ledger REVOKEs
+#    Weight 0 is deliberately kept independent of migrations: it is what unblocks
+#    PowerSync (see step 7), so a slow or stuck migration must never stall it.
 infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev --create-namespace
@@ -137,8 +152,113 @@ kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 ```
 
 PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with
-`#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone) — see
-`FOLLOWUPS.md` for any remaining wiring.
+`#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone).
+
+## Database roles
+
+Two login roles per schema (`D-6`, [ADR-0024](../docs/adr/0024-per-schema-migrator-roles.md)),
+plus the database owner. Credentials are generated in-cluster
+(`charts/postgres/templates/secrets.yaml`) and never leave it.
+
+| Role                | Owns                            | Held by                     | May                                                                           |
+| ------------------- | ------------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| `<schema>_migrator` | every relation in `<schema>`    | that service's migrate Job  | `USAGE, CREATE` on its own schema; full DDL/DML on what it owns               |
+| `<schema>_svc`      | nothing                         | that service's running pods | `USAGE` on its own schema; DML on domain tables; `INSERT`/`SELECT` on history |
+| `beekeepingit`      | the databases and all 7 schemas | `schema-grants`, adopt Job  | `GRANT ... ON SCHEMA`; **no** access to tables it does not own                |
+
+Neither per-schema role is a member of anything, in either direction — that is the isolation, and
+`services/shared/dbaccess/migrator_isolation_test.go` fails if a membership reappears.
+
+### Transitioning an existing cluster (#545)
+
+**A fresh install needs none of this.** The migrate Job creates every table as
+`<schema>_migrator` from the first release, so the adopt Jobs would be seven no-ops. This is only
+for a cluster (i.e. staging) that already deployed #541, where `beekeepingit` owns everything.
+
+**Prerequisite: the cluster must already be running #541's release.** Flipping the flag swaps
+`beekeepingit`'s `<schema>_svc` memberships for the migrator ones, so any relation still owned by
+`<schema>_svc` — the pre-#541 layout — becomes unreachable. The adopt Job checks for this first and
+fails the release naming the offending relations rather than emitting a bare `must be owner of
+table`; if you see that error, deploy #541's release first and retry.
+
+Run the transition release **once** with the flag on, then turn it off again:
+
+```sh
+# 1. Transition release. Renders the adopt Jobs (hook weight 1) and gives
+#    beekeepingit temporary membership in every <schema>_migrator.
+helm upgrade --install beekeepingit infra/helm/beekeepingit \
+  -f infra/helm/beekeepingit/environments/staging.yaml \
+  --namespace beekeepingit-staging \
+  --set postgres.migratorTransition.enabled=true
+
+# 2. Verify: every relation in every schema is owned by its own migrator, and
+#    no beekeepingit-scoped default privileges are left behind.
+kubectl -n beekeepingit-staging exec beekeepingit-postgres-1 -- psql -U postgres -d beekeepingit -c "
+  SELECT n.nspname, count(*) FILTER (WHERE pg_get_userbyid(c.relowner) <> n.nspname || '_migrator') AS not_yet_moved
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.relkind IN ('r','p','S','v','m','f')
+     AND n.nspname NOT IN ('pg_catalog','information_schema','public')
+   GROUP BY n.nspname ORDER BY 1;"
+kubectl -n beekeepingit-staging exec beekeepingit-postgres-1 -- psql -U postgres -d beekeepingit -c "
+  SELECT count(*) AS beekeepingit_scoped_default_acls
+    FROM pg_default_acl WHERE defaclrole = 'beekeepingit'::regrole;"
+
+# 3. Turn it off. This is not optional tidying: while it is on, beekeepingit is
+#    a member of all seven migrator roles, which is the cross-schema bridge the
+#    change exists to remove. CNPG's role reconciler issues the REVOKEs itself
+#    once the memberships leave cluster.yaml — no manual step.
+helm upgrade beekeepingit infra/helm/beekeepingit \
+  -f infra/helm/beekeepingit/environments/staging.yaml \
+  --namespace beekeepingit-staging
+```
+
+**`helm rollback` does not work across this change.** The pre-#545 `table-grants` Job connects as
+`beekeepingit` and issues `GRANT ... ON ALL TABLES`, which a non-owner cannot do once ownership has
+moved — so the rollback release's weight-3 hook fails. Recovery is forward-only, or a reverse adopt
+run by hand. The reverse SQL, per schema, as a **superuser** (`beekeepingit` cannot do it alone
+once the memberships are gone — it is not a member of the migrator roles in steady state):
+
+```sql
+-- Reverse adopt for one schema. Substitute <schema>; run one schema at a time,
+-- and keep the whole thing in ONE transaction for the same reason the forward
+-- Job does: serving pods hold live <schema>_svc connections throughout.
+BEGIN;
+DO $do$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.oid::regclass AS ident, c.relkind
+      FROM pg_class c
+     WHERE c.relnamespace = '<schema>'::regnamespace
+       AND c.relkind IN ('r','p','S','v','m','f')
+       AND c.relowner <> 'beekeepingit'::regrole
+     ORDER BY CASE c.relkind WHEN 'r' THEN 1 WHEN 'p' THEN 1 WHEN 'f' THEN 2
+                             WHEN 'S' THEN 3 WHEN 'v' THEN 4 ELSE 5 END
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO beekeepingit',
+                   CASE r.relkind WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'TABLE'
+                                  WHEN 'f' THEN 'FOREIGN TABLE' WHEN 'S' THEN 'SEQUENCE'
+                                  WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' END,
+                   r.ident);
+  END LOOP;
+END
+$do$;
+ALTER DEFAULT PRIVILEGES FOR ROLE <schema>_migrator IN SCHEMA <schema> REVOKE ALL ON TABLES FROM <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE <schema>_migrator IN SCHEMA <schema> REVOKE ALL ON SEQUENCES FROM <schema>_svc;
+REVOKE ALL ON ALL TABLES IN SCHEMA <schema> FROM <schema>_svc;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA <schema> FROM <schema>_svc;
+SET LOCAL ROLE beekeepingit;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA <schema> TO <schema>_svc;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA <schema> TO <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA <schema> GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA <schema> GRANT USAGE, SELECT ON SEQUENCES TO <schema>_svc;
+REVOKE UPDATE, DELETE, TRUNCATE ON <schema>.audit_log FROM <schema>_svc;
+REVOKE UPDATE, DELETE, TRUNCATE ON <schema>.sync_conflict_log FROM <schema>_svc;
+COMMIT;
+```
+
+Note this restores the **pre-#545** ACL, full-DML defaults included — it is a recovery path back to
+a known-good older release, not a state anything should be left in.
 
 ## Sharing the local cluster across concurrent sessions
 
@@ -187,13 +307,14 @@ credentials, #361), which `scaleway-up.sh` creates when the variables below are 
   local run cannot read them back — which is why the `.env` file exists at all. Treat GitHub as
   the canonical store; the `.env` file is a local working copy.
 
-| Name                                                     | Kind                     | Used for                                                           |
-| -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
-| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                      | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)            |
-| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID` | environment secret       | Scaleway project/org scoping                                       |
-| `CF_API_TOKEN` / `CF_ZONE_ID`                            | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                      |
-| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`  | environment secret       | out-of-band SMTP relay Secret (optional, #361)                     |
-| `APP_HOST` / `AUTH_HOST`                                 | environment **variable** | per-environment public hostnames (scoped to each gate environment) |
+| Name                                                            | Kind                     | Used for                                                                                                                                       |
+| --------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                             | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)                                                                                        |
+| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID`        | environment secret       | Scaleway project/org scoping                                                                                                                   |
+| `CF_API_TOKEN` / `CF_ZONE_ID`                                   | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                                                                                                  |
+| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`         | environment secret       | out-of-band SMTP relay Secret (optional, #361)                                                                                                 |
+| `AUTHENTIK_GOOGLE_CLIENT_ID` / `AUTHENTIK_GOOGLE_CLIENT_SECRET` | environment secret       | out-of-band Google federation Secret (optional, #363/#364)                                                                                     |
+| `APP_HOST` / `AUTH_HOST` / `ADMIN_HOST`                         | environment **variable** | per-environment public hostnames, scoped to each gate environment — `ADMIN_HOST` is **optional** (unset skips the admin host's A record; #556) |
 
 Store the secrets **scoped to the gate environments** (`staging-gate`/`production-gate`), not
 repo-wide: the workflow's `run` job carries the gate environment, so environment secrets resolve
@@ -206,20 +327,110 @@ must not handle the values):
 gh secret set SCW_ACCESS_KEY --env staging-gate    # paste when prompted; repeat for the others
 gh variable set APP_HOST --env staging-gate --body beekeepingit-rc.melargil.pt
 gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargil.pt
+gh variable set ADMIN_HOST --env staging-gate --body admin.beekeepingit-rc.melargil.pt
 ```
 
 (The `staging-gate`/`production-gate` environments are D-27's release-approval gates; create one
 under _Settings → Environments_ first if it doesn't exist yet.)
 
-**On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
-`workflow_dispatch` workflow runs `scaleway-up.sh`/`scaleway-down.sh` with those
-secrets — pick `environment` (staging/prod) and `action` (up/down) in the Actions tab. Staging
-runs immediately; prod waits for `production-gate`'s required reviewer; `down` also requires
-typing the exact cluster name into the `confirm` input, since it deletes a real, billed cluster.
-Note the D-26 scope guard: bringing up the prod _cluster_ is fine (it holds no user data), but
-deployments stay staging-grade until DR (`Q-DR`) and GDPR export/erasure (#90) land.
+Setting `ADMIN_HOST` **creates nothing on its own** — the A record is pushed by the next
+`cluster-ops` `up`/`scale-up` run (look for `cloudflare: A admin.… -> <ip>` in the job log). Wait
+for that before adding `gateway.adminHost`/`global.adminOrigin` to the deployed gitops values:
+naming a host that has no A record turns the ACME order's `rejectedIdentifier` rejection into a
+failed HTTP-01 challenge, and one failed authorization invalidates the whole multi-SAN order —
+the app and auth certificates go down with it (#556, ADR-0020).
 
-### Enabling "Continue with Google" on an environment (#363)
+**Adding another external credential** takes four coordinated edits: a guarded block in
+[`scaleway-up.sh`](cluster/scaleway-up.sh) that creates the Secret, the `run` job's `env:` in
+[`cluster-ops.yml`](../.github/workflows/cluster-ops.yml), a commented entry in
+[`.env.example`](cluster/.env.example), and a row in the table above. The two optional pairs listed
+there are this same shape twice — copy either.
+
+**Three of those four fail silently**, which is the reason this is written down at all. Miss the
+script block and no Secret is created; miss the workflow env and every CI run takes the script's
+"not set — skipping" path; miss `.env.example` and a local run has no way to discover the variable
+exists. Only the table row is merely documentation.
+
+**What the absence then does is per-consumer** — the two existing pairs differ, so check yours.
+Google's entries in the
+[Authentik blueprint](helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml) carry
+`conditions:`, which the importer evaluates before the model resolves, so the entries are skipped
+outright: a deliberate clean no-op — the deployment stays green and the button simply never
+appears. The SMTP pair is gated a layer further out instead, by a Helm `if` on the config Secret's
+keys; the blueprint's email-verification stage itself is unconditional, so it still runs and still
+tries to send — just unauthenticated against the configured relay. Silent either way, but only the
+first is a feature quietly not appearing.
+
+Name the pair `<CONSUMER>_<PURPOSE>` (`AUTHENTIK_EMAIL_*`, `AUTHENTIK_GOOGLE_*`) and scope it to the
+gate environments as above, never repo-wide. Compose the Secret with `--from-file` plus process
+substitution of the `printf` **builtin**, never `--from-literal` — that would put the value in argv,
+where `ps` / `/proc/*/cmdline` expose it. The Secret's **key** names are a contract with the chart
+template that `lookup`s them (e.g.
+[`charts/authentik/templates/config-secret.yaml`](helm/beekeepingit/charts/authentik/templates/config-secret.yaml)),
+not free-form.
+
+**On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
+`workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick
+`environment` (staging/prod) and `action` (up/down/scale-down/scale-up) in the Actions tab. Staging
+runs immediately; prod waits for `production-gate`'s required reviewer on **every** action; `down`
+additionally requires typing the exact cluster name into the `confirm` input, since it permanently
+deletes a real, billed cluster. Note the D-26 scope guard: bringing up the prod _cluster_ is fine
+(it holds no user data), but deployments stay staging-grade until DR (`Q-DR`) and GDPR
+export/erasure (#90) land.
+
+### Pausing and resuming an environment without losing data (#539)
+
+Tearing an environment down with `scaleway-down.sh` is a **permanent, destructive** operation — it
+deletes the cluster, its node pool, its block-storage volumes, and its Load Balancers
+(`with-additional-resources=true`), so a subsequent `scaleway-up.sh` always starts from a genuinely
+empty state (`bootstrap.initdb`, fresh Authentik/MinIO). That's the right tool when you actually
+want to throw an environment away, but it's the wrong default for "I'm done for today, stop the
+meter until tomorrow" — routinely destroying and re-provisioning an environment for that is not a
+restart, it's a repeated data-loss event.
+
+**`scaleway-scale-down.sh`/`scaleway-scale-up.sh` are the routine pause/resume pair instead.**
+Rather than deleting the cluster, `scale-down` deletes the environment's LoadBalancer-type
+Service(s) (so Scaleway's cloud-controller-manager cleanly deprovisions the billed Load Balancer
+behind them through its own reconciliation, instead of the script calling the Scaleway API directly
+against a Service the CCM still believes it owns) and deletes the node pool — confirmed live that
+Scaleway rejects scaling a non-autoscaling pool's size to 0 directly, so the pool object itself has
+to go, not just resize to empty. The **cluster itself — its control plane, its etcd, and therefore
+every `PersistentVolumeClaim`, `PersistentVolume`, and the CNPG `Cluster` custom resource — stays
+alive**, since a pool is pure compute. `scale-up` creates a fresh pool (or scales an existing one,
+if a prior scale-down was interrupted before deleting it) and reinstalls the cluster-scoped
+prerequisites that lived on the deleted nodes (CNPG operator, Traefik — which provisions a fresh
+Load Balancer — cert-manager, Flux); CNPG Postgres, Authentik, and MinIO reschedule onto the new
+nodes and reattach their already-`Bound` PVCs through completely standard Kubernetes CSI semantics.
+**There is no volume-reattachment logic anywhere in this design, because nothing is ever detached
+from the cluster's object model** — only from its compute. `scale-up` fails with a clear error
+(rather than silently creating a new cluster) if the target cluster doesn't exist at all — it
+resumes a paused environment, it doesn't create one.
+
+This works because Kapsule's control plane is **free on the default "Mutualized" tier, independent
+of node count** (confirmed on Scaleway's pricing page) — a cluster scaled to 0 nodes costs nothing
+beyond its still-attached block-storage volumes, which you're paying for either way if you want the
+data kept. `scale-down` does **not** require the `confirm` input `down` does: it destroys nothing.
+
+Two things this design does **not** have a documented answer for, so don't treat them as settled:
+
+- **Control-plane tier.** This only holds if the cluster is on the Mutualized tier, not a paid
+  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirmed for
+  `beekeepingit-staging` on 2026-08-31 (`type: kapsule`, the Mutualized offer — #554); confirm once
+  per NEW cluster. Also observed on that same run: at 0 pools the cluster reports `pool_required`
+  and its API endpoint stops resolving until a pool exists again — expected, not breakage.
+- **Long-idle zero-node clusters.** Scaleway's docs don't state a policy either way on reaping
+  clusters left at 0 nodes for extended periods. Don't rely on `scale-down` for multi-week/-month
+  pauses without checking directly with Scaleway first — for that horizon, `scaleway-down.sh` (full
+  teardown) is the safer, better-understood choice.
+
+| Script                   | Effect                                                         | Data          |
+| ------------------------ | -------------------------------------------------------------- | ------------- |
+| `scaleway-up.sh`         | create the cluster (or reconcile an existing one)              | n/a (fresh)   |
+| `scaleway-down.sh`       | **permanently destroy** the cluster + volumes + Load Balancers | **destroyed** |
+| `scaleway-scale-down.sh` | delete the node pool; cluster/control plane keep running       | **kept**      |
+| `scaleway-scale-up.sh`   | recreate the node pool; fails if the cluster doesn't exist     | **kept**      |
+
+### Enabling "Continue with Google" on an environment (#363, #365)
 
 Google federation is **off unless its credentials exist in the cluster** — the blueprint entry is
 condition-gated on them, so an environment without them deploys cleanly with no Google button and
@@ -241,22 +452,39 @@ load-bearing). Turning it on is three steps, none of which put a secret in git.
    e.g. `https://auth.beekeepingit-rc.melargil.pt/source/oauth/callback/google/`. The slug
    (`google`) is the source's slug in the blueprint — change one and you change both.
 
-3. **Create the out-of-band Secret** in the target namespace (manual — an agent must not handle
-   these values). This is the same cluster-state-not-git idiom as the SMTP relay credentials
-   above; the chart merges it into `beekeepingit-authentik-config` via `lookup`, and the upstream
-   Authentik chart env-mounts it onto the server and worker:
+3. **Store the credentials as environment secrets and let `cluster-ops` provision them** —
+   `AUTHENTIK_GOOGLE_CLIENT_ID` and `AUTHENTIK_GOOGLE_CLIENT_SECRET`, scoped to that
+   environment's gate (_Settings → Environments → `<env>`_), exactly as the SMTP relay
+   credentials are. `scaleway-up.sh` step 4b then creates/updates the out-of-band
+   `beekeepingit-authentik-google-credentials` Secret on every run; the chart merges it into
+   `beekeepingit-authentik-config` via `lookup`, and the upstream Authentik chart env-mounts it
+   onto the server and worker.
 
-   ```sh
-   kubectl -n <namespace> create secret generic beekeepingit-authentik-google-credentials \
-     --from-literal=client-id='<the OAuth client id>' \
-     --from-literal=client-secret='<the OAuth client secret>'
-   ```
+   Run the **`cluster-ops`** workflow (`up`) against that environment to apply them. It is
+   idempotent, so this is also how a **rotated** client secret lands.
 
-   Then re-run the umbrella `helm upgrade` for that environment — the `lookup` only sees the
-   Secret on a subsequent render — and let the Authentik worker re-apply the blueprint. Verify
-   with `kubectl -n <namespace> get secret beekeepingit-authentik-config -o jsonpath='{.data}' |
-grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID` and by loading the login page: a **Continue with
-   Google** button appears on Authentik's own login card.
+   > **Prefer this to a manual `kubectl create secret`.** A hand-made Secret is invisible to the
+   > bring-up path, so the next cluster rebuild drops it — and because the blueprint entry is
+   > `conditions:`-gated, the deployment stays green while the Google button simply disappears,
+   > with nothing failing to explain why. If you must do it by hand (an environment with no
+   > `cluster-ops` path yet), mirror the script's form rather than `--from-literal`, which would
+   > expose the client secret through `ps` / `/proc/*/cmdline`:
+   >
+   > ```sh
+   > kubectl -n <namespace> create secret generic beekeepingit-authentik-google-credentials \
+   >   --from-file=client-id=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_ID") \
+   >   --from-file=client-secret=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_SECRET") \
+   >   --dry-run=client -o yaml | kubectl apply -f -
+   > ```
+
+   The `lookup` only sees the Secret on a **subsequent** render, so the release must be
+   re-rendered once it exists — on a Flux-managed environment
+   `flux reconcile helmrelease beekeepingit -n flux-system --force`, or a re-run of the umbrella
+   `helm upgrade` where the release is managed directly — and then the Authentik worker re-applies
+   the blueprint. Verify with
+   `kubectl -n <namespace> get secret beekeepingit-authentik-config -o jsonpath='{.data}' | grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID`
+   and by loading the login page: a **Continue with Google** button appears on Authentik's own
+   login card.
 
    Enabling this in the **dev** namespace leaves the dev/CI federation stand-in enabled too
    (`environments/dev.yaml`); the blueprint binds **both** buttons onto the login card in that
@@ -267,16 +495,33 @@ grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID` and by loading the login page: a **Contin
    resets `sources: []` so the button disappears. The `OAuthSource` row itself is left behind
    (blueprints don't delete) — remove it in the Authentik admin UI if you want it gone entirely.
 
-**Manual verification checklist (required once per environment).** CI proves the config, the deny
-posture and everything up to the outbound request, but **nothing automated completes a sign-in
-through a real Google account** — a live e2e against Google is not automatable (consent screen +
-bot detection). Run this by hand after step 3, and record the result on the PR/issue:
+**Manual verification checklist (required once per environment,
+[#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).** CI proves the config, the
+deny/enroll posture and everything up to the outbound request, but **nothing automated completes a
+sign-in through a real Google account** — a live e2e against Google is not automatable (consent
+screen + bot detection). Run this by hand after step 3, and record the result on the issue:
 
 - [ ] The app's **Continue with Google** button goes straight to Google's consent screen — one
       hop, no stop at Authentik's login form.
-- [ ] Signing in with a Google account that is **not** linked to any local account is refused with
-      _"Source is not configured for enrollment."_ and creates **no** user (check _Directory →
-      Users_ in the Authentik admin UI). This is the invitation-only guarantee.
+- [ ] **(#365, registration.)** Signing in with a Google account whose address matches **no** local
+      account creates a **new** account and lands in the app's onboarding — profile creation, then
+      organization create (or, if a pending invitation matches the address, the inviting
+      organization is joined instead, with no create prompt). _Directory → Users_ in the Authentik
+      admin UI shows exactly **one** new user (username `federated-…`), with attributes
+      `email_verified: true` and a `upn`, and its source connections show Google. If it is instead
+      **denied**, Google's `verified_email` flag is missing or non-boolean — the fail-closed
+      direction; check _Events_ and re-read `docs/architecture/auth.md` §8.15 before changing
+      anything (the fix belongs in the `mapping-federation-account-link` resolver, never in a
+      `user_matching_mode` change).
+- [ ] **(#364, the one thing CI cannot reach at all.)** Signing in with a Google account whose
+      verified address **does** match an existing, email-verified local account lands in the app on
+      **that** account — no duplicate user is created, and _Directory → Users → that user → source
+      connections_ now shows Google. This is the only check that proves Google really returns
+      `verified_email: true` in its userinfo; every automated test synthesizes that payload. If it
+      is instead **denied**, the flag is missing or non-boolean — check _Events_ in the admin UI and
+      re-read `docs/architecture/auth.md` §8.14 before changing anything.
+- [ ] Signing out and using **Continue with Google** again lands on the same account **immediately**
+      — the second time it resolves on the stored subject, not the email.
 - [ ] Signing in with a password, connecting Google under _Settings → Connected services_, then
       signing out and using **Continue with Google** lands in the app on the **same account** —
       same apiaries, same organization.
@@ -293,15 +538,15 @@ bootstrap so the local checkout (not `main`) is what gets deployed.
 
 ## Layout
 
-| Path                                                         | What it is                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`); Scaleway Kapsule staging/prod bring-up/teardown (`scaleway-up.sh`/`scaleway-down.sh`, D-26) with env/secrets loading (`env.sh` + `.env.example`) |
-| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                          |
-| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                   |
-| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                   |
-| [`ci/`](ci/)                                                 | Probes CI execs **inside** cluster pods, where the assertion can't be made from outside — today `authentik-federation-probe.py` (#363), run through `ak shell` in the Authentik worker by `helm-e2e.yml`                                                                                                     |
-| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                               |
-| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                   |
+| Path                                                         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`); Scaleway Kapsule staging/prod bring-up/teardown (`scaleway-up.sh`/`scaleway-down.sh`, D-26) and data-preserving pause/resume (`scaleway-scale-down.sh`/`scaleway-scale-up.sh`, `#539`), with shared preamble/prereq logic (`scw-common.sh`, `scw-cluster-prereqs.sh`) and env/secrets loading (`env.sh` + `.env.example`) |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                                                                                                                                                                                                   |
+| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                                                                                                                                                                                            |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                                                                                                                                                                                            |
+| [`ci/`](ci/)                                                 | Probes CI execs **inside** cluster pods, where the assertion can't be made from outside — today `authentik-federation-probe.py` (#363), run through `ak shell` in the Authentik worker by `helm-e2e.yml`                                                                                                                                                                                                                                                                              |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                                                                                                                                                                                                        |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Postgres+PostGIS, the OIDC provider (Authentik — [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
 originally Keycloak at **#84**), MinIO and the gateway are the umbrella chart's first real

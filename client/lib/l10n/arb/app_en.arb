@@ -4,6 +4,10 @@
   "@appTitle": {
     "description": "App title, shown in the browser tab and app switcher"
   },
+  "appLogoLabel": "BeekeepingIT logo",
+  "@appLogoLabel": {
+    "description": "Screen-reader label for the brand mark (the Melargil bee, #686) — an image with no text of its own, so it is announced by what it stands for rather than described"
+  },
   "loginPrompt": "Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.",
   "@loginPrompt": {
     "description": "Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its \"Sign up\" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it"
@@ -51,19 +55,21 @@
   },
   "hiveCountValue": "{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}",
   "@hiveCountValue": {
-    "description": "Hive count subtitle on a list row",
+    "description": "Hive count subtitle on a list row. decimalPattern groups the number for the active locale (#624, NFR-I18N-1) — `999.999.999 colmeias` in pt, `999,999,999 hives` in en, instead of a raw run of digits in both",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
   "superCountValue": "{count, plural, =0{No supers} =1{1 super} other{{count} supers}}",
   "@superCountValue": {
-    "description": "Supers counter value badge on the apiary detail screen (#346, D-20)",
+    "description": "Supers counter value badge on the apiary detail screen (#346, D-20). Locale-grouped like hiveCountValue (#624)",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
@@ -77,19 +83,21 @@
   },
   "emptyHiveCountValue": "{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}",
   "@emptyHiveCountValue": {
-    "description": "Empty-hive counter value badge on the apiary detail screen (#392)",
+    "description": "Empty-hive counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
   "swarmCountValue": "{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}",
   "@swarmCountValue": {
-    "description": "Swarm counter value badge on the apiary detail screen (#392)",
+    "description": "Swarm counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
@@ -206,6 +214,27 @@
   "@profileGenericError": {
     "description": "Fixed, non-interpolated message shown when the profile fails to load, or a save fails with something other than a structured ApiException — never the raw exception text (avoids leaking internal error details to the field user)"
   },
+  "profileAccountEmailLabel": "Account email",
+  "@profileAccountEmailLabel": {
+    "description": "Label for the read-only account email on the profile screen."
+  },
+  "profileAccountEmailHint": "This is the email you signed in with. Change it with our sign-in provider, in a new tab.",
+  "@profileAccountEmailHint": {
+    "description": "Explains that the account email is owned by the identity provider."
+  },
+  "profileManageAccountButton": "Manage account",
+  "@profileManageAccountButton": {
+    "description": "Opens the identity provider account page in a new tab."
+  },
+  "profileAccountEmailSemantics": "Account email: {email}",
+  "@profileAccountEmailSemantics": {
+    "description": "Screen-reader label for the read-only account email value.",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
   "organizationTitle": "Your organization",
   "@organizationTitle": {
     "description": "Organization creation screen app bar title"
@@ -242,6 +271,46 @@
         "type": "String"
       }
     }
+  },
+  "organizationWaitingTitle": "Join an organization",
+  "@organizationWaitingTitle": {
+    "description": "Title of the waiting-for-an-invitation onboarding screen."
+  },
+  "organizationWaitingIntro": "If someone is inviting you to their organization, you don't need to create one. Check again once the invitation has been sent.",
+  "@organizationWaitingIntro": {
+    "description": "Explains that creating an organization is not required when an invitation is expected."
+  },
+  "organizationWaitingHint": "The invitation must be sent to the email you signed in with. Ask the organization's admin to invite that address.",
+  "@organizationWaitingHint": {
+    "description": "Tells the user which address the invitation must target."
+  },
+  "organizationWaitingCheckButton": "Check again",
+  "@organizationWaitingCheckButton": {
+    "description": "Re-checks whether a pending invitation has arrived."
+  },
+  "organizationWaitingChecking": "Checking for an invitation",
+  "@organizationWaitingChecking": {
+    "description": "Screen-reader label while the check is in flight."
+  },
+  "organizationWaitingStillNone": "No invitation yet. Try again in a moment, or create your own organization.",
+  "@organizationWaitingStillNone": {
+    "description": "Shown when a check finds no pending invitation."
+  },
+  "organizationWaitingCheckError": "Could not check for an invitation right now. Try again.",
+  "@organizationWaitingCheckError": {
+    "description": "Fixed error message for a failed check - never shows the raw exception."
+  },
+  "organizationWaitingCreateInsteadButton": "Create an organization instead",
+  "@organizationWaitingCreateInsteadButton": {
+    "description": "Leaves the waiting screen for the create-organization form."
+  },
+  "organizationJoinInsteadButton": "I'm waiting for an invitation",
+  "@organizationJoinInsteadButton": {
+    "description": "Leaves the create form for the waiting screen."
+  },
+  "organizationCreateBlocksInvitationWarning": "Creating an organization means you can't accept an invitation to another one later. If you're expecting an invitation, wait for it instead.",
+  "@organizationCreateBlocksInvitationWarning": {
+    "description": "Warns that creating an organization is a one-way choice while #506 is open."
   },
   "membersTitle": "Members & invitations",
   "@membersTitle": {
@@ -381,6 +450,10 @@
   "@activitiesTitle": {
     "description": "Activities tab label and screen title (bottom nav, #197)"
   },
+  "homeTitle": "Home",
+  "@homeTitle": {
+    "description": "Home tab label and screen title — the centre tab of the bottom nav, replacing the Assistant placeholder (#658, D-35, FR-UX-2)"
+  },
   "journeysTitle": "Journeys",
   "@journeysTitle": {
     "description": "Journeys tab label and screen title (bottom nav, #197)"
@@ -388,26 +461,6 @@
   "todosTitle": "Todos",
   "@todosTitle": {
     "description": "Todos tab label and screen title (bottom nav, #197)"
-  },
-  "assistantTitle": "Assistant",
-  "@assistantTitle": {
-    "description": "Assistant tab label and screen title (bottom nav, #197)"
-  },
-  "activitiesComingSoon": "Activities — coming soon",
-  "@activitiesComingSoon": {
-    "description": "Placeholder shown on the Activities tab until its real screens land (M3, #197)"
-  },
-  "journeysComingSoon": "Journeys — coming soon",
-  "@journeysComingSoon": {
-    "description": "Placeholder shown on the Journeys tab until its real screens land (M4, #197)"
-  },
-  "todosComingSoon": "Todos — coming soon",
-  "@todosComingSoon": {
-    "description": "Placeholder shown on the Todos tab until its real screens land (M5, #197)"
-  },
-  "assistantComingSoon": "Assistant — coming soon",
-  "@assistantComingSoon": {
-    "description": "Placeholder shown on the Assistant tab until its real screens land (M8, #197)"
   },
   "syncStatusOnline": "Online",
   "@syncStatusOnline": {
@@ -573,6 +626,10 @@
   "@syncNeedsFixCounterLabel": {
     "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
   },
+  "syncNeedsFixDeclarationLabel": "Stock declaration change",
+  "@syncNeedsFixDeclarationLabel": {
+    "description": "Needs-fix list row title for a rejected stock-declaration write (#298)"
+  },
   "syncNeedsFixActivityLabel": "Activity change",
   "@syncNeedsFixActivityLabel": {
     "description": "Needs-fix list row title for a rejected activity write (#379)"
@@ -603,7 +660,179 @@
   },
   "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
   "@syncNeedsFixGenericProblem": {
-    "description": "Needs-fix list row fallback message when the server returned no field-level detail"
+    "description": "Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)"
+  },
+  "syncNeedsFixFieldProblem": "{field}: {problem}",
+  "@syncNeedsFixFieldProblem": {
+    "description": "Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text",
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixRuleRequired": "this is required.",
+  "@syncNeedsFixRuleRequired": {
+    "description": "Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)"
+  },
+  "syncNeedsFixRuleInvalid": "this value isn't valid.",
+  "@syncNeedsFixRuleInvalid": {
+    "description": "Needs-fix rule fragment for the server's `invalid` rejection code (#443)"
+  },
+  "syncNeedsFixRuleOutOfRange": "this value is outside the allowed range.",
+  "@syncNeedsFixRuleOutOfRange": {
+    "description": "Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)"
+  },
+  "syncNeedsFixRuleTooLong": "this text is too long.",
+  "@syncNeedsFixRuleTooLong": {
+    "description": "Needs-fix rule fragment for the server's `too_long` rejection code (#443)"
+  },
+  "syncNeedsFixRuleNotFound": "this no longer exists, or you no longer have access to it.",
+  "@syncNeedsFixRuleNotFound": {
+    "description": "Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)"
+  },
+  "syncNeedsFixRuleAttributeRequired": "an entry here still needs filling in.",
+  "@syncNeedsFixRuleAttributeRequired": {
+    "description": "Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single \"Details\" label"
+  },
+  "syncNeedsFixRuleAttributeInvalid": "an entry here isn't valid.",
+  "@syncNeedsFixRuleAttributeInvalid": {
+    "description": "Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeTooLong": "an entry here is too long.",
+  "@syncNeedsFixRuleAttributeTooLong": {
+    "description": "Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeOutOfRange": "an entry here is outside the allowed range.",
+  "@syncNeedsFixRuleAttributeOutOfRange": {
+    "description": "Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
+  "@syncNeedsFixRuleNonNegative": {
+    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)"
+  },
+  "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
+  "@syncNeedsFixRuleLatitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range latitude (#443)"
+  },
+  "syncNeedsFixRuleLongitudeRange": "this must be between -180 and 180.",
+  "@syncNeedsFixRuleLongitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range longitude (#443)"
+  },
+  "syncNeedsFixFieldName": "Name",
+  "@syncNeedsFixFieldName": {
+    "description": "Needs-fix field label for an apiary's or journey's name (#443)"
+  },
+  "syncNeedsFixFieldTitle": "Title",
+  "@syncNeedsFixFieldTitle": {
+    "description": "Needs-fix field label for a todo's title (#443)"
+  },
+  "syncNeedsFixFieldDescription": "Description",
+  "@syncNeedsFixFieldDescription": {
+    "description": "Needs-fix field label for a todo's description (#443)"
+  },
+  "syncNeedsFixFieldNotes": "Notes",
+  "@syncNeedsFixFieldNotes": {
+    "description": "Needs-fix field label for an apiary's notes (#443)"
+  },
+  "syncNeedsFixFieldPlace": "Place label",
+  "@syncNeedsFixFieldPlace": {
+    "description": "Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldLocation": "Location",
+  "@syncNeedsFixFieldLocation": {
+    "description": "Needs-fix field label for an apiary's location (#443)"
+  },
+  "syncNeedsFixFieldLatitude": "Latitude",
+  "@syncNeedsFixFieldLatitude": {
+    "description": "Needs-fix field label for an apiary location's latitude (#443)"
+  },
+  "syncNeedsFixFieldLongitude": "Longitude",
+  "@syncNeedsFixFieldLongitude": {
+    "description": "Needs-fix field label for an apiary location's longitude (#443)"
+  },
+  "syncNeedsFixFieldHiveCount": "Number of hives",
+  "@syncNeedsFixFieldHiveCount": {
+    "description": "Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldCount": "Count",
+  "@syncNeedsFixFieldCount": {
+    "description": "Needs-fix field label for an apiary counter's value (#443)"
+  },
+  "syncNeedsFixFieldCountType": "Count type",
+  "@syncNeedsFixFieldCountType": {
+    "description": "Needs-fix field label for an apiary counter's type (#443)"
+  },
+  "syncNeedsFixFieldApiary": "Apiary",
+  "@syncNeedsFixFieldApiary": {
+    "description": "Needs-fix field label for the apiary a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldJourney": "Journey",
+  "@syncNeedsFixFieldJourney": {
+    "description": "Needs-fix field label for the journey a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldAssignee": "Assignee",
+  "@syncNeedsFixFieldAssignee": {
+    "description": "Needs-fix field label for a todo's assignee (#443)"
+  },
+  "syncNeedsFixFieldActivityType": "Activity type",
+  "@syncNeedsFixFieldActivityType": {
+    "description": "Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)"
+  },
+  "syncNeedsFixFieldMainActivityType": "Main activity type",
+  "@syncNeedsFixFieldMainActivityType": {
+    "description": "Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)"
+  },
+  "syncNeedsFixFieldDate": "Date",
+  "@syncNeedsFixFieldDate": {
+    "description": "Needs-fix field label for the date an activity occurred (#443)"
+  },
+  "syncNeedsFixFieldDueDate": "Due date",
+  "@syncNeedsFixFieldDueDate": {
+    "description": "Needs-fix field label for a todo's due date (#443)"
+  },
+  "syncNeedsFixFieldCompletedAt": "Completed at",
+  "@syncNeedsFixFieldCompletedAt": {
+    "description": "Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)"
+  },
+  "syncNeedsFixFieldPriority": "Priority",
+  "@syncNeedsFixFieldPriority": {
+    "description": "Needs-fix field label for a todo's priority (#443)"
+  },
+  "syncNeedsFixFieldStatus": "Status",
+  "@syncNeedsFixFieldStatus": {
+    "description": "Needs-fix field label for a journey's or todo's status (#443)"
+  },
+  "syncNeedsFixFieldDetails": "Details",
+  "@syncNeedsFixFieldDetails": {
+    "description": "Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)"
+  },
+  "syncNeedsFixFieldActivityDefaults": "Defaults for activities",
+  "@syncNeedsFixFieldActivityDefaults": {
+    "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
+  },
+  "syncNeedsFixFieldDeclarationDate": "Declaration date",
+  "@syncNeedsFixFieldDeclarationDate": {
+    "description": "Needs-fix field label for a stock declaration's date — deliberately the same wording as stockDeclarationDateLabel (#443, #298)"
+  },
+  "syncNeedsFixFieldTotalHiveCount": "Total hives",
+  "@syncNeedsFixFieldTotalHiveCount": {
+    "description": "Needs-fix field label for the hive total a stock declaration records across the whole organization — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count (#443, #298)"
+  },
+  "syncNeedsFixFieldRegistrationNumber": "Registration number",
+  "@syncNeedsFixFieldRegistrationNumber": {
+    "description": "Needs-fix field label for a beekeeper registration number — the same column, and the same wording, on a stock declaration and on an apiary (apiaryRegistrationNumberLabel) (#443, #296, #298)"
+  },
+  "syncNeedsFixLocalProblem": "This change wasn't sent yet — please correct it.",
+  "@syncNeedsFixLocalProblem": {
+    "description": "Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected"
+  },
+  "syncSaveCheckGenericProblem": "This can't be saved as it is — please check this value.",
+  "@syncSaveCheckGenericProblem": {
+    "description": "Save-time validation-parity fallback shown against the offending form field (#597) when the (field, code) pair has no specific localized copy in the #443 mapping — never the server's English message, never the column name"
   },
   "syncNeedsFixFixAction": "Fix",
   "@syncNeedsFixFixAction": {
@@ -866,6 +1095,131 @@
   "@apiaryPlaceLabelHint": {
     "description": "Placeholder hint text in the apiary form's place label field (#252)"
   },
+  "apiaryRegistrationNumberLabel": "Registration number",
+  "@apiaryRegistrationNumberLabel": {
+    "description": "Optional beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)"
+  },
+  "apiaryRegistrationNumberHint": "Only if different from the organization's",
+  "@apiaryRegistrationNumberHint": {
+    "description": "Placeholder hint in the apiary form's registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)"
+  },
+  "apiaryRegistrationNumberInherited": "From the organization",
+  "@apiaryRegistrationNumberInherited": {
+    "description": "Marker shown next to the registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)"
+  },
+  "organizationDetailsTitle": "Organization details",
+  "@organizationDetailsTitle": {
+    "description": "Title of the organization-details screen, reached from Account — the organization's name, address and registration number, and the label of the Account entry that opens it (FR-ONB-2/FR-AP-9, #296)"
+  },
+  "organizationRegistrationNumberLabel": "Registration number",
+  "@organizationRegistrationNumberLabel": {
+    "description": "Label of the organization-wide beekeeper registration number field on the organization-details screen (FR-AP-9, #296)"
+  },
+  "organizationRegistrationNumberHint": "The beekeeper number shown at your apiaries",
+  "@organizationRegistrationNumberHint": {
+    "description": "Helper text under the organization registration number field (FR-AP-9, #296)"
+  },
+  "organizationDetailsSaved": "Organization details saved",
+  "@organizationDetailsSaved": {
+    "description": "Confirmation shown after the organization's name, address and registration number are saved (#296)"
+  },
+  "organizationDetailsNoChanges": "No changes to save",
+  "@organizationDetailsNoChanges": {
+    "description": "Shown when Save is pressed on the organization-details screen but nothing differs from the loaded values, so no request is sent — deliberately distinct from the success message, which must never stand in for a save that never happened (#296, #298)"
+  },
+  "organizationDetailsSaveFailed": "Could not save the organization details",
+  "@organizationDetailsSaveFailed": {
+    "description": "Error shown when saving the organization details fails, e.g. offline or not an admin (#296)"
+  },
+  "organizationDetailsSaveConflict": "Someone else changed these details. Reopen this screen to see the latest, then make your change again.",
+  "@organizationDetailsSaveConflict": {
+    "description": "Error shown when the organization-details save is answered 409 because another admin changed the organization since this screen read it — the If-Match/ETag optimistic-concurrency check (#601, FR-TEN-2/FR-HIS-1). Deliberately distinct from organizationDetailsSaveFailed: retrying unchanged is exactly the wrong advice here"
+  },
+  "organizationDetailsAdminOnly": "Only an organization admin can change these.",
+  "@organizationDetailsAdminOnly": {
+    "description": "Note shown to non-admin members, who can read but not edit the organization's details (#296, NFR-ROL-1)"
+  },
+  "stockDeclarationsTitle": "Stock declarations",
+  "@stockDeclarationsTitle": {
+    "description": "Title of the stock-declaration log screen, reached from Account, and the label of the Account entry that opens it (FR-AP-10, #298)"
+  },
+  "stockDeclarationsIntro": "Optional record-keeping to help with your stock-declaration obligations. The app never files anything for you.",
+  "@stockDeclarationsIntro": {
+    "description": "Intro paragraph on the stock-declarations screen making explicit that everything there is advisory and nothing is submitted to any authority (FR-AP-10, D-19)"
+  },
+  "stockDeclarationsEmpty": "No declarations recorded yet.",
+  "@stockDeclarationsEmpty": {
+    "description": "Empty state of the stock-declaration log (#298)"
+  },
+  "stockDeclarationsNoRegistrationNumber": "No registration number",
+  "@stockDeclarationsNoRegistrationNumber": {
+    "description": "Group heading used for declarations recorded before any registration number was entered (#298)"
+  },
+  "stockDeclarationRecordAction": "Record declaration",
+  "@stockDeclarationRecordAction": {
+    "description": "Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)"
+  },
+  "stockDeclarationSaved": "Declaration recorded",
+  "@stockDeclarationSaved": {
+    "description": "Confirmation shown after a stock declaration is recorded (#298)"
+  },
+  "stockDeclarationDeleteAction": "Delete declaration",
+  "@stockDeclarationDeleteAction": {
+    "description": "Action that deletes a mis-entered stock declaration (#298)"
+  },
+  "stockDeclarationSummary": "{date} — {count, plural, =1{1 hive} other{{count} hives}}",
+  "@stockDeclarationSummary": {
+    "description": "One row of the stock-declaration log: the declared date and the declared hive total (#298)",
+    "placeholders": {
+      "date": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "stockDeclarationApiaryCount": "{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}",
+  "@stockDeclarationApiaryCount": {
+    "description": "Secondary line of a declaration row: how many apiaries the snapshot covered (#298)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "stockDeclarationsCurrentHiveCount": "Current hive count: {count}",
+  "@stockDeclarationsCurrentHiveCount": {
+    "description": "The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "stockDeclarationRecordDialogTitle": "Record declaration",
+  "@stockDeclarationRecordDialogTitle": {
+    "description": "Title of the dialog that records a stock declaration (#298)"
+  },
+  "stockDeclarationDateLabel": "Declaration date",
+  "@stockDeclarationDateLabel": {
+    "description": "Label of the date field in the record-declaration dialog — the day the declaration was filed with the authority, which may be earlier than today (#298)"
+  },
+  "stockDeclarationNotesLabel": "Note (optional)",
+  "@stockDeclarationNotesLabel": {
+    "description": "Label of the optional free-text note field in the record-declaration dialog (#298)"
+  },
+  "stockDeclarationNotesHint": "e.g. filed on the authority's portal",
+  "@stockDeclarationNotesHint": {
+    "description": "Placeholder hint in the record-declaration dialog's note field (#298)"
+  },
+  "stockDeclarationRecordDialogCancelAction": "Cancel",
+  "@stockDeclarationRecordDialogCancelAction": {
+    "description": "Cancel action in the record-declaration dialog (#298)"
+  },
+  "stockDeclarationRecordDialogConfirmAction": "Record",
+  "@stockDeclarationRecordDialogConfirmAction": {
+    "description": "Confirm action in the record-declaration dialog, which writes the declaration (#298)"
+  },
+  "stockDeclarationHiveTotal": "{count, plural, =1{1 hive} other{{count} hives}}",
+  "@stockDeclarationHiveTotal": {
+    "description": "The declared hive total shown in the record-declaration dialog, pre-filled from the current live count (#298)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "apiaryLocationSectionLabel": "Location",
   "@apiaryLocationSectionLabel": {
     "description": "Section label above the map-pin picker on the apiary form (#252)"
@@ -995,6 +1349,70 @@
   "treatmentContextDetectionOnlyLabel": "Detection only (no treatment yet)",
   "@treatmentContextDetectionOnlyLabel": {
     "description": "Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)"
+  },
+  "diseaseConditionVarroosisLabel": "Varroosis",
+  "@diseaseConditionVarroosisLabel": {
+    "description": "Display label for the stored disease value 'Varroose' — render-time only, the stored/wire value is unchanged (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionAmericanFoulbroodLabel": "American foulbrood",
+  "@diseaseConditionAmericanFoulbroodLabel": {
+    "description": "Display label for the stored disease value 'Loque americana' (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionEuropeanFoulbroodLabel": "European foulbrood",
+  "@diseaseConditionEuropeanFoulbroodLabel": {
+    "description": "Display label for the stored disease value 'Loque europeia' (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionNosemosisLabel": "Nosemosis",
+  "@diseaseConditionNosemosisLabel": {
+    "description": "Display label for the stored disease value 'Nosemose' (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionAcarapisosisLabel": "Acarapisosis",
+  "@diseaseConditionAcarapisosisLabel": {
+    "description": "Display label for the stored disease value 'Acariose' (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionSmallHiveBeetleLabel": "Aethina tumida (small hive beetle)",
+  "@diseaseConditionSmallHiveBeetleLabel": {
+    "description": "Display label for the stored disease value 'Aethina tumida (pequeno besouro da colmeia)' — the Latin name stays Latin in both languages, only its gloss is translated (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionTropilaelapsLabel": "Tropilaelaps spp.",
+  "@diseaseConditionTropilaelapsLabel": {
+    "description": "Display label for the stored disease value 'Tropilaelaps spp.' — a Latin name, identical in both languages (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "diseaseConditionOtherLabel": "Other",
+  "@diseaseConditionOtherLabel": {
+    "description": "Display label for the stored disease catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1, D-19)"
+  },
+  "treatmentTypeApivarAmitrazLabel": "Apivar/amitraz",
+  "@treatmentTypeApivarAmitrazLabel": {
+    "description": "Display label for the stored treatment-product value 'Apivar/amitraz' — a brand plus its active substance, identical in both languages (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "treatmentTypeOxalicAcidLabel": "Oxalic acid",
+  "@treatmentTypeOxalicAcidLabel": {
+    "description": "Display label for the stored treatment-product value 'Ácido oxálico' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "treatmentTypeThymolLabel": "Thymol",
+  "@treatmentTypeThymolLabel": {
+    "description": "Display label for the stored treatment-product value 'Timol' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "treatmentTypeOtherLabel": "Other",
+  "@treatmentTypeOtherLabel": {
+    "description": "Display label for the stored treatment-product catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "feedTypeSyrup11Label": "1:1 syrup",
+  "@feedTypeSyrup11Label": {
+    "description": "Display label for the stored feed-type value 'Xarope 1:1' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "feedTypeSyrup21Label": "2:1 syrup",
+  "@feedTypeSyrup21Label": {
+    "description": "Display label for the stored feed-type value 'Xarope 2:1' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "feedTypeCandiLabel": "Candi (fondant)",
+  "@feedTypeCandiLabel": {
+    "description": "Display label for the stored feed-type value 'Candi' (#625, NFR-I18N-1, FR-AC-1)"
+  },
+  "feedTypePollenLabel": "Pollen",
+  "@feedTypePollenLabel": {
+    "description": "Display label for the stored feed-type value 'Pólen' (#625, NFR-I18N-1, FR-AC-1)"
   },
   "newActivityTitle": "Add activity",
   "@newActivityTitle": {
@@ -1248,6 +1666,14 @@
   "@journeyFilterTypeAll": {
     "description": "The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)"
   },
+  "journeyFilterStatusLabel": "Status",
+  "@journeyFilterStatusLabel": {
+    "description": "Field label for the Journeys tab's status filter dropdown (#658, D-35) — its options are the cleared 'All statuses' plus each journey status (Open/Closed, journeyStatusOpenLabel/journeyStatusClosedLabel)"
+  },
+  "journeyFilterStatusAll": "All statuses",
+  "@journeyFilterStatusAll": {
+    "description": "The Journeys tab's status filter's cleared/default option — no status filter applied, so open and closed journeys both show (#658, D-35)"
+  },
   "journeyFilterDateRangeLabel": "Date range",
   "@journeyFilterDateRangeLabel": {
     "description": "Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)"
@@ -1270,7 +1696,7 @@
   },
   "journeyFilterClearAction": "Clear filters",
   "@journeyFilterClearAction": {
-    "description": "Button that resets both the Journeys tab's type and date-range filters at once (#47)"
+    "description": "Button that resets the Journeys tab's type, status and date-range filters at once (#47, #658)"
   },
   "journeyProgressBadge": "{done}/{planned} apiaries visited",
   "@journeyProgressBadge": {
@@ -1565,13 +1991,15 @@
   },
   "journeyStatsApiariesVisitedValue": "{done}/{planned}",
   "@journeyStatsApiariesVisitedValue": {
-    "description": "Value shown on the apiaries-visited stat card, e.g. \"3/5\" (#49, FR-JO-1)",
+    "description": "Value shown on the apiaries-visited stat card, e.g. \"3/5\" (#49, FR-JO-1). Locale-grouped via decimalPattern (#624)",
     "placeholders": {
       "done": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       },
       "planned": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
@@ -1602,10 +2030,11 @@
   },
   "journeyStatsMissingLabel": "{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}",
   "@journeyStatsMissingLabel": {
-    "description": "Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: \"how much is still missing, planned vs. done\")",
+    "description": "Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: \"how much is still missing, planned vs. done\"). Locale-grouped via decimalPattern (#624)",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
@@ -1615,10 +2044,11 @@
   },
   "journeyStatsHivesWorkedValue": "{worked}/{planned}",
   "@journeyStatsHivesWorkedValue": {
-    "description": "Value on the hives-worked stat card (#391), e.g. \"12/40\" — planned is already the localized \"no data\" placeholder or a plain number by the time it reaches this template",
+    "description": "Value on the hives-worked stat card (#391), e.g. \"12/40\" — planned is already the localized \"no data\" placeholder or an already-locale-formatted number by the time it reaches this template (#624). Locale-grouped via decimalPattern (#624)",
     "placeholders": {
       "worked": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       },
       "planned": {
         "type": "String"
@@ -1720,13 +2150,15 @@
   },
   "journeyStatsDetailTreatedSummary": "{treated}/{planned} apiaries treated",
   "@journeyStatsDetailTreatedSummary": {
-    "description": "The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity",
+    "description": "The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity. Locale-grouped via decimalPattern (#624)",
     "placeholders": {
       "treated": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       },
       "planned": {
-        "type": "int"
+        "type": "int",
+        "format": "decimalPattern"
       }
     }
   },
@@ -2218,5 +2650,143 @@
   "notificationSyncCompleted": "All your changes are synced.",
   "@notificationSyncCompleted": {
     "description": "In-app toast fired once when the device's sync state transitions from not-fully-synced (pending writes or a needs-fix rejection) to fully synced (#82, D-24)"
+  },
+  "homeTasksSectionTitle": "Tasks needing attention",
+  "@homeTasksSectionTitle": {
+    "description": "Home summary section header over the todos that are overdue or due soon (#658, D-35)"
+  },
+  "homeTasksCountLabel": "{count, plural, =1{1 task needs attention} other{{count} tasks need attention}}",
+  "@homeTasksCountLabel": {
+    "description": "Screen-reader label for the Home tasks section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeTasksViewAllOverdueAction": "{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}",
+  "@homeTasksViewAllOverdueAction": {
+    "description": "Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeTodoOverdueBadge": "{days, plural, =1{1 d late} other{{days} d late}}",
+  "@homeTodoOverdueBadge": {
+    "description": "Compact trailing badge on an overdue Home task row, paired with a warning icon so it never relies on colour alone (#658, D-35, WCAG 2.2 AA 1.4.1)",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "homeTodoOverdueLabel": "{days, plural, =1{1 day overdue} other{{days} days overdue}}",
+  "@homeTodoOverdueLabel": {
+    "description": "Screen-reader expansion of the abbreviated homeTodoOverdueBadge (#658, D-35, FR-AX-1)",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "homeTodoDueSoonBadge": "Soon",
+  "@homeTodoDueSoonBadge": {
+    "description": "Compact trailing badge on a Home task row that is due soon but not yet overdue (#658, D-35)"
+  },
+  "homeTodoDueSoonLabel": "Due soon",
+  "@homeTodoDueSoonLabel": {
+    "description": "Screen-reader expansion of the abbreviated homeTodoDueSoonBadge (#658, D-35, FR-AX-1)"
+  },
+  "homeJourneysSectionTitle": "Journeys in progress",
+  "@homeJourneysSectionTitle": {
+    "description": "Home summary section header over the journeys that are still open (#658, D-35)"
+  },
+  "homeJourneysCountLabel": "{count, plural, =1{1 journey in progress} other{{count} journeys in progress}}",
+  "@homeJourneysCountLabel": {
+    "description": "Screen-reader label for the Home journeys section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeJourneysViewAllAction": "View all journeys",
+  "@homeJourneysViewAllAction": {
+    "description": "Home journeys section footer link into the Journeys list (#658, D-35)"
+  },
+  "homeApiariesSectionTitle": "Not visited recently",
+  "@homeApiariesSectionTitle": {
+    "description": "Home summary section header over the apiaries with no recorded activity inside the recency window (#658, D-35)"
+  },
+  "homeApiariesCountLabel": "{count, plural, =1{1 apiary not visited recently} other{{count} apiaries not visited recently}}",
+  "@homeApiariesCountLabel": {
+    "description": "Screen-reader label for the Home apiaries section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeApiaryNeverVisitedSubtitle": "No activity recorded yet",
+  "@homeApiaryNeverVisitedSubtitle": {
+    "description": "Subtitle of a Home apiary row that has never been visited — its own state, never rendered as '0 days ago' (#658, D-35)"
+  },
+  "homeApiaryNeverVisitedBadge": "Never",
+  "@homeApiaryNeverVisitedBadge": {
+    "description": "Compact trailing badge on a Home apiary row that has never been visited (#658, D-35)"
+  },
+  "homeApiaryLastVisitSubtitle": "Last visit {date}",
+  "@homeApiaryLastVisitSubtitle": {
+    "description": "Subtitle of a Home apiary row showing when it was last visited, already formatted for the active locale (#658, D-35, NFR-I18N-1)",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "homeApiaryStaleBadge": "{days, plural, =1{1 d} other{{days} d}}",
+  "@homeApiaryStaleBadge": {
+    "description": "Compact trailing badge on a Home apiary row: whole days since its last recorded activity (#658, D-35)",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "homeApiaryStaleLabel": "{days, plural, =1{1 day since the last visit} other{{days} days since the last visit}}",
+  "@homeApiaryStaleLabel": {
+    "description": "Screen-reader expansion of the abbreviated homeApiaryStaleBadge (#658, D-35, FR-AX-1)",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "homeFirstRunMessage": "Let's set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.",
+  "@homeFirstRunMessage": {
+    "description": "Home's first-run state (#658, D-35): the org owns no records at all, so Home shows one message and one action instead of three empty sections"
+  },
+  "homeFirstRunAction": "Add your first apiary",
+  "@homeFirstRunAction": {
+    "description": "The single action on Home's first-run state, opening the apiary create form (#658, D-35)"
+  },
+  "homeAllClearMessage": "Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in {days, plural, =1{the last day} other{the last {days} days}}.",
+  "@homeAllClearMessage": {
+    "description": "Home's all-clear state (#658, D-35): the org has data but nothing matched any section. Names the recency window so the threshold is discoverable; {days} is apiaryVisitRecencyDays, never hardcoded here. Pluralized because that constant is D-35's own adjustable default — at 1 an unpluralized placeholder reads 'the last 1 days'",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "homeUnavailableMessage": "Couldn't read the data stored on this device.\n\nHome can't show what needs your attention until that's fixed. Try reopening the app.",
+  "@homeUnavailableMessage": {
+    "description": "Home's data-unavailable state (#658 review, D-35): every local query failed, so Home knows nothing. Replaces the first-run state it used to settle on permanently — same notify-and-fix voice as the sync needs-fix screen, one honest sentence rather than an error dump"
+  },
+  "homeUnavailableNotice": "Some data couldn't be read on this device, so this may be incomplete.",
+  "@homeUnavailableNotice": {
+    "description": "Notice above Home's sections when SOME local queries failed while others resolved (#658 review, D-35): the sections that loaded still show, but the screen admits the rest is missing or frozen rather than passing it off as empty"
   }
 }

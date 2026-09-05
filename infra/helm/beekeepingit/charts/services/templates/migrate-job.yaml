@@ -1,0 +1,210 @@
+{{/*
+#541's deploy-time migration admin process (12-factor XII), one Job per
+database-backed service.
+
+WHY THIS EXISTS AT ALL. Migrations used to run at pod startup, inside the
+serving process, as the service's own runtime role `<schema>_svc`
+(dbaccess.Migrate called from main.go with cfg.DB.DSN()). #62 then moved
+history-table ownership off that role onto `beekeepingit` so the audit log
+would be tamper-proof — and since Postgres requires table OWNERSHIP for ALTER
+TABLE (it is not a grantable privilege), that correctly took DDL away from the
+service. The two positions are mutually exclusive: a role that may migrate a
+table may also DROP it. Keeping migrations on the serving path meant handing
+the runtime credential permanent DDL rights, which is exactly what #62 set out
+to remove.
+
+The visible symptom was organizations migration 00005 (#470) in v0.0.1-rc8:
+`must be owner of table audit_log` (SQLSTATE 42501), crashlooping 7113 times
+over 25 days on staging while the previous ReplicaSet kept serving — so every
+health check stayed green and nothing alerted. See #541.
+
+WHY post-install/post-upgrade AND NOT pre-install. A pre-install hook runs
+before the release's own resources exist, and on a first install the Postgres
+cluster IS one of those resources (charts/postgres' CNPG Cluster) — there
+would be nothing to connect to. So this runs post-install like the other
+Postgres hooks and waits for the server to answer, the same way
+schema-grants-job.yaml already does.
+
+HOOK WEIGHTS — the ordering is the design, not an accident:
+
+  0  schema-grants-job.yaml   schema USAGE/CREATE + the powersync DB grant
+  1  migrator-adopt-job.yaml  [gated] the #545 ownership transition
+  2  THIS JOB                 migrations, as the schema's own migrator role
+  3  table-grants-job.yaml    table DML grants, history/ledger revokes
+
+Weight 0 is deliberately kept free of any dependency on migrations. That job
+gates PowerSync's rollout (infra/README.md step 4/7) and must stay fast and
+predictable — putting migrations in front of it would mean a slow or stuck
+migration also stalls PowerSync, which is precisely the failure shape behind
+the ~55-minute retry incident recorded in the file #541 deleted
+(audit-immutability-job.yaml). Table-level grants genuinely cannot run until
+the tables exist, so those — and only those — sit behind migrations at 3.
+
+CREDENTIAL — `<schema>_migrator`, the schema's OWN owner role (#545, ADR-0024),
+read from `<schema>-migrator-credentials` and DERIVED from `$svc.db.schema`
+below rather than configured. Two things are deliberate about that.
+
+It is emphatically not `<schema>_svc`: the migrator and the runtime role are
+different principals, which is the whole basis of the append-only guarantee —
+the runtime role never creates a table, so it never owns one, so there is
+nothing to take away (ADR-0023 §2).
+
+And it is no longer `beekeepingit` either, which is what #541 used. That role
+owns all seven schemas, and this Job runs THE SERVICE'S OWN APPLICATION IMAGE —
+the same artifact that serves untrusted HTTP. So under #541 a single
+compromised service image reached every other service's tables and audit_log,
+where ownership bypasses the DML-only restriction entirely. Per-schema migrator
+roles bound that to the compromised service's own schema.
+
+Not bounded further than that, and ADR-0024 says so rather than overclaiming:
+the migration SQL ships inside the same image, so a malicious `.sql` file is as
+good as a malicious binary against THIS schema. #545 narrows the blast radius;
+it does not close it.
+
+There is no per-service override for the Secret name on purpose. A service
+pointed at another schema's migrator credential is precisely the bug being
+removed here, and nothing would fail if someone wired it — so it is made
+unrepresentable instead of documented as a footgun.
+
+The image is the service's own — ENTRYPOINT is ["/app"], so passing
+args: ["migrate"] runs main.go's migrate branch and exits. No separate image,
+no Dockerfile change.
+*/}}
+{{- if .Values.enabled }}
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.db.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-migrate
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}-migrate
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "2"
+spec:
+  # THE FAILURE BUDGET (#551). The bound that decides whether a migration
+  # succeeded lives INSIDE the migration — dbaccess.MigrationTimeout, a context
+  # deadline that starts when the migration starts. Read that constant's comment
+  # for the reasoning; what follows is why the two Job-level numbers here are
+  # what they are, because they are one budget and moving either alone breaks it.
+  #
+  # activeDeadlineSeconds is NOT that bound and never could be: Kubernetes starts
+  # its clock when the Job is created, so it pays for scheduling and image pull
+  # too. On the first deploy of a new version every Deployment in the release
+  # rolls at once, so a node pulls the whole image set while this Job queues
+  # behind it — and 300s was not enough. Staging's v0.0.1-rc9 lost
+  # `activities-migrate` to DeadlineExceeded and failed the release; Flux
+  # retried and it passed in 36s, while `apiaries-migrate`, same SQL with the
+  # image already cached, took 6s. It survives here only as a backstop for a pod
+  # that never RUNS at all — a typo'd tag sits in ImagePullBackOff without ever
+  # terminating, so backoffLimit cannot catch that one — sized far above any
+  # real budget so it can never again be what a migration is judged by.
+  #
+  # backoffLimit therefore has to come DOWN as that goes up. These retries only
+  # ever existed for "Postgres not up yet", and at hook-weight 2 that is close to
+  # impossible: the weight-1 grants job has already connected. What is left is a
+  # blip mid-deploy (a CNPG switchover), which three attempts covers. Ten
+  # attempts were harmless only while a 300s deadline cut them short; against a
+  # 900s backstop they would let a migration that fails DETERMINISTICALLY —
+  # rc8's `must be owner of table audit_log`, the #541 defect itself — grind for
+  # a quarter of an hour instead of failing in well under a minute. A real
+  # failure surfacing as a failed release, promptly, is the property #541 made
+  # load-bearing, and it is worth more than the retries.
+  #
+  # Worst case is now 3 x 2m of migration plus backoff, comfortably inside the
+  # backstop; the common case, an erroring migration, is seconds.
+  #
+  # KNOWINGLY UNTESTED IN CI. helm-e2e pre-imports every service image into k3d
+  # (`k3d image import`), so pull time there is always zero and no job in this
+  # repo can reproduce the cold-pull race that caused #551 — it needs a real
+  # cluster meeting a version it has never seen. The half that IS testable was
+  # moved somewhere a test can reach it: that a migration honours its own
+  # deadline is asserted in services/shared/dbaccess/dbaccess_test.go.
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" $root | nindent 8 }}
+        # Deliberately `<name>-migrate`, NOT `<name>`: charts/services'
+        # service.yaml selects on `app.kubernetes.io/name: <name>` +
+        # instance, so reusing the service's own name here would make the
+        # Service route live HTTP traffic to a migrate pod that serves
+        # nothing.
+        app.kubernetes.io/name: {{ $name }}-migrate
+        # The NetworkPolicy hook. default-deny applies namespace-wide, so a
+        # brand-new pod identity with no matching edge simply cannot reach
+        # Postgres — the failure mode charts/networkpolicy/values.yaml
+        # records having already bitten activities and todos. Keying the
+        # edge on this shared component label rather than on each
+        # `<name>-migrate` means every current AND future DB-backed service
+        # is covered by one rule, instead of a per-service edge someone has
+        # to remember to add.
+        app.kubernetes.io/component: migrate
+    spec:
+      # `Never`, not `OnFailure` (#551). With `OnFailure` Kubernetes restarts the
+      # container IN PLACE, and when backoffLimit is exhausted the Job
+      # controller deletes the pod — so by the time a CI diagnostics step runs,
+      # `kubectl logs` has nothing to show and the reason the migration failed is
+      # simply gone. Two helm-e2e runs were spent guessing at a failure whose
+      # log had already been discarded.
+      #
+      # `Never` makes each attempt its own pod, which persists after the Job
+      # fails. That is what turns "the migrate Job failed" into "the migrate Job
+      # failed BECAUSE ...". The cost is a few extra pod objects on a failing
+      # deploy, which is exactly when you want them.
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: migrate
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $svc.tag | default $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            # config.LoadDB (not config.Load) reads exactly these — no OIDC,
+            # no HTTP, no telemetry settings. A migration job has no business
+            # holding credentials it never uses.
+            - name: DB_HOST
+              value: {{ $root.Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ $root.Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ $root.Values.db.name | quote }}
+            - name: DB_SSLMODE
+              value: {{ $root.Values.db.sslmode | quote }}
+            # Also what makes fresh installs need no ownership step at all:
+            # goose creates its ledger and every table under this search_path,
+            # as the role below, so `<schema>_migrator` owns them from birth.
+            - name: DB_SEARCH_PATH
+              value: {{ $svc.db.schema | quote }}
+            # The MIGRATOR credential — deliberately not $svc.db.secret, and
+            # tied to THIS service's schema by construction (see the header).
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-migrator-credentials" $svc.db.schema }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-migrator-credentials" $svc.db.schema }}
+                  key: password
+          resources:
+            {{- index $root.Values.global.resources $root.Values.resourceTier | toYaml | nindent 12 }}
+{{- end }}
+{{- end }}
+{{- end }}

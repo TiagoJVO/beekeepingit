@@ -86,7 +86,7 @@ http ^1.6               REST (sync token/batch)
 flutter_map ^8.2 + latlong2   map view (D-16, OSM/MapLibre tiles)
 geolocator ^14          device location (proximity, map marker)
 intl · crypto · uuid · meta · web        formatting, PKCE, IDs
-fonts: Archivo, Playfair Display (bundled, offline — no google_fonts/CDN)
+fonts: Archivo, Playfair Display, Roboto (bundled, offline — no google_fonts/CDN)
 ```
 
 ## Shared internal modules

@@ -14,6 +14,8 @@ import '../../theming/brand_widgets.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import '../history/history_section.dart';
+import '../organization/organization_repository.dart';
+import '../organization/registration_number.dart';
 import 'apiaries_repository.dart';
 import 'counter_types.dart';
 
@@ -260,13 +262,13 @@ class _ApiaryActivitiesSection extends ConsumerWidget {
   }
 }
 
-class _LocationRow extends StatelessWidget {
+class _LocationRow extends ConsumerWidget {
   const _LocationRow({required this.apiary});
 
   final Apiary apiary;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final color = context.brand.onHeroSurfaceMuted;
@@ -282,6 +284,24 @@ class _LocationRow extends StatelessWidget {
             apiary.locationLon!.toStringAsFixed(5),
           )
         : l10n.apiaryLocationNotSet;
+
+    // FR-AP-9 (#296): the organization is read from its own provider
+    // (REST-backed, locally cached), not from the synced apiaries slice —
+    // the default lives on the organization because the authority issues one
+    // number per BEEKEEPER. A null/loading organization simply yields no
+    // number, the same as an unset one.
+    final orgDefault = ref
+        .watch(organizationProvider)
+        .value
+        ?.registrationNumber;
+    final registrationNumber = effectiveRegistrationNumber(
+      apiaryOverride: apiary.registrationNumber,
+      organizationDefault: orgDefault,
+    );
+    final isNumberInherited = isRegistrationNumberInherited(
+      apiaryOverride: apiary.registrationNumber,
+      organizationDefault: orgDefault,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,6 +332,34 @@ class _LocationRow extends StatelessWidget {
               Flexible(
                 child: Text(
                   apiary.placeLabel!,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                ),
+              ),
+            ],
+          ),
+        ],
+        // Registration number (FR-AP-9, #296): the EFFECTIVE number —
+        // the apiary's own override when set, otherwise the organization's
+        // default — resolved through registration_number.dart so this screen
+        // never reads either half alone. Inherited values are marked, so a
+        // beekeeper can tell "this apiary has its own number" from "this
+        // apiary uses the organization's". Absent entirely when neither is
+        // set: the field is advisory, and an empty one is not a gap to nag
+        // about.
+        if (registrationNumber != null) ...[
+          const SizedBox(height: 4),
+          Row(
+            key: const Key('apiary-detail-registration-number'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.badge_outlined, size: 17, color: color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  isNumberInherited
+                      ? '${l10n.apiaryRegistrationNumberLabel}: $registrationNumber '
+                            '(${l10n.apiaryRegistrationNumberInherited})'
+                      : '${l10n.apiaryRegistrationNumberLabel}: $registrationNumber',
                   style: theme.textTheme.bodyMedium?.copyWith(color: color),
                 ),
               ),

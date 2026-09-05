@@ -81,9 +81,18 @@ type Batch struct {
 // materializing a brand-new row (applyJourneyOp's "missing" branch, an
 // offline create arriving for the first time) does absent mean "no
 // defaults" (NULL), exactly like Status falls back to StatusOpen only in
-// that same branch. Present must be a JSON object
+// that same branch. Present must be a JSON object OR the literal `null`
 // (validateJourneyOp/validateDefaultAttributes) and replaces wholesale —
 // there is no partial-key-merge semantics.
+//
+// Absent and `null` are NOT the same thing here, and that distinction is
+// PowerSync's, not this service's invention: a patch's upload diff carries a
+// column key only when the column actually changed, so an absent key means
+// "untouched" and an explicit `null` means "the user cleared it". Collapsing
+// `null` into absent would silently drop a clear; rejecting it (as this
+// service did before) dead-letters a perfectly ordinary edit. Verified
+// against powersync-sqlite-core itself — contracts/validation/README.md
+// §"journey.default_attributes and an explicit null".
 type journeyData struct {
 	Name              *string         `json:"name"`
 	MainActivityType  *string         `json:"main_activity_type"`
@@ -95,7 +104,7 @@ type journeyData struct {
 // `put` op's `data` — journey_id + apiary_id identify what this row means;
 // both are always required (put is the only content-bearing op for this
 // entity type — delete carries no data, since the item's own stable id is
-// enough to remove it, migrations/00001_create_journeys.sql's doc comment).
+// enough to remove it, migrations/00003_baseline.sql (previously 00001_create_journeys.sql)'s doc comment).
 type journeyPlanItemData struct {
 	JourneyID *string `json:"journey_id"`
 	ApiaryID  *string `json:"apiary_id"`
@@ -512,6 +521,10 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 	if data.Status != nil {
 		want.status = *data.Status
 	}
+	// Presence is measured on the RAW bytes, so an explicit `null` (4 bytes)
+	// takes this branch and normalizes to a nil map — a patch that CLEARS the
+	// bag, which is exactly what PowerSync uploads for a column set to SQL
+	// NULL. Only a genuinely absent key (len 0) keeps current.
 	if len(data.DefaultAttributes) > 0 {
 		_, want.defaultAttributes = normalizeDefaultAttributes(data.DefaultAttributes)
 	}

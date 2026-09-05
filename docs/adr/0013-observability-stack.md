@@ -113,8 +113,8 @@ does not exist`, crash-loop — confirmed live) until MinIO exists. So the umbre
   provisioned at all), ServiceMonitors silently unselected
   (`serviceMonitorSelectorNilUsesHelmValues`), the collector's `metrics` Service port
   not exposed by default, and `up == 0` being unable to fire for an absent target
-  (→ `absent()`). Remaining follow-up in [`FOLLOWUPS.md`](../../FOLLOWUPS.md): replace
-  the `telemetrygen` verification with `#23`'s real service traffic once it ships.
+  (→ `absent()`). Remaining follow-up, tracked in `#610`: replace the
+  `telemetrygen` verification with the walking-skeleton services' real traffic.
 - **Removing a whole subchart from a live Helm release doesn't reliably prune all its
   resources** — observed directly while backing the test out: reverting the release to a
   chart without the stack left ~90 orphaned resources (Deployments, ConfigMaps, RBAC,

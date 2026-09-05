@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/profile/profile_repository.dart';
-import '../../l10n/gen/app_localizations.dart';
+import 'supported_locales.dart';
 
 /// The app's active UI locale (NFR-I18N-1, FR-ST-1, #340).
 ///
@@ -23,11 +23,11 @@ import '../../l10n/gen/app_localizations.dart';
 /// re-read into `profileProvider` on next launch, and once loaded the
 /// selection is applied purely client-side (no network needed to
 /// re-localize).
+/// Resolution goes through [supportedLocaleFor], not a `languageCode ==`
+/// comparison (#656/D-34): matching on the language alone could not tell
+/// `pt-PT` from `pt-BR` or `en-GB` from `en-US`, and a profile stored before
+/// #656 holds the bare `pt`/`en` — which must land on the country variant we
+/// ship, not on the device locale and not on Brazilian/American conventions.
 final localeProvider = Provider<Locale?>((ref) {
-  final code = ref.watch(profileProvider).value?.locale;
-  if (code == null || code.isEmpty) return null;
-  for (final supported in AppLocalizations.supportedLocales) {
-    if (supported.languageCode == code) return supported;
-  }
-  return null;
+  return supportedLocaleFor(ref.watch(profileProvider).value?.locale);
 });

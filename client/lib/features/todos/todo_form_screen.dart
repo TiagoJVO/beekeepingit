@@ -9,10 +9,24 @@ import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
+import '../sync/save_time_validation.dart';
 import 'todo_apiary_picker_field.dart';
 import 'todo_assignee_picker_field.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
+
+/// The columns [TodoFormScreen] binds to a field of its own, and can therefore
+/// put a save-time parity error against (#597).
+///
+/// `due_date`, `assignee_id` and `apiary_id` are deliberately absent: their
+/// controls (a date picker and two id pickers) cannot produce a value the
+/// shared description rejects, and they have no error slot to render one in —
+/// so those columns stay the pre-push pass's and the server's business, as
+/// before. Every name here must be a real column of
+/// [TodosRepository.draftForSave] — pinned by a test, because a column renamed
+/// there but not here would silently turn the check off for that field rather
+/// than fail anything.
+const todoFormSyncCheckedColumns = {'title', 'description', 'priority'};
 
 /// Create a todo (#293, FR-TD-1), or — when [todoId] is given — view/edit/
 /// complete/reopen/delete an existing one. Every field the issue's own AC
@@ -71,6 +85,15 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
   // place.
   String _status = 'open';
   bool _busy = false;
+
+  /// Whatever the save-time validation-parity check found last time [_save]
+  /// ran (#597, FR-OF-2, D-12): the same evaluator and the same shared
+  /// description the pre-push pass uses, run here so a rule the server would
+  /// break on is reported **in this form, with the todo still open** rather
+  /// than as a needs-fix card after the next push. Read by the field
+  /// validators below, so a failure lands in the same place as this form's own
+  /// errors and is announced the same way.
+  SaveTimeFieldErrors _syncErrors = const SaveTimeFieldErrors.none();
 
   @override
   void initState() {
@@ -160,15 +183,31 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
   /// detail on success (create -> the new todo; edit -> the same todo, so
   /// the user sees their saved changes).
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    final dueDate = _dueDate == null ? null : _isoDate(_dueDate!);
+    // Run the save-time parity check BEFORE Form.validate(), so the field
+    // validators below can read the result and report it inline (#597).
+    setState(() {
+      _syncErrors = SaveTimeFieldErrors.check(
+        TodosRepository.draftForSave(
+          id: widget.todoId,
+          title: title,
+          priority: _priority,
+          description: description.isEmpty ? null : description,
+          dueDate: dueDate,
+          assigneeId: _assigneeId,
+          apiaryId: _apiaryId,
+        ),
+        columns: todoFormSyncCheckedColumns,
+      );
+    });
+    if (!_formKey.currentState!.validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(todosRepositoryProvider.future);
-      final title = _titleController.text.trim();
-      final description = _descriptionController.text.trim();
-      final dueDate = _dueDate == null ? null : _isoDate(_dueDate!);
       String savedId;
       if (widget.isEdit) {
         savedId = widget.todoId!;
@@ -301,7 +340,18 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
               key: _formKey,
               // Any field edit arms the unsaved-changes guard (#345); the
               // pickers/date below (outside the field tree) call it directly.
-              onChanged: markUnsavedChanges,
+              // It also drops the last save attempt's parity verdict (#597):
+              // the title field autovalidates on interaction, so a stale
+              // message would otherwise sit under a value the user has already
+              // corrected until they press Save again.
+              onChanged: () {
+                markUnsavedChanges();
+                if (_syncErrors.isNotEmpty) {
+                  setState(
+                    () => _syncErrors = const SaveTimeFieldErrors.none(),
+                  );
+                }
+              },
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -312,9 +362,14 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                       controller: _titleController,
                       maxLength: 500,
                       autovalidateMode: AutovalidateMode.onUserInteraction,
+                      // The form's own "required" rule first, then whatever
+                      // the shared sync description says about this column
+                      // (#597) — e.g. a title under the field's 500-character
+                      // allowance but over the server's 500-BYTE cap, which
+                      // only a save-time check can catch.
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? l10n.todoTitleRequired
-                          : null,
+                          : _syncErrors.messageFor(l10n, 'title'),
                     ),
                   ),
                   const SizedBox(height: BrandDimens.gapField),
@@ -327,6 +382,8 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                       maxLines: 6,
                       maxLength: 10000,
                       textInputAction: TextInputAction.newline,
+                      validator: (_) =>
+                          _syncErrors.messageFor(l10n, 'description'),
                     ),
                   ),
                   const SizedBox(height: BrandDimens.gapField),
@@ -360,6 +417,8 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                       onChanged: (v) {
                         if (v != null) setState(() => _priority = v);
                       },
+                      validator: (_) =>
+                          _syncErrors.messageFor(l10n, 'priority'),
                     ),
                   ),
                   const SizedBox(height: BrandDimens.gapField),

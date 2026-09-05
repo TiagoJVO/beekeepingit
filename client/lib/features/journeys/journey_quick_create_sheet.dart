@@ -6,8 +6,10 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
+import '../sync/save_time_validation.dart';
 import 'apiary_multi_select_field.dart';
 import 'journey_default_attributes_section.dart';
+import 'journey_status.dart';
 import 'journeys_repository.dart';
 
 /// The #46 activity-form picker's inline "create a new journey" shortcut
@@ -101,6 +103,14 @@ class _JourneyQuickCreateSheetState
   // there is no type-change reset to wire.
   final _defaultAttributes = JourneyDefaultAttributesController();
 
+  /// Save-time validation parity (#597), same seam and same shared
+  /// description as the full journey form. Only `name` is bound here: the
+  /// main activity type is locked to the activity being registered (below),
+  /// and this sheet has no room for an out-of-field error line, so
+  /// `default_attributes` stays the pre-push pass's and the server's business.
+  static const _syncCheckedColumns = {'name'};
+  SaveTimeFieldErrors _syncErrors = const SaveTimeFieldErrors.none();
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -116,15 +126,26 @@ class _JourneyQuickCreateSheetState
 
   Future<void> _create() async {
     final l10n = AppLocalizations.of(context);
+    final name = _nameController.text.trim();
+    final defaultAttributes = _defaultAttributes.build(widget.mainActivityType);
+    // Before the Form's own validate(), so the name field's validator can
+    // report the result inline (#597).
+    setState(() {
+      _syncErrors = SaveTimeFieldErrors.check(
+        JourneysRepository.draftForSave(
+          name: name,
+          mainActivityType: widget.mainActivityType,
+          status: journeyStatusOpen,
+          defaultAttributes: defaultAttributes,
+        ),
+        columns: _syncCheckedColumns,
+      );
+    });
     if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
-      final name = _nameController.text.trim();
-      final defaultAttributes = _defaultAttributes.build(
-        widget.mainActivityType,
-      );
       final id = await repo.create(
         name: name,
         mainActivityType: widget.mainActivityType,
@@ -170,6 +191,17 @@ class _JourneyQuickCreateSheetState
               child: SingleChildScrollView(
                 child: Form(
                   key: _formKey,
+                  // Drops the last attempt's parity verdict (#597): the name
+                  // field autovalidates on interaction, so a stale message
+                  // would otherwise sit under a value the user has already
+                  // corrected until they press Create again.
+                  onChanged: () {
+                    if (_syncErrors.isNotEmpty) {
+                      setState(
+                        () => _syncErrors = const SaveTimeFieldErrors.none(),
+                      );
+                    }
+                  },
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,7 +217,7 @@ class _JourneyQuickCreateSheetState
                           autovalidateMode: AutovalidateMode.onUserInteraction,
                           validator: (v) => (v == null || v.trim().isEmpty)
                               ? l10n.journeyNameRequired
-                              : null,
+                              : _syncErrors.messageFor(l10n, 'name'),
                         ),
                       ),
                       const SizedBox(height: BrandDimens.gapField),

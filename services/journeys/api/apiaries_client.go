@@ -3,7 +3,7 @@
 // does not own the apiaries schema (ownership rule 1,
 // docs/architecture/service-decomposition.md §4: "cross-context references
 // are by ID, not FK") — the journeys.journey_plan_items table's apiary_id
-// column (store/migrations/00001_create_journeys.sql) is a soft reference
+// column (store/migrations/00003_baseline.sql (previously 00001_create_journeys.sql)) is a soft reference
 // this service has no database access to verify directly. The only
 // trustworthy way to know whether an apiary_id belongs to the caller's
 // organization is to ask the OWNING service, exactly the same zero-trust

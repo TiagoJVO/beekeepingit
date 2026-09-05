@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# Pause a Scaleway Kapsule environment (#539, D-26) — staging by default, prod
+# via BK_CLUSTER_ENV=prod. Stops paying for compute WITHOUT losing anything:
+# deletes the node pool (Scaleway won't allow scaling a non-autoscaling
+# pool's size to 0 — see step 3 below) so the cluster's control plane (free
+# on Kapsule's Mutualized tier, independent of node count — see
+# infra/README.md) keeps running with etcd intact, which means every
+# PersistentVolumeClaim, the CNPG `Cluster` custom resource, and Flux's own
+# state never leave the Kubernetes API — there is nothing to "reattach"
+# later, because nothing was ever detached from the cluster's object model,
+# only from its compute. Undo with scaleway-scale-up.sh.
+#
+# This is NOT scaleway-down.sh. That script permanently destroys the cluster,
+# its volumes, and its Load Balancers — use it when you actually want to
+# throw the environment away. This script is for the routine "stop the meter
+# between sessions" case and is safe to run often.
+#
+# What it does, in order:
+#   1. Delete every LoadBalancer-type Service (there's normally just one,
+#      Traefik's) so Scaleway's cloud-controller-manager cleanly deprovisions
+#      the billed Load Balancer(s) behind them through its own reconciliation
+#      — deleting the LB directly via the Scaleway API instead, out from
+#      under a Service the CCM still believes it owns, risks leaving the CCM
+#      with a stale reference. scaleway-scale-up.sh recreates the Service (and
+#      therefore a fresh LB) by re-running the same `helm upgrade --install
+#      traefik` scaleway-up.sh already does on first bring-up.
+#   2. Cordon + drain every node (Scaleway's own documented safe-scale-down
+#      sequence — see infra/README.md), so workloads shut down cleanly instead
+#      of being yanked.
+#   3. Delete every node pool on the cluster (not resize to 0 — Scaleway
+#      rejects that on a non-autoscaling pool).
+#
+# Credentials/env come from the same place as scaleway-up.sh/-down.sh: a
+# `scw init` profile, or SCW_ACCESS_KEY/SCW_SECRET_KEY/... env vars — locally
+# via infra/cluster/.env (see .env.example), in CI via GitHub secrets.
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=infra/cluster/scw-common.sh
+. "$script_dir/scw-common.sh"
+
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "error: 'kubectl' not found on PATH" >&2
+  exit 1
+fi
+
+cluster_id="$(scw k8s cluster list name="$cluster_name" region="$region" -o template='{{ .ID }}' 2>/dev/null || true)"
+if [ -z "$cluster_id" ]; then
+  echo "cluster '$cluster_name' does not exist in $region — nothing to scale down"
+  exit 0
+fi
+
+# The control plane answers regardless of node count, so kubectl works here
+# even if a previous scale-down already left this cluster at 0 nodes
+# (idempotent — re-running this script is safe).
+scw k8s kubeconfig install "$cluster_id" region="$region"
+echo "active kubectl context: $(kubectl config current-context)"
+
+# 1. Delete LoadBalancer-type Services first, while nodes still exist to run
+# the CCM's controller pod that actually talks to the Scaleway LB API.
+#
+# No `2>/dev/null || true` on this (or the node/pool lookups below): this
+# script's whole purpose is a cost-safety mechanism, so a transient kubectl/scw
+# failure must abort loudly (set -e does exactly that) rather than being
+# swallowed into "found nothing" and silently skipping the corresponding
+# action while the closing summary still claims success.
+echo "looking for LoadBalancer-type Services to delete"
+lb_svcs="$(kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}')"
+if [ -z "$lb_svcs" ]; then
+  echo "no LoadBalancer-type Services found — nothing to delete"
+else
+  echo "Services to delete:"
+  while IFS= read -r svc; do
+    [ -n "$svc" ] && echo "  $svc"
+  done <<<"$lb_svcs"
+  while IFS= read -r svc; do
+    [ -n "$svc" ] || continue
+    ns="${svc%%/*}"
+    name="${svc#*/}"
+    echo "deleting Service $svc (blocks until its Load Balancer finishes deprovisioning)"
+    kubectl -n "$ns" delete svc "$name" --timeout=300s
+  done <<<"$lb_svcs"
+fi
+
+# 2. Cordon + drain every node before scaling pools to 0, rather than
+# yanking nodes out from under running pods. --disable-eviction: CNPG
+# creates a PodDisruptionBudget on its (single-instance, no-HA) Postgres
+# pod specifically to block eviction when there's no replica to fail
+# over to — correct for rolling maintenance on a live multi-node
+# cluster, but meaningless here, since we're about to scale every node
+# to 0 anyway and there is no "elsewhere" for the pod to go regardless.
+# --disable-eviction bypasses that PDB admission check by deleting the
+# pod directly instead of going through the Eviction API — it still
+# sends a graceful SIGTERM and honors terminationGracePeriodSeconds
+# (kubectl delete, not --force), so Postgres still gets a clean
+# shutdown; only the "wait for a safe moment" logic is skipped, and
+# there is no safe moment to wait for here (confirmed live: the plain
+# eviction path spins for the full default 5m timeout against
+# beekeepingit-postgres-1's PDB and then hard-fails, #539).
+nodes="$(kubectl get nodes -o name)"
+if [ -n "$nodes" ]; then
+  echo "cordoning and draining nodes"
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    kubectl cordon "$node"
+  done <<<"$nodes"
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --disable-eviction --timeout=300s
+  done <<<"$nodes"
+else
+  echo "no nodes found — cluster is already scaled down"
+fi
+
+# 3. Delete every pool on this cluster. NOT `pool update size=0`:
+# confirmed live against staging that Scaleway's API rejects size=0 on
+# a non-autoscaling pool ("Invalid arguments 'size' ... A kapsule
+# cluster can't have less than 1 nodes", #539) — a non-autoscaling
+# pool's size floor is 1, so 0 is only reachable by deleting the pool
+# object outright, not by resizing it. This still only touches compute:
+# a pool is pure compute, so deleting it has no effect on the cluster's
+# control plane/etcd or on any PVC/PV/CNPG-Cluster object, all of which
+# live in the control plane, independent of any pool. scaleway-up.sh's
+# original "does a pool need to keep existing" constraint is about a
+# cluster needing a pool to schedule workloads onto, not about a pool
+# object needing to persist while genuinely empty — scaleway-scale-up.sh
+# creates a fresh one on resume.
+pool_ids="$(scw k8s pool list cluster-id="$cluster_id" region="$region" -o template='{{ .ID }}')"
+if [ -z "$pool_ids" ]; then
+  echo "cluster '$cluster_name' has no node pools — nothing to scale"
+else
+  while IFS= read -r pool_id; do
+    [ -n "$pool_id" ] || continue
+    echo "deleting pool $pool_id"
+    scw k8s pool delete "$pool_id" region="$region" -w
+  done <<<"$pool_ids"
+fi
+
+# The API endpoint may already be GONE by this point, and that is expected:
+# observed live (#554, 2026-08-31), once the last pool is deleted the cluster
+# goes `pool_required` and its `*.api.k8s.<region>.scw.cloud` DNS name stops
+# resolving — so a kubectl call here fails on DNS, not because anything broke.
+# The first workflow run of this script died on exactly this line (under
+# `set -e`, with the error hidden by 2>/dev/null) and reported FAILURE for a
+# scale-down that had fully succeeded. Tolerate it: the count is a nicety, and
+# "unreachable" is the normal post-scale-down state.
+if pvcs="$(kubectl get pvc -A --no-headers 2>/dev/null)"; then
+  pvc_count="$(printf '%s' "$pvcs" | grep -c . || true)"
+else
+  pvc_count="not queryable — the API endpoint stops resolving at 0 pools (expected; #554)"
+fi
+cat <<EOF
+
+Cluster '$cluster_name' ($env_name) scaled down — 0 nodes. The control-plane STATE is kept,
+but its API endpoint stops resolving until a pool exists again (status: pool_required).
+
+- PersistentVolumeClaims still Bound in the cluster: $pvc_count (none were touched)
+- Load Balancers: deleted (recreated automatically on scaleway-scale-up.sh)
+- Resume with: BK_CLUSTER_ENV=$env_name infra/cluster/scaleway-scale-up.sh
+
+EOF

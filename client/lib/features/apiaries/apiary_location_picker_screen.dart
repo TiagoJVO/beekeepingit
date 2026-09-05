@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../../core/geo/device_location.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import 'map_tile_sources.dart';
 
 /// Default map center/zoom when the picker opens with no pin yet — same
 /// mainland-Portugal default the embedded picker and apiary_map_screen.dart
@@ -181,10 +182,10 @@ class _ApiaryLocationPickerScreenState
               children: [
                 TileLayer(
                   key: const Key('apiary-fullscreen-picker-tile-layer'),
-                  urlTemplate:
-                      'https://server.arcgisonline.com/ArcGIS/rest/services/'
-                      'World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                  userAgentPackageName: 'com.beekeepingit.client',
+                  // map_tile_sources.dart, not a literal: nginx.conf's CSP
+                  // `connect-src` has to name this host (#671).
+                  urlTemplate: satelliteTileUrlTemplate,
+                  userAgentPackageName: mapTileUserAgentPackageName,
                 ),
                 if (location != null)
                   MarkerLayer(

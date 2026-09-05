@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/l10n/supported_locales.dart';
 import '../../core/storage/local_prefs.dart';
 
 /// The authenticated caller's own profile
@@ -24,7 +25,7 @@ class Profile {
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     email: json['email'] as String? ?? '',
-    locale: json['locale'] as String? ?? 'en',
+    locale: readProfileLocale(json['locale'] as String?),
     profileComplete: json['profile_complete'] as bool? ?? false,
     createdAt: DateTime.parse(json['created_at'] as String),
     updatedAt: DateTime.parse(json['updated_at'] as String),

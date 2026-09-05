@@ -25,7 +25,7 @@ import (
 
 // dateLayout is the wire format for an activity's occurred_at date — plain
 // YYYY-MM-DD, matching the DB column's DATE type (no time-of-day component,
-// store/migrations/00001_create_activities.sql).
+// store/migrations/00002_baseline.sql (previously 00001_create_activities.sql)).
 const dateLayout = "2006-01-02"
 
 // maxValidateBodyBytes caps the raw request body for the stateless validate

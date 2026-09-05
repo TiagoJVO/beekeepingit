@@ -1,9 +1,13 @@
--- sqlc's virtual schema for codegen only — mirrors the CUMULATIVE "up" state of
--- ../migrations/*.sql (kept separate because sqlc applies files sequentially and
--- would otherwise also "see" a down migration's DROP). It reflects the schema
--- AFTER all migrations, so `oidc_sub` here is the post-rename name (00002
--- renames the column the 00001 create introduced — see those files). Runtime
--- schema changes only ever happen via goose; update this file with each migration.
+-- sqlc's virtual schema for codegen only — NOT a bootstrap baseline, and never
+-- applied to a database. It mirrors the cumulative "up" state of ../migrations/,
+-- which since #541's squash is the single 00004_baseline.sql (plus any migration
+-- added after it).
+--
+-- Keep in sync BY HAND when a migration changes a shape sqlc generates from. The
+-- migrations are the real schema; this file only teaches sqlc the column types, so
+-- drift surfaces as wrong generated Go types rather than as a failed migration —
+-- which is exactly why it is worth stating here.
+
 CREATE SCHEMA IF NOT EXISTS identity;
 
 CREATE TABLE identity.users (
@@ -11,7 +15,8 @@ CREATE TABLE identity.users (
     oidc_sub     TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL DEFAULT '',
     email        TEXT NOT NULL DEFAULT '',
-    locale       TEXT NOT NULL DEFAULT 'en',
+    locale       TEXT NOT NULL DEFAULT 'en-GB'
+                 CONSTRAINT users_locale_supported CHECK (locale IN ('en-GB', 'pt-PT')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );

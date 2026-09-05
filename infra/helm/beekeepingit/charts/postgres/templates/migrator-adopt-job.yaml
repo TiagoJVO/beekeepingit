@@ -1,0 +1,291 @@
+{{/*
+The #545 ownership transition for an ALREADY-DEPLOYED cluster: move every
+relation in each schema from `beekeepingit` to that schema's own
+`<schema>_migrator`, and re-establish the runtime ACL under the new owner —
+one transaction per schema, one Job per schema.
+
+GATED OFF BY DEFAULT (`postgres.migratorTransition.enabled`). A fresh install
+never needs this: the migrate Job connects as `<schema>_migrator` with
+DB_SEARCH_PATH=<schema>, so goose creates the ledger and every table under that
+role from the first release onward. Only a cluster that already ran #541 — where
+`beekeepingit` owns everything — has anything to adopt. Leaving the flag on
+afterwards is not harmless: it keeps `beekeepingit` a member of all seven
+migrator roles (cluster.yaml), which is the exact cross-schema bridge #545
+removes. See infra/README.md's transition runbook and ADR-0024.
+
+HOOK WEIGHT 1 — strictly after schema-grants (0) and strictly before the
+migrate Jobs (2). Both edges are load-bearing:
+  - After 0, because `ALTER ... OWNER TO` requires the NEW owner to hold CREATE
+    on the schema, which weight 0 is what grants.
+  - Before 2, because from this release on the migrate Job authenticates as
+    `<schema>_migrator`, and it cannot `ALTER TABLE` a relation it does not own.
+    Adopt-then-migrate in the same release is what makes the changeover
+    single-step rather than a two-release dance.
+
+=== NON-NEGOTIABLE 1: NO `REASSIGN OWNED BY beekeepingit` ===
+
+`REASSIGN OWNED BY` is DATABASE-WIDE. `beekeepingit` owns all seven schemas,
+every relation in them, and the `beekeepingit`/`powersync_storage` databases —
+so a single `REASSIGN OWNED BY beekeepingit TO apiaries_migrator` would hand
+ONE service's migrator role every other service's tables and audit logs, which
+is the precise opposite of what this change exists to do. It is a one-word
+mistake with no failure signal: it succeeds, and the cluster looks fine.
+
+So this uses a per-relation `ALTER ... OWNER TO` loop over `pg_class`, filtered
+by `relnamespace`. Slower, wordier, and incapable of reaching outside the
+schema it was given.
+
+=== NON-NEGOTIABLE 2: FAIL ON OBJECT KINDS THE LOOP DOES NOT MOVE ===
+
+The loop handles `relkind IN ('r','p','S','v','m','f')`. Indexes ('i'/'I') and
+TOAST tables ('t') are deliberately absent — their ownership follows the table
+and cannot be set independently. Functions and standalone types (enums,
+domains, composites) live in `pg_proc`/`pg_type`, not `pg_class`, so the loop
+would silently leave them owned by `beekeepingit`.
+
+None exist in these schemas today (every enum-like value is validated in Go —
+docs/CODEMAPS/data.md's "extensible-enum convention" — and PostGIS installs its
+functions into `public`). The guard is what keeps that true: if a migration
+ever adds one, this Job fails the release with the object's name instead of
+quietly transitioning a schema only 90% of the way.
+
+=== NON-NEGOTIABLE 3: ONE TRANSACTION PER SCHEMA ===
+
+`--single-transaction` is a security control here, exactly as it is in
+table-grants-job.yaml (read that file's header for the incident). Helm applies
+a release's Deployments BEFORE running post-upgrade hooks, and this chart is
+installed without `--wait` (infra/README.md step 4) — so the outgoing
+ReplicaSet's pods are serving live traffic as `<schema>_svc` for the whole time
+this Job runs. Between the REVOKE and the re-GRANT below there is an instant
+where `<schema>_svc` holds nothing at all; between the blanket GRANT and the
+history REVOKE there is an instant where it holds UPDATE/DELETE on `audit_log`.
+Neither may be observable by any session. Wrapping the whole per-schema
+transition in one transaction means the ACL goes from its previous state
+straight to its final one.
+
+=== NON-NEGOTIABLE 4: REVOKE AS beekeepingit, RE-GRANT AS THE NEW OWNER ===
+
+On an existing cluster, `<schema>_svc`'s privileges were granted BY
+`beekeepingit`, so `pg_class.relacl` records `beekeepingit` as the grantor.
+Whether `ALTER ... OWNER TO` rewrites those grantor references to the new owner
+is a Postgres implementation detail, and betting on it is not acceptable here:
+if it does NOT, a `REVOKE` issued by `<schema>_migrator` matches no grant,
+removes nothing, and returns success — leaving `audit_log` mutable while the
+Job reports a clean transition. A silent failure, on the one table whose whole
+point is that it cannot be tampered with.
+
+So the REVOKE half runs as `beekeepingit` (which either IS the grantor, or is a
+member of the new owner and can revoke its grants — correct under both
+behaviours), and only then does `SET LOCAL ROLE` hand the rest to
+`<schema>_migrator`. `TestMigratorTransition_RevokeAsNewOwnerAloneIsInsufficient`
+in services/shared/dbaccess/migrator_transition_test.go pins whichever way
+Postgres actually behaves, so a future Postgres upgrade that changes it fails a
+test instead of quietly changing the guarantee.
+
+The `ALTER DEFAULT PRIVILEGES ... REVOKE` pair is in the same half for a harder
+reason: `ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit` requires membership in
+`beekeepingit`, which `<schema>_migrator` does not have and must never have.
+Only `beekeepingit` can clean up its own `pg_default_acl` rows, and if they are
+left behind they keep granting full DML on every table a FUTURE migration
+creates — including a new `audit_log` — from a grantor nothing in the steady
+state can revoke.
+*/}}
+{{- if and .Values.enabled .Values.migratorTransition.enabled }}
+{{- $root := . }}
+{{- range $schema := .Values.schemas }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgres.fullname" $root }}-migrator-adopt-{{ $schema }}
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: postgres
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "1"
+spec:
+  # FAILURE BUDGET (#551's semantics, applied to a #545 Job). The only genuine
+  # waiting here — CNPG reconciling the gated membership — is bounded inside
+  # `wait_for_role` (_helpers.tpl, one 300s deadline started after image
+  # pull), so activeDeadlineSeconds is a backstop, not the budget. It is a
+  # generous one on purpose: the ALTER ... OWNER loop needs ACCESS EXCLUSIVE
+  # on each relation while the outgoing ReplicaSet is still serving as
+  # `<schema>_svc`, and a lock wait is the one failure that is not a psql
+  # exit — waiting longer for it lets the one-off transition succeed, and no
+  # `lock_timeout` is set for the same reason table-grants sets none.
+  # backoffLimit stays low: every other failure is a psql exiting non-zero
+  # (the preflight guards are deliberately deterministic EXCEPTIONs), so
+  # attempts, not wall-clock, are the natural bound, and a broken transition
+  # should be reported, not ground through ten retries.
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" $root | nindent 8 }}
+        # Keeps this pod inside the `postgres-jobs-to-postgres` NetworkPolicy
+        # edge (charts/networkpolicy/values.yaml). default-deny is
+        # namespace-wide: a NEW pod identity with no matching edge simply
+        # cannot reach Postgres, and this repo has been bitten by that on
+        # activities, journeys, todos and the #541 migrate Jobs. Reusing the
+        # shared `postgres` component label means no new edge is owed.
+        app.kubernetes.io/name: postgres
+    spec:
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it — and this Job's failure messages
+      # (the preflight guards above) are the entire point of its guards.
+      restartPolicy: Never
+      # This Job holds `beekeepingit` while it is temporarily a member of every
+      # migrator role — the most privileged pod this chart ever runs. Hardened
+      # like table-grants-job.yaml; the postgres image runs as uid 26.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+      containers:
+        - name: migrator-adopt
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          image: {{ $root.Values.image }}
+          env:
+            - name: PGHOST
+              value: {{ include "postgres.fullname" $root }}-rw
+            - name: PGDATABASE
+              value: beekeepingit
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" $root }}-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" $root }}-app
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              {{- include "postgres.waitForRoleShellFn" $root | nindent 14 }}
+
+              # CNPG reconciles `managed.roles` asynchronously relative to this
+              # hook firing, so the membership the flag turns on may not exist
+              # yet on the release that first enables it. Poll for the
+              # MEMBERSHIP, not just the role: both privilege kinds are needed
+              # and they are separately grantable — USAGE for the inherited
+              # ownership rights `ALTER ... OWNER TO` checks, MEMBER for the
+              # `SET LOCAL ROLE` below.
+              wait_for_role \
+                "pg_has_role('{{ $schema }}_migrator', 'USAGE') AND pg_has_role('{{ $schema }}_migrator', 'MEMBER')" \
+                "beekeepingit's membership in {{ $schema }}_migrator"
+
+              # Everything below is ONE transaction — see the header. It is
+              # also fully idempotent: re-running it on an already-transitioned
+              # schema moves nothing (the loop skips relations already owned by
+              # the target), and every REVOKE/GRANT re-applies to the same end
+              # state. It runs on every upgrade while the flag is on.
+              psql -v ON_ERROR_STOP=1 --single-transaction \
+                -c "DO \$do\$
+                    DECLARE
+                      target_schema CONSTANT text   := '{{ $schema }}';
+                      target_role   CONSTANT text   := '{{ $schema }}_migrator';
+                      target_owner  CONSTANT regrole := '{{ $schema }}_migrator'::regrole;
+                      unhandled text;
+                      r record;
+                      moved int := 0;
+                    BEGIN
+                      SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO unhandled
+                        FROM pg_proc p
+                       WHERE p.pronamespace = target_schema::regnamespace;
+                      IF unhandled IS NOT NULL THEN
+                        RAISE EXCEPTION '%: holds routine(s) this transition cannot move: %. pg_class-based ownership loops do not see pg_proc — extend this Job before shipping the migration that added them, or they stay owned by beekeepingit forever.',
+                                        target_schema, unhandled;
+                      END IF;
+
+                      SELECT string_agg(t.typname, ', ' ORDER BY t.typname) INTO unhandled
+                        FROM pg_type t
+                       WHERE t.typnamespace = target_schema::regnamespace
+                         AND (t.typrelid = 0
+                              OR (SELECT c.relkind FROM pg_class c WHERE c.oid = t.typrelid) = 'c')
+                         AND NOT EXISTS (SELECT 1 FROM pg_type el
+                                          WHERE el.oid = t.typelem AND el.typarray = t.oid);
+                      IF unhandled IS NOT NULL THEN
+                        RAISE EXCEPTION '%: holds standalone type(s) this transition cannot move: %. Same reason as routines above — pg_type is not pg_class.',
+                                        target_schema, unhandled;
+                      END IF;
+
+                      -- The DEPLOY-ORDER guard. Postgres lets you ALTER the
+                      -- owner of a relation only if you are its current owner
+                      -- or a member of the owning role. This Job's membership
+                      -- (cluster.yaml's gated inRoles) covers the migrator
+                      -- roles and beekeepingit's own relations, which is
+                      -- everything on a cluster running #541. It does NOT
+                      -- cover relations still owned by <schema>_svc, which is
+                      -- what a cluster that never deployed #541 still has —
+                      -- #541 removed the <schema>_svc memberships that would
+                      -- have let this reach them.
+                      --
+                      -- Without this check the loop below fails on the first
+                      -- such relation with a bare 'must be owner of table
+                      -- <name>', which says nothing about the actual cause.
+                      -- The transaction rolls back either way; the difference
+                      -- is whether whoever is staring at a failed release can
+                      -- tell that the fix is 'deploy #541''s release first'.
+                      SELECT string_agg(c.oid::regclass::text || ' (owned by ' || c.relowner::regrole::text || ')',
+                                        ', ' ORDER BY c.oid::regclass::text) INTO unhandled
+                        FROM pg_class c
+                       WHERE c.relnamespace = target_schema::regnamespace
+                         AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+                         AND c.relowner <> target_owner
+                         AND NOT pg_has_role(current_user, c.relowner, 'USAGE');
+                      IF unhandled IS NOT NULL THEN
+                        RAISE EXCEPTION '%: relation(s) owned by a role this Job cannot act for: %. This cluster predates #541 — deploy that release first so its table-grants Job reassigns them to beekeepingit, then re-run this transition.',
+                                        target_schema, unhandled;
+                      END IF;
+
+                      FOR r IN
+                        SELECT c.oid, c.relkind, c.oid::regclass AS ident
+                          FROM pg_class c
+                         WHERE c.relnamespace = target_schema::regnamespace
+                           AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+                           AND c.relowner <> target_owner
+                         ORDER BY CASE c.relkind
+                                    WHEN 'r' THEN 1 WHEN 'p' THEN 1 WHEN 'f' THEN 2
+                                    WHEN 'S' THEN 3 WHEN 'v' THEN 4 ELSE 5
+                                  END
+                      LOOP
+                        CONTINUE WHEN (SELECT c.relowner FROM pg_class c WHERE c.oid = r.oid) = target_owner;
+                        EXECUTE format('ALTER %s %s OWNER TO %I',
+                                       CASE r.relkind
+                                         WHEN 'r' THEN 'TABLE'
+                                         WHEN 'p' THEN 'TABLE'
+                                         WHEN 'f' THEN 'FOREIGN TABLE'
+                                         WHEN 'S' THEN 'SEQUENCE'
+                                         WHEN 'v' THEN 'VIEW'
+                                         WHEN 'm' THEN 'MATERIALIZED VIEW'
+                                       END,
+                                       r.ident, target_role);
+                        moved := moved + 1;
+                      END LOOP;
+                      RAISE NOTICE '%: moved % relation(s) to %', target_schema, moved, target_role;
+                    END
+                    \$do\$;" \
+                -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA {{ $schema }} REVOKE ALL ON TABLES FROM {{ $schema }}_svc;" \
+                -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA {{ $schema }} REVOKE ALL ON SEQUENCES FROM {{ $schema }}_svc;" \
+                -c "REVOKE ALL ON ALL TABLES IN SCHEMA {{ $schema }} FROM {{ $schema }}_svc;" \
+                -c "REVOKE ALL ON ALL SEQUENCES IN SCHEMA {{ $schema }} FROM {{ $schema }}_svc;" \
+                -c "SET LOCAL ROLE {{ $schema }}_migrator;" \
+                {{- include "postgres.runtimeGrantsPsqlArgs" (dict "schema" $schema "historyTables" $root.Values.historyTables) | nindent 16 }}
+
+              echo "{{ $schema }}: adopted by {{ $schema }}_migrator."
+{{- end }}
+{{- end }}

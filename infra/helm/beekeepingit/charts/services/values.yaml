@@ -41,6 +41,19 @@ db:
   port: "5432"
   name: beekeepingit
   sslmode: require
+  # NOTE: there is deliberately NO `migratorSecret` key here any more (#545).
+  # #541 introduced one, pointing at the postgres chart's app-owner Secret
+  # (`beekeepingit`), and that single shared value was the problem: it owns all
+  # seven schemas, so every service's migrate Job — running that service's own
+  # application image, the same artifact that serves untrusted HTTP — held
+  # database-owner reach over every other service's data and audit_log.
+  #
+  # templates/migrate-job.yaml now DERIVES the Secret name from the service's
+  # own `db.schema` (`<schema>-migrator-credentials`). Not a settable default
+  # with a per-service override, because an override is exactly the shape of
+  # the bug: a service pointing at another schema's migrator credential
+  # reintroduces the cross-schema reach silently, and nothing would fail. See
+  # docs/adr/0024-per-schema-migrator-roles.md.
 
 # The services to render. `name` is also the in-cluster Service name (stable
 # DNS: http://<name>:8080), which the resolver/coordinator/powersync configs

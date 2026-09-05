@@ -83,12 +83,15 @@ type Batch struct {
 // geoPointInput.lon()/lat() already produce a both-valid-or-both-NULL pair
 // for the shared InsertApiary/UpdateApiary queries this data now flows into.
 type apiaryData struct {
-	Name        *string  `json:"name"`
-	HiveCount   *int32   `json:"hive_count"`
-	Notes       *string  `json:"notes"`
-	PlaceLabel  *string  `json:"place_label"`
-	LocationLon *float64 `json:"location_lon"`
-	LocationLat *float64 `json:"location_lat"`
+	Name       *string `json:"name"`
+	HiveCount  *int32  `json:"hive_count"`
+	Notes      *string `json:"notes"`
+	PlaceLabel *string `json:"place_label"`
+	// RegistrationNumber (FR-AP-9, #296) mirrors the client's local
+	// PowerSync column name verbatim, like every other key here.
+	RegistrationNumber *string  `json:"registration_number"`
+	LocationLon        *float64 `json:"location_lon"`
+	LocationLat        *float64 `json:"location_lat"`
 }
 
 // counterData is the sync wire shape for an entityTypeApiaryCounter op
@@ -96,7 +99,7 @@ type apiaryData struct {
 // the client-generated Op.ID is only the local row's own PK (PowerSync's
 // CRUD-queue key), never the server's identity for this row. The server's
 // real uniqueness is (apiary_id, counter_type) — the table's UNIQUE
-// constraint (00005_create_apiary_counters.sql) — so two different devices
+// constraint (00008_baseline.sql (previously 00005_create_apiary_counters.sql)) — so two different devices
 // creating a "hive" counter for the same apiary offline generate two
 // DIFFERENT client ids for what the server correctly collapses into ONE row
 // via applyCounterOp's upsert. Value is a pointer (not a plain int32) so
@@ -166,12 +169,15 @@ func validateBatch() http.HandlerFunc {
 	}
 }
 
-// validateOp dry-runs one op against the same rules applyOp/applyCounterOp
-// enforce, branching on entity_type (#256 adds entityTypeApiaryCounter
+// validateOp dry-runs one op against the same rules applyOp/applyCounterOp/
+// applyDeclarationOp enforce, branching on entity_type (#256 added
+// entityTypeApiaryCounter and #298 entityTypeStockDeclaration
 // alongside the original entityTypeApiary) — a single batch may freely mix
-// both kinds of op.
+// all three kinds of op.
 func validateOp(i int, op Op) []problem.FieldError {
 	switch op.EntityType {
+	case entityTypeStockDeclaration:
+		return validateDeclarationOp(i, op)
 	case entityTypeApiaryCounter:
 		return validateCounterOp(i, op)
 	default:
@@ -198,7 +204,7 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 		errs = append(errs, problem.FieldError{Field: prefix + ".op", Code: "invalid", Message: "op must be put, patch or delete"})
 	}
 	if op.EntityType != entityTypeApiary {
-		errs = append(errs, problem.FieldError{Field: prefix + ".entity_type", Code: "invalid", Message: "entity_type must be apiary or apiary_counter"})
+		errs = append(errs, problem.FieldError{Field: prefix + ".entity_type", Code: "invalid", Message: "entity_type must be apiary, apiary_counter or stock_declaration"})
 	}
 	if _, err := uuid.Parse(op.ID); err != nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".id", Code: "invalid", Message: "id must be a UUID"})
@@ -224,7 +230,7 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 	// Location is mandatory on a put/offline-create (FR-AP-7, #341 — the
 	// product owner's directed requirement change): a full put must carry
 	// both coordinates, mirroring the REST path's validateCreate and the DB
-	// NOT NULL constraint (00008_apiary_location_not_null.sql). A patch is
+	// NOT NULL constraint (00008_baseline.sql (previously 00008_apiary_location_not_null.sql)). A patch is
 	// exempt — it never clears location (mergeOp only ever SETS it when both
 	// coordinates are present), so it can't violate the NOT NULL invariant.
 	if op.Op == "put" && (data.LocationLon == nil || data.LocationLat == nil) {
@@ -241,6 +247,9 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 	}
 	if data.PlaceLabel != nil && len(*data.PlaceLabel) > maxPlaceLabelLength {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
+	}
+	if data.RegistrationNumber != nil && len(*data.RegistrationNumber) > maxRegistrationNumberLength {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.registration_number", Code: "too_long", Message: "registration_number must be at most 50 characters"})
 	}
 	// Location bounds (#252): mirrors geoPointInput.validate's lon/lat range
 	// check — the wire shape differs (plain lon/lat keys, not a nested
@@ -263,7 +272,8 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 		}
 	}
 	if op.Op == "patch" && data.Name == nil && data.HiveCount == nil && data.Notes == nil &&
-		data.PlaceLabel == nil && data.LocationLon == nil && data.LocationLat == nil {
+		data.PlaceLabel == nil && data.RegistrationNumber == nil &&
+		data.LocationLon == nil && data.LocationLat == nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "required", Message: "patch must change at least one field"})
 	}
 	return errs
@@ -351,9 +361,12 @@ func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
 					res OpResult
 					err error
 				)
-				if op.EntityType == entityTypeApiaryCounter {
+				switch op.EntityType {
+				case entityTypeApiaryCounter:
 					res, err = applyCounterOp(r.Context(), q, org, userID, op)
-				} else {
+				case entityTypeStockDeclaration:
+					res, err = applyDeclarationOp(r.Context(), q, org, userID, op)
+				default:
 					res, err = applyOp(r.Context(), q, org, userID, op)
 				}
 				if err != nil {
@@ -383,13 +396,17 @@ type rowState struct {
 	hive       int32
 	notes      string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
 	placeLabel string // "" means unset — a place NAME (e.g. "Montargil"), not personal data (#252, §7.3)
-	lon        *float64
-	lat        *float64
-	deletedAt  pgtype.Timestamptz
+	// registrationNumber is the per-apiary OVERRIDE of the organization's
+	// beekeeper registration-number default (FR-AP-9, #296); "" means "no
+	// override, inherit the organization's default".
+	registrationNumber string
+	lon                *float64
+	lat                *float64
+	deletedAt          pgtype.Timestamptz
 }
 
 func (a rowState) sameAs(b rowState) bool {
-	return a.name == b.name && a.hive == b.hive && a.notes == b.notes && a.placeLabel == b.placeLabel &&
+	return a.name == b.name && a.hive == b.hive && a.notes == b.notes && a.placeLabel == b.placeLabel && a.registrationNumber == b.registrationNumber &&
 		floatPtrEqual(a.lon, b.lon) && floatPtrEqual(a.lat, b.lat) && a.deletedAt.Valid == b.deletedAt.Valid
 }
 
@@ -418,6 +435,9 @@ func (a rowState) fields() map[string]any {
 	}
 	if a.placeLabel != "" {
 		m["place_label"] = a.placeLabel
+	}
+	if a.registrationNumber != "" {
+		m["registration_number"] = a.registrationNumber
 	}
 	if a.lon != nil && a.lat != nil {
 		m["location"] = fmt.Sprintf("%g,%g", *a.lon, *a.lat)
@@ -454,9 +474,10 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		want := mergeOp(rowState{}, op, data)
 		if err := q.InsertApiary(ctx, sqlcgen.InsertApiaryParams{
 			ID: pgID, OrganizationID: org, Name: want.name,
-			Notes:      notesParamFromState(want.notes),
-			PlaceLabel: notesParamFromState(want.placeLabel),
-			UpdatedAt:  incomingTS, DeletedAt: want.deletedAt,
+			Notes:              notesParamFromState(want.notes),
+			PlaceLabel:         notesParamFromState(want.placeLabel),
+			RegistrationNumber: notesParamFromState(want.registrationNumber),
+			UpdatedAt:          incomingTS, DeletedAt: want.deletedAt,
 			Lon: float8Ptr(want.lon), Lat: float8Ptr(want.lat),
 		}); err != nil {
 			return OpResult{}, err
@@ -484,16 +505,17 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 	}
 
 	storedLon, storedLat := lonLatFromGeoJSON(stored.LocationGeojson)
-	current := rowState{name: stored.Name, hive: stored.HiveCount, notes: textOf(stored.Notes), placeLabel: textOf(stored.PlaceLabel), lon: storedLon, lat: storedLat, deletedAt: stored.DeletedAt}
+	current := rowState{name: stored.Name, hive: stored.HiveCount, notes: textOf(stored.Notes), placeLabel: textOf(stored.PlaceLabel), registrationNumber: textOf(stored.RegistrationNumber), lon: storedLon, lat: storedLat, deletedAt: stored.DeletedAt}
 	want := mergeOp(current, op, data)
 
 	// Strictly-newer incoming wins (§4.1).
 	if op.UpdatedAt.After(stored.UpdatedAt.Time) {
 		if err := q.UpdateApiary(ctx, sqlcgen.UpdateApiaryParams{
 			OrganizationID: org, ID: pgID, Name: want.name,
-			Notes:      notesParamFromState(want.notes),
-			PlaceLabel: notesParamFromState(want.placeLabel),
-			UpdatedAt:  incomingTS, DeletedAt: want.deletedAt,
+			Notes:              notesParamFromState(want.notes),
+			PlaceLabel:         notesParamFromState(want.placeLabel),
+			RegistrationNumber: notesParamFromState(want.registrationNumber),
+			UpdatedAt:          incomingTS, DeletedAt: want.deletedAt,
 			Lon: float8Ptr(want.lon), Lat: float8Ptr(want.lat),
 		}); err != nil {
 			return OpResult{}, err
@@ -674,6 +696,9 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		if data.PlaceLabel != nil {
 			out.placeLabel = *data.PlaceLabel
 		}
+		if data.RegistrationNumber != nil {
+			out.registrationNumber = *data.RegistrationNumber
+		}
 		if data.LocationLon != nil && data.LocationLat != nil {
 			out.lon, out.lat = data.LocationLon, data.LocationLat
 		}
@@ -693,6 +718,9 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		}
 		if data.PlaceLabel != nil {
 			current.placeLabel = *data.PlaceLabel
+		}
+		if data.RegistrationNumber != nil {
+			current.registrationNumber = *data.RegistrationNumber
 		}
 		if data.LocationLon != nil && data.LocationLat != nil {
 			current.lon, current.lat = data.LocationLon, data.LocationLat
@@ -746,14 +774,15 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, use
 
 func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.GetApiaryForUpdateRow) error {
 	winning, err := json.Marshal(map[string]any{
-		"id":          uuidString(stored.ID),
-		"name":        stored.Name,
-		"hive_count":  stored.HiveCount,
-		"notes":       textPtr(stored.Notes),
-		"place_label": textPtr(stored.PlaceLabel),
-		"location":    parseGeoJSONPoint(stored.LocationGeojson),
-		"updated_at":  stored.UpdatedAt.Time,
-		"deleted_at":  timePtr(stored.DeletedAt),
+		"id":                  uuidString(stored.ID),
+		"name":                stored.Name,
+		"hive_count":          stored.HiveCount,
+		"notes":               textPtr(stored.Notes),
+		"place_label":         textPtr(stored.PlaceLabel),
+		"registration_number": textPtr(stored.RegistrationNumber),
+		"location":            parseGeoJSONPoint(stored.LocationGeojson),
+		"updated_at":          stored.UpdatedAt.Time,
+		"deleted_at":          timePtr(stored.DeletedAt),
 	})
 	if err != nil {
 		return err

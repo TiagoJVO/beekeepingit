@@ -66,6 +66,15 @@ func NewMinter(priv *rsa.PrivateKey, issuer, audience string, ttl time.Duration)
 	}, nil
 }
 
+// KID is the key id (RFC 7638 thumbprint) this Minter signs with — the same
+// `kid` that appears in every minted token's header and in the sole [Minter.JWKS]
+// key. Exposed so the service can log it at startup: with the dev/CI ephemeral
+// key ([LoadOrGenerateKey] with no PEM), the kid changes on every boot, and
+// this is the only record of WHICH key a given sync pod signed with — the
+// evidence needed to tell a stale PowerSync JWKS cache after a restart apart
+// from a genuinely bad token (#246, NFR-TST-1).
+func (m *Minter) KID() string { return m.kid }
+
 // Mint returns a signed sync token for sub scoped to orgID, plus its expiry.
 func (m *Minter) Mint(sub, orgID string) (raw string, expiresAt time.Time, err error) {
 	now := time.Now()

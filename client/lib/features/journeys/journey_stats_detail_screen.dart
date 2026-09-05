@@ -468,7 +468,7 @@ class _ApiaryStatsCard extends StatelessWidget {
             children: [
               _MiniStat(
                 label: l10n.journeyStatsDetailHiveCountLabel,
-                value: '${stats.hiveCount}',
+                value: locale.number(stats.hiveCount),
               ),
               if (mainActivityType == activityTypeHarvest) ...[
                 _MiniStat(
@@ -477,7 +477,7 @@ class _ApiaryStatsCard extends StatelessWidget {
                 ),
                 _MiniStat(
                   label: l10n.journeyStatsDetailSupersLabel,
-                  value: '${stats.harvestHoneySupers}',
+                  value: locale.number(stats.harvestHoneySupers),
                 ),
                 _MiniStat(
                   label: l10n.journeyStatsDetailKgPerHiveLabel,
@@ -499,7 +499,7 @@ class _ApiaryStatsCard extends StatelessWidget {
               ] else if (mainActivityType == activityTypeTreatment) ...[
                 _MiniStat(
                   label: l10n.journeyStatsDetailHivesInvolvedLabel,
-                  value: '${stats.treatmentHivesInvolved}',
+                  value: locale.number(stats.treatmentHivesInvolved),
                 ),
               ],
             ],

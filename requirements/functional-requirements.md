@@ -54,15 +54,71 @@ ambiguities flagged inline link to `open-questions.md`.
     Enforced at every layer: the create/edit form validation, the OpenAPI
     `ApiaryCreate.required` + REST service validation, the offline sync-apply
     validation (a location-less `put` is rejected), and a DB `NOT NULL`
-    constraint (`00008_apiary_location_not_null.sql`). This supersedes the
+    constraint (`00008_baseline.sql (previously 00008_apiary_location_not_null.sql)`). This supersedes the
     walking-skeleton-era "location optional" behavior the earlier
-    `00003_add_apiary_location.sql` migration and the original `ApiaryCreate`
+    `00008_baseline.sql (previously 00003_add_apiary_location.sql)` migration and the original `ApiaryCreate`
     schema assumed.
 - **FR-AP-8** — An apiary may carry optional **free-text notes**, editable
   from the apiary form and shown on the detail page. Notes sync offline and
   are **history-tracked** (FR-HIS) like other apiary edits.
   - _Prototype:_ Melargil apiary detail (see
     [`docs/design/prototype.md`](../docs/design/prototype.md)).
+- **FR-AP-9** — An apiary may carry an optional **beekeeper registration
+  number** — the reference a **registering authority** issues to a beekeeper for
+  their beekeeping activity. Such a number is issued **per beekeeper**, not per
+  apiary, and is displayed at each of that beekeeper's apiaries; the apiaries
+  themselves are identified to the authority by their **coordinates**, not by a
+  number of their own. Portugal's DGAV `número de registo do apicultor` is the
+  worked **example** this was modelled on, not the definition — the app stores a
+  plain, unvalidated reference number and is not tied to any one country's
+  registry. Because a single organization may cover **several beekeepers**, the
+  number is stored **once on the organization as a default** and **overridable per
+  apiary**; an apiary's **effective** number is its own value when set, otherwise
+  the organization's. Purely optional record-keeping — nothing in the app requires
+  it, validates it against a registry, or files it anywhere. The per-apiary
+  override syncs offline and is **history-tracked** (FR-HIS-1) like any other
+  apiary edit; the organization-level default is read offline but **edited online**
+  (FR-ONB-2's organization surface is REST-backed).
+  - _Where it surfaces:_ the organization default is an **organization detail**, on
+    the organization's own details surface; the override is edited on the apiary
+    form, and the apiary detail shows the **effective** number, marked as inherited
+    when it comes from the organization.
+  - _Triaged from (D-19):_ the first of that decision's five flagged
+    "future-relevant data points", per its own "to be triaged into concrete FR/NFR
+    changes when the owning feature epic is planned" language (#296).
+  - _Source (the example, not the requirement's scope):_ [DGAV — Identificação e
+    registo da atividade
+    apícola](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/identificacao-registo-e-movimentacao-animal/registo/),
+    summarized in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    §B.1.
+- **FR-AP-10** — The app keeps an optional log of **stock declarations** — a
+  **point-in-time record** of the hive stock a beekeeper declared to a registering
+  authority, **distinct from the live hive counter** (FR-AP-7, D-2, D-20): a
+  counter is current state, a declaration is what was declared on a date. A
+  declaration is **scoped to one registration number** (FR-AP-9) rather than to one
+  apiary, because such a declaration covers the beekeeper's **whole holding** — and
+  it captures the declaration **date**, the **total declared hive count**, a
+  per-apiary **breakdown snapshot** taken at record time, and an optional **note**.
+  Declarations sync offline and are **history-tracked** (FR-HIS-1). The log is its
+  own surface, separate from the organization details that carry the number
+  (FR-AP-9).
+  - **A log, not a compliance engine.** The app **submits nothing to any authority**
+    (explicitly out of scope, D-19's research note §7) and, deliberately, derives
+    **no deadlines, declaration windows or change thresholds** from the
+    declarations. Those rules are jurisdiction-specific — the 1–30 September window
+    and the interim-declaration trigger are Portugal's, and encoding them would make
+    a country-neutral record quietly Portugal-only. The beekeeper knows their own
+    obligations; the app remembers what they declared. See the D-19 triage note for
+    why that advisory logic was built and then removed.
+  - _Triaged from (D-19):_ the second of that decision's five flagged data points
+    (#298), narrowed by a later product decision (recorded in the same note).
+  - _Source (the example, not the requirement's scope):_
+    [DGAV](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/identificacao-registo-e-movimentacao-animal/registo/),
+    summarized in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    §B.3 — which keeps Portugal's rules on record as **research**, now that the app
+    does not implement them.
 
 ## Activities (FR-AC)
 
@@ -200,9 +256,27 @@ harvest, which requires visiting all apiaries).
 
 ## Onboarding — Profile & Organization (FR-ONB)
 
-- **FR-ONB-1** — On first login, users must **create their profile** (name, email,
-  and other relevant info). Profile completion is **enforced** before accessing
+- **FR-ONB-1** — On first login, users must **create their profile** (name and
+  other relevant info). Profile completion is **enforced** before accessing
   main features.
+  - _Amended (D-7 / EPIC-16 #365 follow-up, user-confirmed):_ the profile's
+    **email is not user-entered**. The account's address is the
+    **IdP-verified** one carried on the token (`email` + `email_verified`),
+    **seeded server-side** when the profile row is first created; the client
+    **displays it read-only** and links out to the provider's account page
+    (`OIDC_ACCOUNT_URL`) to change it — account identity lives at the IdP and
+    the app links out (D-7). The **name** is seeded the same way when the
+    provider emits a `name` claim; a token without one simply leaves the field
+    empty for the user to fill, so the gate still holds. Consequently
+    **profile completeness is `name` alone**, and `identity.users.email` is a
+    **cache** of the verified address, never input.
+  - _Security (#170):_ the stored profile email **authorizes nothing** and must
+    never be made to. Every decision that depends on an address — invitation
+    accept-on-login (FR-ONB-3) and the organization-creation gate (FR-ONB-2,
+    D-3/#362) — reads the **token's** verified `email` + `email_verified`,
+    never the profile row. Making the field read-only removes the surface that
+    made #170 exploitable; it does **not** relax that rule, which still holds
+    server-side.
 - **FR-ONB-2** — Before viewing apiaries, users must **create their organization**
   (name, address, and other relevant info; some fields may be optional).
   Organization completion is **enforced** before accessing main features.
@@ -214,6 +288,22 @@ harvest, which requires visiting all apiaries).
     (DB-enforced cap of 1; zero until onboarding completes). A user who already
     belongs to an organization cannot accept an invitation to another one; see
     D-3.
+  - _Amended (D-3 / #365 live testing, user-confirmed):_ organization
+    completion stays **enforced** — no main feature is reachable without an
+    active membership — but organization **creation is no longer the only
+    exit**. A registrant whose invitation has not arrived yet may instead
+    declare they are **joining an existing organization** and wait. Waiting is
+    a **client route**, not a membership status and not a pending
+    organization: the client re-checks `GET /v1/organizations/me` on
+    resume/refresh, and that call already performs the accept-on-login step
+    (FR-ONB-3), so the moment a matching invitation exists the user is joined.
+    **No new endpoint and no new server-side state.**
+  - _Warning (D-3 / #506):_ because an account holds **at most one** active
+    membership and there is **no leave path yet** (#506), creating an
+    organization **blocks** accepting a pending invitation to another one. The
+    create path must say so **before** the user commits — the choice is
+    one-way until #506 lands.
+
 - **FR-ONB-3** — **Organization membership & invitations**: the org admin can
   **invite members by email**; invited users join the existing organization. The
   org creator is the first admin (see NFR-ROL-1). _(Detail still open: invite
@@ -281,9 +371,14 @@ harvest, which requires visiting all apiaries).
   navigation and intuitive controls — **especially field features**, where the
   user has limited time/attention and may be **wearing gloves**.
 - **FR-UX-2** — The client presents a **persistent app shell**: a **bottom
-  navigation** across the primary areas (apiaries, activities, journeys, todos,
-  assistant), a header with the screen title, a **sync-status indicator**, and
+  navigation** across the primary areas (apiaries, activities, **home**, journeys,
+  todos), a header with the screen title, a **sync-status indicator**, and
   account access, plus a **contextual quick-add** (FAB) for the active area.
+  - _Per D-35:_ **home** is the centre tab and the app's landing screen — a summary
+    of what needs attention (D-29 as amended). The **assistant** tab was removed
+    until the AI assistant itself ships (M8, FR-AI-\*); it is not a primary area
+    while it is a placeholder. Home carries **no FAB** — quick-add is contextual to
+    an area, and home spans them all.
   - _Prototype:_ Melargil app shell (see
     [`docs/design/prototype.md`](../docs/design/prototype.md)).
 

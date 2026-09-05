@@ -26,10 +26,11 @@ services:
 authentik:
   # Dev/CI only (#363): a generic `openidconnect` federation source that
   # exercises the SAME code path as the Google source — same model, same
-  # redirect view, same SourceFlowManager, same `identifier` matching, same
-  # absent enrollment flow. It makes the "Continue with <source>" one-hop
-  # wiring, and the invitation-only deny posture, provable in CI, which a live
-  # e2e against real Google can never be (consent screen + bot detection).
+  # redirect view, same SourceFlowManager, same matching mode + resolver
+  # (#364), same source-enrollment flow (#365). It makes the "Continue with
+  # <source>" one-hop wiring, the deny posture and the enrollment path
+  # provable in CI, which a live e2e against real Google can never be
+  # (consent screen + bot detection).
   # Staging/prod leave this off — see charts/authentik/values.yaml.
   federationStub:
     enabled: true

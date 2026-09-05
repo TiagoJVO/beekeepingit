@@ -22,7 +22,14 @@ entries:
       # must not detour through the verification email stage below. Seeding the
       # attribute is also the documented escape hatch for ops-provisioned accounts
       # whose address was verified out-of-band.
-      attributes: { upn: "11111111-1111-4111-8111-111111111111", email_verified: true }
+      # known_emails (#364): the same escape hatch, one level down. The
+      # verification stage is what normally writes this list (it is the only
+      # writer), and these seeds never run it — so seed it too, or a federated
+      # sign-in would find no history for an account that IS verified.
+      attributes:
+        upn: "11111111-1111-4111-8111-111111111111"
+        email_verified: true
+        known_emails: [test.beekeeper@beekeepingit.local]
       # In `platform-operator` since the Authentik cut-over (#191). Since #465 this
       # membership is LOAD-BEARING for CI: it is the POSITIVE half of the
       # platform-operator claim e2e (admin-token.spec.ts asserts this user's admin
@@ -64,7 +71,11 @@ entries:
       email: non.operator@beekeepingit.local
       is_active: true
       path: users
-      attributes: { upn: "33333333-3333-4333-8333-333333333333", email_verified: true }
+      attributes:
+        upn: "33333333-3333-4333-8333-333333333333"
+        email_verified: true
+        # Seeded for the same reason test.beekeeper is (see there) — #364.
+        known_emails: [non.operator@beekeepingit.local]
       password: dev-password123
   # Custom `email` scope mapping (#361, NFR-SEC-1): emits the user's GENUINE
   # verification state instead of the built-in managed mapping's hardcoded value.
@@ -85,6 +96,95 @@ entries:
             "email": request.user.email,
             "email_verified": request.user.attributes.get("email_verified", False) is True,
         }
+  # --- #599: PIN the three objects both OAuth2 providers reference, so a missing
+  # one is LOUD instead of a silent null (NFR-SEC-1, NFR-TST-1, D-7) -------------
+  #
+  # These three entries declare nothing. Each is IDENTIFIERS-ONLY and names an
+  # object authentik itself creates. Their whole job is to turn a silent null
+  # into a reported, retried error.
+  #
+  # THE DEFECT THEY CLOSE. Until #599 the providers below reached
+  # `authorization_flow`, `invalidation_flow` and `signing_key` with `!Find`.
+  # `Find.resolve` (blueprints/v1/common.py) returns None with NO exception and
+  # NO log line when the target does not exist yet — and nothing orders the apply
+  # of authentik's own bundled blueprint files against ours
+  # (`blueprints_discovery` -> `check_blueprint_v1_file` ->
+  # `apply_blueprint.send_with_options`, i.e. independent async actors).
+  #
+  # Whether that null is SILENT is decided by the SERIALIZER, not the model. All
+  # three FKs are `null=True` on the model (core/models.py 645/654,
+  # providers/oauth2/models.py 308) — the check #594 made — but the importer
+  # validates through `OAuth2ProviderSerializer`, and there, at 2026.5.4, only
+  # `signing_key` is `required=False, allow_null=True`. The two flows are
+  # `required=True, allow_null=False`, so their null was already REJECTED. So:
+  #   * `signing_key` — the real silent instance. The entry still validated, the
+  #     file was recorded APPLIED, and authentik never re-applies a file whose
+  #     hash is unchanged, so the null was PERMANENT and nothing reported it.
+  #     `OAuth2Provider.jwt_key` then falls back to `(client_secret, HS256)` and
+  #     `JWKSView` yields nothing, so the endpoint serves `{}` — every relying
+  #     party verifying signatures against the JWKS (our Go middleware,
+  #     PowerSync, the admin app) breaks, with a valid-looking provider in the UI.
+  #   * the two flows — loud already, but by UPSTREAM's serializer choice rather
+  #     than by anything in this file. Pinned anyway: `signing_key` proves
+  #     upstream is willing to leave such a field nullable, and a future
+  #     relaxation would turn the `!Find` spelling silent with nothing noticing.
+  # The full nullability table is in auth.md §8.17.
+  #
+  # WHY PINNED, NOT OWNED (#594 OWNED its flow — these cannot be owned):
+  #   * The certificate is created by `authentik/crypto/apps.py` at BOOT
+  #     (`self_signed`, a `reconcile_tenant` hook), never by a blueprint. Owning
+  #     it would mean committing a PRIVATE KEY into this file — which renders
+  #     into a ConfigMap readable namespace-wide (NFR-SEC-1 forbids it, the same
+  #     reason the source credentials arrive via `!Env`) — and generating one per
+  #     render would rotate the JWKS on every `helm upgrade`, invalidating every
+  #     live token.
+  #   * A second `designation: invalidation` flow would RE-ARM the exact
+  #     second-order trap #594 had to close: `ToDefaultFlow.get_flow` falls back
+  #     to scanning flows of that designation ORDERED BY SLUG when the brand
+  #     field is null, upstream's `default-brand.yaml` sets `flow_invalidation`
+  #     with its own racy `!Find` under `state: created`, and any
+  #     `beekeepingit-*` slug sorts ahead of `default-invalidation-flow`. Pinning
+  #     adds no flow, so no designation ordering changes and no new brand pin is
+  #     needed.
+  #   * Copying the authorization flow would fork upstream's consent behaviour
+  #     for no gain.
+  #
+  # WHY AN IDENTIFIERS-ONLY ENTRY IS LOUD. `Importer._validate_single` attaches
+  # the serializer to an EXISTING row with `partial=True` — with no attrs that is
+  # a no-op update — and otherwise validates a CREATE in full. With no attrs a
+  # create can never validate: `FlowSerializer` requires name/title/designation,
+  # `CertificateKeyPairSerializer` requires `certificate_data`. So a genuinely
+  # missing target raises `EntryInvalidError`, `apply_blueprint` records
+  # `BlueprintInstanceStatus.ERROR`, `last_applied_hash` is NOT written, and the
+  # next discovery pass retries — instead of shipping a null forever.
+  # `Importer.apply()` is atomic, so nothing half-wired is committed meanwhile.
+  # `!KeyOf` then resolves against ids in THIS file and RAISES where `!Find`
+  # yielded None. Same shape as `flow-default-authentication` further down, which
+  # #594 introduced for the brand pin.
+  #
+  # DO NOT give these entries `attrs`, a `state:`, or anything but `identifiers`.
+  # The ABSENCE of attrs is what makes a create impossible and therefore the
+  # failure loud; on the certificate it is also what keeps a private key out of
+  # the ConfigMap; and `state: absent` would DELETE authentik's own boot-created
+  # certificate (`signing_key` is `on_delete=SET_NULL`). The guard asserts all
+  # three. They must also stay ABOVE the providers: `!KeyOf` only resolves
+  # against entries already applied earlier in this file.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (offline — the
+  # `!KeyOf` spellings, these entries' shape, and that nothing reaches these
+  # objects by `!Find` again) and infra/ci/authentik-federation-probe.py (live —
+  # on the deployed providers, incl. that the JWKS is non-empty and RS256).
+  # Written up in docs/architecture/auth.md §8.17.
+  - model: authentik_flows.flow
+    id: flow-default-provider-authorization
+    identifiers: { slug: default-provider-authorization-implicit-consent }
+  - model: authentik_flows.flow
+    id: flow-default-provider-invalidation
+    identifiers: { slug: default-provider-invalidation-flow }
+  - model: authentik_crypto.certificatekeypair
+    id: cert-authentik-self-signed
+    identifiers: { name: "authentik Self-signed Certificate" }
+
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
     identifiers: { name: beekeepingit-pwa }
@@ -92,11 +192,11 @@ entries:
       name: beekeepingit-pwa
       client_type: public
       client_id: beekeepingit-pwa
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # #599: `!KeyOf` at the pins above, never `!Find` — a missing target must
+      # raise, not write a null (see the block above; auth.md §8.17).
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       include_claims_in_id_token: true
@@ -288,16 +388,16 @@ entries:
       name: beekeepingit-admin
       client_type: public
       client_id: beekeepingit-admin
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # #599: `!KeyOf` at the pins above the PWA provider, never `!Find`.
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
       # Same shared signing key as the PWA — LOAD-BEARING, not just convenience: the iss
       # override makes admin tokens claim the beekeepingit issuer, and they only verify because
       # this provider signs with the key the beekeepingit discovery/JWKS advertises. Giving the
       # admin provider its own cert would silently break admin login (401) — keep them shared
-      # (oidc-integration.md §8 watch-list).
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # (oidc-integration.md §8 watch-list). Referencing the SAME pin entry as the PWA is what
+      # makes "shared" structural rather than a coincidence of two lookups agreeing (#599).
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       # MUST stay true: the access token the services read is built from the id_token's
@@ -361,12 +461,40 @@ entries:
         provider: !KeyOf provider-beekeepingit-admin,
       }
 
+  # Flow header text: "Welcome to authentik!" -> "Sign in".
+  # Carries an `id` (and sits ABOVE the brand entry) purely so the brand below can
+  # reference this flow by `!KeyOf` — see that entry's `flow_authentication` comment.
+  # This entry cannot silently create a stub flow in upstream's place: `FlowSerializer`
+  # requires `name`/`title`/`slug`/`designation`, so with no existing row the partial
+  # update here fails validation, and `Importer.apply` is atomic — the whole file rolls
+  # back and the BlueprintInstance is marked ERROR.
+  - model: authentik_flows.flow
+    id: flow-default-authentication
+    identifiers: { slug: default-authentication-flow }
+    attrs: { title: "Sign in" }
+
   # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
   # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
   # so a fresh deploy matches. ---
   - model: authentik_brands.brand
     identifiers: { domain: authentik-default }
     attrs:
+      # PIN the brand's default authentication flow (#594, review finding). This is not
+      # cosmetic. `ToDefaultFlow.get_flow` (flows/views/executor.py) — what
+      # /flows/-/default/authentication/ resolves, i.e. where the OIDC authorize endpoint
+      # sends every unauthenticated sign-in — returns `brand.flow_authentication` when it
+      # is set, and ONLY falls back to `flow_by_policy`, which scans every
+      # `designation: authentication` flow **ordered by slug** and takes the first whose
+      # policies pass, when it is null. Upstream's own `default-brand.yaml` sets this
+      # field with `!Find [flow, default-authentication-flow]` under `state: created`, so
+      # on a cluster where that lookup lost its own race the field is null and the
+      # slug-ordered fallback is live — and `beekeepingit-source-authentication` sorts
+      # BEFORE `default-authentication-flow`. The SSO gate on that flow denies a plain
+      # browser, so the fallback still lands on the right flow, but that would make the
+      # gate load-bearing for the entire login page. Pinning the field here removes the
+      # dependency outright. `!KeyOf` (not `!Find`) so a missing flow raises instead of
+      # writing a null — the whole point of #594.
+      flow_authentication: !KeyOf flow-default-authentication
       branding_title: BeekeepingIT
       # branding_logo only accepts a file path (not a data URI), so the authentik wordmark is
       # hidden and replaced by a text header in CSS; the "Powered by authentik" footer is
@@ -379,11 +507,6 @@ entries:
         .pf-c-background-image,.pf-c-background-image::before{background:#1a120b!important;background-image:none!important}
         .ak-static-page,body{background:#1a120b!important}
         .pf-c-button.pf-m-primary{background:#E8B979!important;border-color:#E8B979!important;color:#1a120b!important}
-  # Flow header text: "Welcome to authentik!" -> "Sign in".
-  - model: authentik_flows.flow
-    identifiers: { slug: default-authentication-flow }
-    attrs: { title: "Sign in" }
-
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
   # Built when accounts were exclusively invite/admin-provisioned (registration
   # disabled), so verification couldn't ride an enrollment flow — it's injected
@@ -461,11 +584,27 @@ entries:
   # write is MERGED into any existing prompt_data (setdefault + key assignment),
   # never assigned over it — assignment would silently discard whatever a
   # future stage placed in the plan (review finding on #361).
+  #
+  # KNOWN-EMAIL HISTORY (#364). This is also the ONLY writer of
+  # `attributes.known_emails` — the per-account list of addresses whose inbox
+  # control this deployment has actually proven. It is written here, and nowhere
+  # else, because here is the one moment that proof exists: the restored
+  # flow-token evidence gating the line above is the same evidence. The
+  # federated account resolver (`mapping-federation-account-link`, below) READS
+  # it to reunite a returning user whose CURRENT address has since changed with
+  # their existing account. Nothing an upstream identity provider asserts can
+  # ever add an entry.
+  #
+  # Bounded, de-duplicated and lowercase-normalized (the resolver compares
+  # lowercased). Oldest entries are dropped first — an address so old it has
+  # fallen out of the window simply stops matching, which is the safe direction.
   - model: authentik_policies_expression.expressionpolicy
     id: policy-mark-email-verified
     identifiers: { name: beekeepingit-mark-email-verified }
     attrs:
       expression: |
+        MAX_KNOWN_EMAILS = 10
+
         flow_plan = request.context.get("flow_plan")
         if not flow_plan:
             return False
@@ -479,6 +618,21 @@ entries:
             return False
         prompt_data = flow_plan.context.setdefault("prompt_data", {})
         prompt_data["attributes.email_verified"] = True
+
+        # The address just proven is `user.email` — the email stage sends to
+        # exactly that, and the token/user match was checked above.
+        stored = user.attributes.get("known_emails")
+        history = []
+        if isinstance(stored, list):
+            for entry in stored:
+                if isinstance(entry, str) and entry.strip():
+                    normalized = entry.strip().lower()
+                    if normalized not in history:
+                        history.append(normalized)
+        address = (user.email or "").strip().lower()
+        if address and address not in history:
+            history.append(address)
+        prompt_data["attributes.known_emails"] = history[-MAX_KNOWN_EMAILS:]
         return True
   # evaluate_on_plan: false + re_evaluate_policies: true on both bindings: at plan
   # time (flow start) there is no pending_user yet — identification only sets it
@@ -812,6 +966,504 @@ entries:
       # stage bound at order 20, NOT from this M2M (verified at 2026.5.4).
       sources: []
 
+  # === Federated account resolution (#364, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7) =
+  #
+  # THE ONE PLACE that decides which local account an upstream identity may
+  # reach. #363 shipped federation with `user_matching_mode: identifier`, which
+  # links ONLY on a connection that already exists — so "Continue with Google"
+  # worked only for someone who had first connected Google from authentik's own
+  # "Connected services" page. This closes that, WITHOUT reintroducing the
+  # unverified-email link that #363 deliberately refused (the #170 shape).
+  #
+  # ---------------------------------------------------------------------------
+  # HOW IT PLUGS IN (authentik 2026.5.4, source-verified)
+  # ---------------------------------------------------------------------------
+  # `SourceFlowManager.__init__` builds `user_properties` through
+  # `SourceMapper.build_object_properties`, which starts from the source type's
+  # `get_base_user_properties(info=...)` and then MERGES each attached user
+  # property mapping over it (`MERGE_LIST_UNIQUE`, mappings ordered by name),
+  # finally dropping every None-valued key (`delete_none_values`). Then
+  # `SourceMatcher.get_action` runs, in this order:
+  #   1. a UserSourceConnection for (source, identifier) exists -> Action.AUTH.
+  #      `identifier` is the upstream's stable SUBJECT (Google: the `id` from
+  #      its userinfo; the stand-in: `sub`). So a once-linked account is reached
+  #      by SUBJECT ALONE — the email plays no part, which is exactly why an
+  #      upstream address change never loses the account (#364 AC1/AC5).
+  #   2. otherwise, with `user_matching_mode: username_link`, it requires
+  #      `properties["username"]` to be non-empty — MISSING/EMPTY IS
+  #      Action.DENY, not enroll — and matches `User.objects.filter(
+  #      username__exact=...)`.
+  #
+  # So this mapping is the resolver: it REPLACES `username` with the local
+  # account it resolved, or sets it to None so the whole attempt is DENIED.
+  # `username` (not `email`) because it is the only matchable property authentik
+  # declares UNIQUE — `matching_objects.first()` can therefore never pick an
+  # arbitrary account out of several, which `email_link` demonstrably can (this
+  # deployment ALLOWS duplicate emails by design, auth.md §8.11).
+  #
+  # ---------------------------------------------------------------------------
+  # WHY THIS IS NOT #363's REFUSED `email_link`
+  # ---------------------------------------------------------------------------
+  # `email_link` matches the RAW upstream email straight out of
+  # `get_base_user_properties`. For Google that value is unverified —
+  # `GoogleType.get_base_user_properties` returns only {email, name} and DROPS
+  # the verification flag. The correction #363 could not make (it never needed
+  # the raw payload) is that the flag is NOT gone: `get_base_user_properties`
+  # drops it, but the FULL upstream payload is handed to property mappings as
+  # `info`. Google's configured `profile_url`
+  # (https://www.googleapis.com/oauth2/v1/userinfo — hardcoded on GoogleType,
+  # not customizable) returns `verified_email`; an OIDC upstream returns
+  # `email_verified`. This mapping reads them itself, STRICTLY: only a JSON
+  # `true` counts. A string "true", a missing key, junk -> refuse.
+  #
+  # ---------------------------------------------------------------------------
+  # FAIL CLOSED, EVERY BRANCH
+  # ---------------------------------------------------------------------------
+  #   * upstream verification flag not strictly True -> DENY
+  #   * no usable email in the payload -> DENY
+  #   * zero candidate accounts -> ENROLL (#365): the one deliberately open
+  #     branch. A GENERATED, collision-checked username is returned — a value
+  #     matching no local account, which under `username_link` is
+  #     Action.ENROLL, never a link — together with every property the
+  #     source-enrollment flow below may write. See that flow's section
+  #     comment for the full design; the absurd uuid collision fails closed.
+  #   * MORE THAN ONE candidate -> DENY. Never guess; duplicate emails exist.
+  #   * the candidate has not itself proven inbox control locally
+  #     (`attributes.email_verified is True`, #361) -> DENY. This keeps #361's
+  #     invariant ("no session before inbox control") true on the federated path
+  #     too — #363's argument for it (federation was only reachable AFTER a
+  #     password login) stops holding the moment this mapping links a stranger.
+  #     It also makes email squatting harmless rather than a denial-of-service:
+  #     an unverified account registered at a victim address is not a candidate,
+  #     so it cannot make the victim ambiguous.
+  #   * inactive / superuser / service accounts are never candidates. The
+  #     superuser exclusion is deliberate blast-radius reduction: ops accounts
+  #     link deliberately via Connected services, never by an inbound match.
+  #   * ANY exception -> DENY. A raising property mapping propagates out of
+  #     `SourceFlowManager.__init__` (mapper.py re-raises
+  #     PropertyMappingExpressionException) and would 500 the callback, so the
+  #     whole body is guarded.
+  # The mapping ALWAYS returns a dict containing `username` — never None and
+  # never {}: `iter_eval` skips a None return and `build_object_properties`
+  # skips a falsy one, either of which would leave the source type's own
+  # (upstream-controlled) `username` standing.
+  #
+  # DENY is the single outcome for every refusal on purpose: it leaks no
+  # account-existence oracle (an ambiguous address, an unverified candidate
+  # and a superuser are indistinguishable) and renders authentik's own
+  # AccessDeniedResponse rather than #363's raw 400. Since #365 an UNKNOWN
+  # verified address is no longer a refusal at all — it enrolls — so the
+  # oracle surface shifts accordingly: a deny now implies "exists but is not
+  # reachable this way", which is inherent to opening registration (the same
+  # signal #366's duplicate-username rejection already leaks) and was accepted
+  # with it.
+  #
+  # KNOWN-EMAIL HISTORY (`attributes.known_emails`). Written ONLY by
+  # `beekeepingit-mark-email-verified` above, at the one moment inbox control is
+  # proven for an address; read here. It is what reunites a returning user whose
+  # CURRENT address has since changed with their existing account. Its scope is
+  # honest and bounded: it holds addresses this deployment itself saw verified —
+  # it can never learn an upstream address we have never seen, and it is not a
+  # way to guess.
+  - model: authentik_sources_oauth.oauthsourcepropertymapping
+    id: mapping-federation-account-link
+    identifiers: { name: "BeekeepingIT Source Mapping: federated account resolution" }
+    attrs:
+      name: "BeekeepingIT Source Mapping: federated account resolution"
+      expression: |
+        from authentik.core.models import User, UserTypes
+
+        # Addresses are compared case-insensitively and length-bounded (RFC 5321
+        # caps a path at 256 and a full address at 320 octets). Since #365 this
+        # value is not only a lookup key but the EMAIL PERSISTED on a new
+        # account, so the shape check is structural rather than "contains @".
+        MAX_ADDRESS_LENGTH = 320
+        # Display names are upstream-controlled and land on the created account
+        # (#365). Bounded and stripped of non-printable characters — control,
+        # bidi-override and zero-width codepoints are all `not isprintable()`
+        # — so a Google profile name cannot render as somebody else's in any
+        # member list. Cosmetic-impersonation defense in depth; it grants no
+        # authority either way (roles are app-side, NFR-ROL-1).
+        MAX_NAME_LENGTH = 128
+
+        try:
+            payload = info if isinstance(info, dict) else {}
+
+            # The upstream's OWN verification signal. `email_verified` is the
+            # OIDC claim; `verified_email` is what Google's v1 userinfo (the
+            # endpoint GoogleType hardcodes) returns. Strictly boolean True.
+            verified = payload.get("email_verified")
+            if verified is None:
+                verified = payload.get("verified_email")
+            if verified is not True:
+                return {"username": None}
+
+            address = payload.get("email")
+            if not isinstance(address, str):
+                return {"username": None}
+            address = address.strip().lower()
+            if len(address) > MAX_ADDRESS_LENGTH or address.count("@") != 1:
+                return {"username": None}
+            local_part, _, domain_part = address.partition("@")
+            if not local_part or not domain_part:
+                return {"username": None}
+            if not address.isprintable() or any(ch.isspace() for ch in address):
+                return {"username": None}
+
+            candidates = {}
+            # `is_superuser` is NOT a column on User — it is a PROPERTY derived
+            # from group membership (core/models.py: `all_groups().filter(
+            # is_superuser=True).exists()`; the column lives on Group). Passing
+            # it to `.filter()` raises FieldError, which the blanket `except`
+            # below would swallow into "deny everyone" — silently disabling this
+            # whole feature while every negative test still passed. Found live.
+            # The superuser test is therefore applied to the MATCHED INSTANCE
+            # further down, where the property works — and that spelling is also
+            # the more correct one, since the property honours superuser
+            # inherited through PARENT groups, which a flat
+            # `ak_groups__is_superuser` exclusion would miss.
+            reachable = User.objects.filter(is_active=True).exclude(
+                type__in=[UserTypes.SERVICE_ACCOUNT, UserTypes.INTERNAL_SERVICE_ACCOUNT]
+            )
+
+            # (a) the account's CURRENT address.
+            for candidate in reachable.filter(email__iexact=address):
+                if (candidate.email or "").strip().lower() == address:
+                    candidates[candidate.pk] = candidate
+
+            # (b) an address this account previously PROVED inbox control of.
+            # The JSONB containment query narrows; the Python check below is
+            # what actually decides, so a looser lookup can never widen the
+            # match. NOTE the narrowing is real in one direction: Postgres `@>`
+            # is CASE-SENSITIVE, so a history entry stored in mixed case would
+            # never be reached. Entries are lowercase by construction — the
+            # stamp policy is the only writer and normalizes — and the seeded
+            # ones above are lowercase for the same reason. Keep it that way.
+            for candidate in reachable.filter(attributes__known_emails__contains=[address]):
+                history = (candidate.attributes or {}).get("known_emails")
+                if not isinstance(history, list):
+                    continue
+                for entry in history:
+                    if isinstance(entry, str) and entry.strip().lower() == address:
+                        candidates[candidate.pk] = candidate
+                        break
+
+            if len(candidates) == 0:
+                # --- #365: self-service registration via the upstream ------
+                # A strictly-verified address nobody holds locally ENROLLS.
+                # The generated username is the enroll signal AND the takeover
+                # guard: under `username_link` a value matching no account is
+                # Action.ENROLL, while a colliding value would silently LINK —
+                # so non-existence is proven, and the absurd uuid collision
+                # fails closed like every other branch. The returned dict also
+                # authors EVERYTHING the source-enrollment flow's user_write
+                # may persist; nothing upstream-controlled survives the merge
+                # (this mapping is the source's only one, guard-enforced).
+                from uuid import uuid4
+
+                display_name = payload.get("name")
+                if not isinstance(display_name, str):
+                    display_name = ""
+                display_name = "".join(
+                    ch for ch in display_name if ch.isprintable()
+                ).strip()[:MAX_NAME_LENGTH]
+                if not display_name:
+                    display_name = address
+                for _attempt in range(3):
+                    generated = "federated-" + uuid4().hex
+                    if not User.objects.filter(username__exact=generated).exists():
+                        return {
+                            "username": generated,
+                            "email": address,
+                            "name": display_name,
+                            "attributes": {
+                                # sub_mode=user_upn: this becomes the OIDC
+                                # `sub` — assigned at creation, the same
+                                # forward-requirement #366's upn policy
+                                # satisfies for password enrollment.
+                                "upn": str(uuid4()),
+                                # Carried from the upstream's strict boolean
+                                # (checked above). The second, deliberate
+                                # writer of this attribute (#365 decision);
+                                # known_emails is NOT seeded — #361's stamp
+                                # policy stays its only writer.
+                                "email_verified": True,
+                            },
+                        }
+                return {"username": None}
+            if len(candidates) != 1:
+                return {"username": None}
+            matched = list(candidates.values())[0]
+
+            # Blast radius: an upstream address must never reach a privileged
+            # account. Applied HERE, on the instance, because `is_superuser` is
+            # a computed property rather than a column (see the note on the
+            # `reachable` query above). Narrowing after the match rather than
+            # before it is also strictly safer: a superuser SHARING the address
+            # now makes the match ambiguous — two candidates — and ambiguity
+            # already denies, where excluding them up front would have quietly
+            # linked the other account.
+            if matched.is_superuser:
+                return {"username": None}
+
+            # The account must itself have proven inbox control (#361).
+            if (matched.attributes or {}).get("email_verified", False) is not True:
+                return {"username": None}
+
+            # The value handed back must identify EXACTLY this account. Django
+            # declares `username` unique, so this is an invariant check, not a
+            # search — it is the assumption the whole design rests on, so it is
+            # asserted rather than trusted.
+            if not matched.username:
+                return {"username": None}
+            if User.objects.filter(username__exact=matched.username).count() != 1:
+                return {"username": None}
+            return {"username": matched.username}
+        except Exception:
+            # Never raise: see FAIL CLOSED above.
+            return {"username": None}
+
+  # === Self-service registration via a federation source (#365, FR-ONB-1/2/3,
+  # === FR-AU-1, FR-TEN-1, NFR-SEC-1, D-7, D-3) ================================
+  #
+  # #364 closed "reach an EXISTING account"; this opens "create a NEW one": an
+  # upstream identity whose strictly-verified address matches no local account
+  # now ENROLLS instead of being denied. The resolver above authors the entire
+  # payload (generated username, normalized email, fresh `attributes.upn`,
+  # `attributes.email_verified: true` from the upstream's strict boolean);
+  # this flow is the write path for it, and nothing else.
+  #
+  # DESIGN, in three properties:
+  #   * NO PROMPT STAGE. Every written property is resolver-authored and
+  #     arrives via the plan's prompt_data (the documented user_write
+  #     contract, the same channel #366's upn policy uses). A registrant
+  #     types nothing; Google's consent screen is the only interaction.
+  #   * TWO GATES keep the flow unreachable outside a federated sign-in:
+  #       1. an SSO-only policy on the FLOW (the upstream
+  #          default-source-enrollment idiom, `return ak_is_sso_flow`): a
+  #          browser walking straight into
+  #          /if/flow/beekeepingit-source-enrollment/ is denied at plan time
+  #          — e2e-pinned in client/e2e/tests/federation.spec.ts;
+  #       2. a guard policy on the user_write BINDING re-checks the plan
+  #          carries a resolver-shaped payload (non-empty username/email, an
+  #          assigned upn, email_verified strictly True) and SKIPS the write
+  #          otherwise — the same failure_result mechanics #366's upn policy
+  #          relies on, and the same outcome: no account is created, so there
+  #          is no pending user for the login stage to seat and enrollment
+  #          simply fails. Fail closed, never a half-formed account. The
+  #          guard's refusals are probe-asserted directly (the real flow
+  #          cannot produce a malformed plan to drive it with).
+  #   * NO EMAIL STAGE. The address arrived verified or the resolver denied
+  #     the whole attempt — that genuine upstream signal is exactly what #365
+  #     was gated on (D-7 amendment, D-3's org-creation precondition). The
+  #     `email_verified` stamp here is the SECOND writer of that attribute
+  #     (#361's restored-token policy is the first) — a deliberate,
+  #     user-confirmed #365 decision: #364 already trusts the same signal for
+  #     the STRONGER operation of linking into an existing verified account.
+  #     `known_emails` is NOT seeded — it records addresses THIS deployment
+  #     proved, and its single writer stays #361's stamp policy.
+  #
+  # Write-safety unchanged: the source AUTHENTICATION flow still has no
+  # user_write stage, so a RETURNING federated login can never overwrite
+  # email/upn/email_verified — enrollment writes exactly once, at creation.
+  # The flow manager appends its own post-source stage, which persists the
+  # UserSourceConnection: every later sign-in resolves on the SUBJECT.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (static — every
+  # source references THIS flow by !KeyOf, a policy binding gates it),
+  # infra/ci/authentik-federation-probe.py (live — a real enrollment driven
+  # end to end, created account shape asserted), federation.spec.ts (browser —
+  # the direct-entry denial).
+  - model: authentik_flows.flow
+    id: flow-source-enrollment
+    identifiers: { slug: beekeepingit-source-enrollment }
+    attrs:
+      name: beekeepingit-source-enrollment
+      # Untranslated DB string, like the other flow titles above.
+      title: Create your account
+      designation: enrollment
+      # An already-authenticated user has no business re-enrolling; a signed-in
+      # user connects a source via Connected services instead (auth.md §8.13).
+      authentication: require_unauthenticated
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-source-enrollment-sso-only
+    identifiers: { name: beekeepingit-source-enrollment-sso-only }
+    attrs:
+      name: beekeepingit-source-enrollment-sso-only
+      expression: |
+        # Only a flow planned by a SourceFlowManager — an in-progress
+        # federated sign-in — may enter. A raising policy evaluates to the
+        # binding's default failure_result (false) -> denied: fail closed.
+        return ak_is_sso_flow
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-source-enrollment-sso-only
+      target: !KeyOf flow-source-enrollment
+      order: 0
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-source-enrollment-user-write
+    identifiers: { name: beekeepingit-source-enrollment-user-write }
+    attrs:
+      name: beekeepingit-source-enrollment-user-write
+      user_creation_mode: always_create
+      # Active immediately — unlike #366 there is no verification leg to hold
+      # the account for: an unverified upstream address never reaches this
+      # flow at all (the resolver denies the attempt outright).
+      create_users_as_inactive: false
+  # The write guard — gate 2 of the section comment. Read-only on purpose: it
+  # asserts, never repairs. A missing upn or verification stamp here means the
+  # resolver did not author this plan, and creating an account anyway is
+  # exactly the half-formed outcome to refuse.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-source-enrollment-write-guard
+    identifiers: { name: beekeepingit-source-enrollment-write-guard }
+    attrs:
+      name: beekeepingit-source-enrollment-write-guard
+      expression: |
+        flow_plan = request.context.get("flow_plan")
+        if not flow_plan:
+            return False
+        prompt_data = flow_plan.context.get("prompt_data")
+        if not isinstance(prompt_data, dict):
+            return False
+        username = prompt_data.get("username")
+        if not isinstance(username, str) or not username:
+            return False
+        address = prompt_data.get("email")
+        if not isinstance(address, str) or "@" not in address:
+            return False
+        attributes = prompt_data.get("attributes")
+        if not isinstance(attributes, dict):
+            return False
+        if attributes.get("email_verified") is not True:
+            return False
+        upn = attributes.get("upn")
+        if not isinstance(upn, str) or not upn:
+            return False
+        return True
+  - model: authentik_flows.flowstagebinding
+    id: binding-source-enrollment-user-write
+    identifiers:
+      target: !KeyOf flow-source-enrollment
+      stage: !KeyOf stage-source-enrollment-user-write
+      order: 20
+    attrs:
+      # Stage-time evaluation (same flags/rationale as the #361/#366 bindings
+      # above): prompt_data exists only once the flow manager planned it.
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-source-enrollment-write-guard
+      target: !KeyOf binding-source-enrollment-user-write
+      order: 0
+  # REUSED default login stage, like #366's enrollment — session behavior
+  # matches a normal login (auth.md §8.11).
+  - model: authentik_flows.flowstagebinding
+    id: binding-source-enrollment-user-login
+    identifiers:
+      target: !KeyOf flow-source-enrollment
+      stage:
+        !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
+      order: 100
+
+  # === Source AUTHENTICATION flow, owned HERE (#594, NFR-TST-1, NFR-SEC-1) ====
+  #
+  # The flow a RETURNING federated identity is signed in through — the sibling
+  # of the enrollment flow above, and now owned by this file for the same
+  # reason.
+  #
+  # WHY THIS IS NOT `!Find [authentik_flows.flow, [slug,
+  # default-source-authentication]]` ANY MORE (#594). That spelling was a
+  # cross-blueprint dependency with NO ordering guarantee, and it failed
+  # SILENTLY:
+  #   * authentik's own defaults are ordinary blueprint FILES
+  #     (`/blueprints/default/flow-default-source-authentication.yaml`),
+  #     discovered by the same `blueprints_discovery` pass as this one, and each
+  #     is applied by a SEPARATE ASYNC actor
+  #     (`apply_blueprint.send_with_options`, blueprints/v1/tasks.py). Nothing
+  #     orders theirs before ours — on a fresh cluster the default files'
+  #     `last_applied` timestamps are interleaved and spread over minutes.
+  #   * `Find.resolve` (blueprints/v1/common.py) returns `None` when the query
+  #     matches nothing — no exception, no log line — and the entry still
+  #     validates, because `authentication_flow` is an OPTIONAL FK. The source
+  #     was then created with a NULL authentication flow, PERMANENTLY: authentik
+  #     skips the re-apply while the file hash is unchanged, so nothing ever
+  #     repaired it for that cluster's life.
+  #   * The only outward symptom was `handle_auth` 400ing with "Configured flow
+  #     does not exist." on the next federated sign-in — two steps from the
+  #     cause. It red-lit `helm-e2e` on unrelated PRs (#594).
+  # Owning the flow REMOVES the dependency rather than re-ordering it, and
+  # `!KeyOf` is the loud spelling: it resolves against ids in THIS file, in file
+  # order, and RAISES `EntryInvalidError` if the referenced entry is missing or
+  # failed to apply — which marks the BlueprintInstance ERROR (and, since
+  # `last_applied_hash` is only stored on success, gets retried) instead of
+  # quietly shipping a half-wired source. Same reasoning as #365's
+  # `enrollment_flow`.
+  #
+  # It is a faithful copy of upstream's `default-source-authentication` — on
+  # purpose, so the write-safety property #363/#364/#365 lean on is unchanged,
+  # and now OURS to pin:
+  #   * exactly ONE `user_login` stage and nothing else. NO `user_write` stage,
+  #     which is what guarantees a RETURNING federated login can never overwrite
+  #     the local user's `email`, `attributes.upn` (the app-facing `sub`) or
+  #     `attributes.email_verified`. Enrollment writes exactly once, through the
+  #     guarded flow above.
+  #   * `authentication: require_unauthenticated` plus an `ak_is_sso_flow` gate,
+  #     exactly as upstream sets them: reachable only from inside a
+  #     SourceFlowManager-planned sign-in, never by a browser walking into
+  #     /if/flow/beekeepingit-source-authentication/.
+  # The login stage is owned here too, for the same reason the flow is — an
+  # upstream-owned stage reached by `!Find` would put the very race this fixes
+  # back into the fix. It carries no attrs, so it is behaviourally identical to
+  # the stage upstream creates with none (`session_duration: seconds=0`, i.e. a
+  # session cookie): the SSO session a federated login creates stays the same
+  # session object shape a password login creates.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (static — every
+  # source references THIS flow by `!KeyOf`, and the flow carries its login
+  # stage, its SSO gate and NO other stage), and
+  # infra/ci/authentik-federation-probe.py (live — the deployed source points at
+  # this flow, the flow's only stage is a user_login, and one sign-in is driven
+  # through it end to end).
+  - model: authentik_flows.flow
+    id: flow-source-authentication
+    identifiers: { slug: beekeepingit-source-authentication }
+    attrs:
+      name: beekeepingit-source-authentication
+      # Untranslated DB string, like the other flow titles in this file.
+      title: Signing you in
+      designation: authentication
+      # An already-authenticated user does not re-enter this flow; a signed-in
+      # user connects a source via Connected services instead (auth.md §8.13).
+      authentication: require_unauthenticated
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-source-authentication-sso-only
+    identifiers: { name: beekeepingit-source-authentication-sso-only }
+    attrs:
+      name: beekeepingit-source-authentication-sso-only
+      expression: |
+        # Only a flow planned by a SourceFlowManager — an in-progress
+        # federated sign-in — may enter. A raising policy evaluates to the
+        # binding's default failure_result (false) -> denied: fail closed.
+        return ak_is_sso_flow
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-source-authentication-sso-only
+      target: !KeyOf flow-source-authentication
+      order: 0
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-source-authentication-login
+    identifiers: { name: beekeepingit-source-authentication-login }
+    attrs:
+      name: beekeepingit-source-authentication-login
+  - model: authentik_flows.flowstagebinding
+    id: binding-source-authentication-login
+    identifiers:
+      target: !KeyOf flow-source-authentication
+      stage: !KeyOf stage-source-authentication-login
+      order: 0
+
   # === Google federation (#363, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7, D-18) =====
   #
   # Google is added as an UPSTREAM federation source on Authentik. Domain
@@ -861,44 +1513,50 @@ entries:
   # offline assertions in scripts/check-federation-source-posture.sh possible.
   #
   # ---------------------------------------------------------------------------
-  # ACCOUNT POSTURE: invitation-only still holds, and identity keys on the
-  # provider's stable SUBJECT — never on the email
+  # ACCOUNT POSTURE: identity keys on the provider's stable SUBJECT — never on
+  # the email — and self-service registration is OPEN (#365), through exactly
+  # one guarded flow
   # ---------------------------------------------------------------------------
-  #   * `enrollment_flow` is DELIBERATELY ABSENT. Verified at 2026.5.4,
-  #     core/sources/flow_manager.py `handle_enroll`: with no enrollment flow it
-  #     returns `bad_request_message(... "Source is not configured for
-  #     enrollment.")` — an HTTP 400 — BEFORE `_prepare_flow`, and the
-  #     UserSourceConnection is only persisted later by PostSourceStage. So an
-  #     unknown Google identity creates NO User row and NO connection row.
-  #     Opening registration via Google is #365, not this issue.
-  #   * `user_matching_mode: identifier` (the model default, stated explicitly
-  #     because it is a security decision). Matching keys on the upstream's
-  #     stable subject, stored as `UserSourceConnection.identifier`.
-  #     `email_link` is REJECTED and must not be set here: at 2026.5.4
-  #     `sources/oauth/types/google.py` `get_base_user_properties` returns ONLY
-  #     `{"email", "name"}` — Google's `verified_email` is dropped — so
-  #     `email_link` would link an existing local account to an UNVERIFIED
-  #     upstream address. That is the #170 account-takeover shape. Subject-keyed
-  #     linking plus a known-email history is #364.
-  #   * How a user gets linked TODAY: authentik's native "Connected services"
-  #     page (`/if/user/#/settings;page-sources`, already the app's
-  #     OIDC_ACCOUNT_URL target — auth.md §7). `get_action` returns LINK for an
-  #     ALREADY-AUTHENTICATED session, and `handle_existing_link` saves the
-  #     connection. Reaching that page requires a completed password login,
-  #     which is exactly what already passes the #361 email-verification gate —
-  #     so a federated login is, by construction, only ever available to an
-  #     account that already proved inbox control. That is why this section adds
-  #     NO email stage to the source-authentication flow.
-  #   * `default-source-authentication` (upstream) is used UNCHANGED as the
-  #     authentication_flow. It must be set: `handle_auth` passes it straight to
-  #     `_prepare_flow`, which 400s with "Configured flow does not exist." when
-  #     it is null. It contains only a user_login stage (at order **0**, so
-  #     there is no room to slot stages before it from a blueprint anyway —
-  #     `unique_together (target, stage, order)` means an upstream binding can't
-  #     be moved, and an upgrade would re-assert it) and the `ak_is_sso_flow`
-  #     guard. It has NO user_write stage, which is the property that guarantees
-  #     Google can never overwrite the local user's `email`, `attributes.upn`
-  #     (the app-facing `sub`) or `attributes.email_verified`.
+  #   * `enrollment_flow: !KeyOf flow-source-enrollment` (#365). From #363
+  #     until #365 this was deliberately absent — `handle_enroll` then 400s
+  #     before `_prepare_flow`, so an unknown identity created no rows; that
+  #     posture is preserved in git history. Now an unknown identity whose
+  #     upstream address is STRICTLY verified enrolls through the dedicated
+  #     flow above (resolver-authored properties only, SSO-gated, write
+  #     guarded); everything else still creates NO User row and NO connection
+  #     row, because the resolver withholds the username and the matcher
+  #     DENIES.
+  #   * `user_matching_mode: username_link` (#364): read as "match on the
+  #     account key the resolver returns", never "trust the upstream's
+  #     username". A once-linked identity resolves on its stored
+  #     `UserSourceConnection.identifier` — the upstream's stable subject —
+  #     before any property is consulted. `email_link` is REJECTED and must
+  #     not be set here: at 2026.5.4 `sources/oauth/types/google.py`
+  #     `get_base_user_properties` returns ONLY `{"email", "name"}` — Google's
+  #     `verified_email` is dropped — so `email_link` would link an existing
+  #     local account to an UNVERIFIED upstream address. That is the #170
+  #     account-takeover shape the resolver exists to refuse.
+  #   * Linking an EXISTING account: inbound via the resolver (#364 — exactly
+  #     one local, active, non-superuser, locally-verified account claiming
+  #     the strictly-verified upstream address, by current email or
+  #     known-email history), or deliberately via authentik's native
+  #     "Connected services" page (`/if/user/#/settings;page-sources`, the
+  #     app's OIDC_ACCOUNT_URL target — auth.md §7), which requires a
+  #     completed, #361-gated password login. Neither path adds an email
+  #     stage to the source-authentication flow: on the inbound path the
+  #     resolver already demanded proof on BOTH sides.
+  #   * `authentication_flow: !KeyOf flow-source-authentication` (#594) — the
+  #     faithful copy of upstream's `default-source-authentication` defined in
+  #     this file, NOT an `!Find` at upstream's slug. It must be set:
+  #     `handle_auth` passes it straight to `_prepare_flow`, which 400s with
+  #     "Configured flow does not exist." when it is null — and `!Find` yielded
+  #     exactly that null, silently, whenever this file happened to apply before
+  #     authentik's own default blueprints (see that flow's section comment).
+  #     It contains only a user_login stage (at order **0**) and the
+  #     `ak_is_sso_flow` guard. It has NO user_write stage, which is the
+  #     property that guarantees Google can never overwrite the local user's
+  #     `email`, `attributes.upn` (the app-facing `sub`) or
+  #     `attributes.email_verified`.
   - model: authentik_sources_oauth.oauthsource
     id: source-google
     conditions:
@@ -935,16 +1593,26 @@ entries:
       # any single-element `!Env`.
       consumer_key: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
       consumer_secret: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
-      user_matching_mode: identifier
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
-      # enrollment_flow: intentionally UNSET — see the section comment.
+      # #364: read `username_link` as "match on the account key the resolver
+      # returns", NOT as "trust Google's username" — Google sends none at all.
+      # The mapping below is what supplies (or withholds) that value; without
+      # it this source DENIES every unlinked login. See its section comment.
+      user_matching_mode: username_link
+      user_property_mappings: [!KeyOf mapping-federation-account-link]
+      # #594: the source-authentication flow this file OWNS, by `!KeyOf` — an
+      # `!Find` at upstream's `default-source-authentication` slug raced
+      # authentik's own default blueprints and landed NULL, silently.
+      authentication_flow: !KeyOf flow-source-authentication
+      # #365: self-service registration via Google, through the dedicated,
+      # SSO-gated flow only — see the ACCOUNT POSTURE comment above.
+      enrollment_flow: !KeyOf flow-source-enrollment
 
   # --- Dev/CI federation stand-in (#363, NFR-TST-1) ---------------------------
   # A live e2e against real Google is not automatable (consent screen + bot
   # detection) and must never run in CI. This generic `openidconnect` source
   # exercises the SAME federation code path as Google — same source model, same
   # `OAuthRedirect` view, same `SourceFlowManager`, same matching mode, same
-  # absent enrollment flow — so the wiring below (hint policy -> redirect stage
+  # enrollment flow (#365) — so the wiring below (hint policy -> redirect stage
   # -> source redirect -> upstream authorize request) is genuinely proven in CI
   # rather than only asserted on paper. Only the upstream differs.
   #
@@ -990,9 +1658,18 @@ entries:
       access_token_url: "{{ .Values.federationStub.upstreamUrl }}"
       profile_url: "{{ .Values.federationStub.upstreamUrl }}"
       # Identical posture to the Google source above — that is the whole point.
-      user_matching_mode: identifier
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
-      # enrollment_flow: intentionally UNSET.
+      # Note this source type DOES emit a `username` of its own (from the
+      # upstream's `nickname`/`preferred_username`), so unlike Google it would
+      # NOT fail closed if the resolver were ever detached — which is precisely
+      # why scripts/check-federation-source-posture.sh asserts the attachment
+      # rather than relying on the source type to be defensive for us.
+      user_matching_mode: username_link
+      user_property_mappings: [!KeyOf mapping-federation-account-link]
+      # #594: identical to the Google source — the owned flow, by `!KeyOf`.
+      authentication_flow: !KeyOf flow-source-authentication
+      # #365: identical enrollment posture to the Google source — the probe
+      # drives a real enrollment through this stand-in in CI.
+      enrollment_flow: !KeyOf flow-source-enrollment
 
   # --- One-hop "Continue with <source>" from the app (#363, D-18) -------------
   # The app's sign-in screen must offer "Continue with Google" as its OWN

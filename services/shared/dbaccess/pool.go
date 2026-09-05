@@ -11,7 +11,7 @@ import (
 // database before returning, so misconfiguration surfaces immediately
 // rather than on the first query.
 func Connect(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 

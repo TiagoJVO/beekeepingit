@@ -99,6 +99,15 @@ validated in Go against `FeedTypes`/`TreatmentTypes`/`TreatmentContexts`/`Diseas
   The initial set is sourced directly from that research note and has not
   been separately confirmed by product.
 
+These vocabulary strings are **stored/wire values, not display text** (#625).
+They read as Portuguese for historical reasons, but the service treats each as
+a stable identifier: renaming one would be a contract change _and_ a data
+migration for every row that already carries it. Clients localise them at
+render time instead — the Flutter client maps each stored value to an EN/PT
+label in `client/lib/features/activities/activity_types.dart` plus its `.arb`
+entries (NFR-I18N-1). Appending a value here therefore also owes a display
+label on the client side.
+
 **Extensibility (FR-AC-1 AC):** a new activity type, or a new attribute on an
 existing type, is a **code-only** change — append to `typeSchemas` in
 `api/types.go` (and the client mirror,

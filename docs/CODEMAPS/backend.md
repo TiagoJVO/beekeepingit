@@ -53,10 +53,17 @@ POST   /v1/apiaries                    → createApiary       api/write.go
 PATCH  /v1/apiaries/{id}               → updateApiary       api/write.go (If-Match ETag)
 DELETE /v1/apiaries/{id}               → deleteApiary       api/write.go (soft-delete)
 POST   /internal/sync/validate         → validateBatch      api/sync.go
-POST   /internal/sync/apply            → applyBatch         api/sync.go (counters.go: applyCounterOp)
+POST   /internal/sync/apply            → applyBatch         api/sync.go
+         entity_type=apiary             → applyOp            api/sync.go
+         entity_type=apiary_counter     → applyCounterOp     api/sync.go (counters.go)
+         entity_type=stock_declaration  → applyDeclarationOp api/declarations.go (#298)
 ```
 
 REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses sync.
+
+`stock_declarations` (FR-AP-10, #298) has NO REST surface — sync only, like
+`apiary_counters`. The client's stock-declarations screen is its only consumer
+(the app never files anything with any authority).
 
 ### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
 
@@ -165,7 +172,8 @@ any group aborts the whole push (nothing written anywhere); upstream error →
 api/*.go (handlers)
   → store/sqlc/gen/*.sql.go   (typed queries, sqlc-generated from queries/*.sql)
   → pgxpool.Pool              (dbaccess.Connect, services/shared/dbaccess/pool.go)
-migrations: store/migrations/*.sql (goose) applied at boot via dbaccess.Migrate + migrations_embed.go
+migrations: store/migrations/*.sql (goose) + migrations_embed.go; applied by the deploy-time
+  `<binary> migrate` Job as the migrator role, NOT at boot (ADR-0023/#541) — migrate.go/runMigrate
 schema.sql = sqlc's virtual (codegen-only) schema; mirrors cumulative migrations
 ```
 

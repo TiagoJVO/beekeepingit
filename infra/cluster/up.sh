@@ -40,6 +40,26 @@ else
 fi
 
 kubectl config use-context "k3d-$cluster_name"
+
+# k3d prints "Cluster created successfully" once the container is up, but k3s's
+# API server can still be initializing behind it — and the next kubectl call is
+# a DISCOVERY call, which then fails with "the server is currently unable to
+# handle the request" (ServiceUnavailable) and, under `set -e`, aborts bring-up
+# before a single thing is installed. That is a pure cold-start race: it hits a
+# fresh CI runner far more often than a warm local machine, and the failure
+# looks nothing like its cause (the cluster IS there, and re-running usually
+# passes). Poll the API server's own `/readyz` endpoint rather than sleeping a
+# fixed guess — it reports ready only once the server can actually serve.
+echo "waiting for the API server to become ready"
+api_deadline=$((SECONDS + 180))
+until [ "$(kubectl get --raw='/readyz' 2>/dev/null || true)" = "ok" ]; do
+  if [ "$SECONDS" -ge "$api_deadline" ]; then
+    echo "error: the API server did not become ready within 180s" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 kubectl cluster-info
 
 # The CNPG operator is cluster-scoped (its CRDs/controller aren't per-release),
@@ -47,10 +67,17 @@ kubectl cluster-info
 # rather than a subchart of the per-environment umbrella release (see ADR-0008
 # and infra/helm/beekeepingit/charts/postgres/Chart.yaml). Idempotent: `upgrade
 # --install` is a no-op reconcile if it's already there.
+# Pulled from CNPG's OCI registry rather than the classic
+# `https://cloudnative-pg.github.io/charts` Helm repo: that URL now 301s to
+# `https://cloudnative-pg.io/charts/index.yaml`, and that domain's authoritative
+# nameservers are refusing queries ("No Reachable Authority at delegation"), so
+# `helm repo add` follows the redirect into a host that doesn't resolve and
+# bring-up dies before installing anything. The same chart releases are pushed
+# to `ghcr.io/cloudnative-pg/charts` by upstream's own release workflow, and
+# that path depends on neither the redirect nor the broken domain. OCI charts
+# are referenced directly — there is no repo to add or update.
 echo "installing/upgrading the CloudNativePG operator"
-helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null
-helm repo update cnpg >/dev/null
-helm upgrade --install cnpg-operator cnpg/cloudnative-pg \
+helm upgrade --install cnpg-operator oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg \
   --namespace cnpg-system --create-namespace --wait
 
 cat <<'EOF'

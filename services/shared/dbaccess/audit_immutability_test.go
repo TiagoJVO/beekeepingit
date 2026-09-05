@@ -10,21 +10,36 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 )
 
-// auditImmutabilityFixture stands in for the production role/schema layout
-// that infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml and
-// schema-grants-job.yaml set up: an app-owner role (`beekeepingit`) that owns
-// the schema, and a least-privilege per-service runtime login role
-// (`<schema>_svc`) granted only USAGE/CREATE on it — mirroring D-6 "schema
-// per service".
+// auditImmutabilityFixture reproduces the PRE-#545 role/schema layout: an
+// app-owner role (`beekeepingit`) that owns the schema, and a least-privilege
+// per-service runtime login role (`<schema>_svc`) granted only USAGE/CREATE
+// on it — mirroring D-6 "schema per service".
+//
+// READ THIS AS HISTORY, NOT AS CURRENT PRODUCTION WIRING. #545 gave each
+// schema its own `<schema>_migrator` owner role, so in production today
+// `beekeepingit` owns no table anywhere and is a member of nothing (see
+// cluster.yaml). This fixture is now the LEGACY state that
+// migrator-adopt-job.yaml transitions away from, which is exactly why it is
+// worth keeping: what it proves — that a runtime role cannot mutate a table it
+// does not own, and cannot self-GRANT its way back in — is unchanged by #545
+// and is the property the whole append-only guarantee rests on. Nothing in
+// this file needed to change for #545; only this comment did.
+//
+// For the post-#545 wiring see migrator_isolation_test.go (two schemas, no
+// role a member of any other), and for the move between the two see
+// migrator_transition_test.go.
 //
 // superuser is the testcontainers bootstrap role, and it now stands in
 // SPECIFICALLY for CNPG's own operator reconciliation connection (not just
 // generic cluster bring-up) — this is the fix for a real production bug an
 // earlier version of this fixture masked: `beekeepingit`'s membership in
-// each `<schema>_svc` role (needed so it can later `ALTER TABLE ... OWNER
-// TO beekeepingit`) can ONLY be granted by a role with CREATEROLE + ADMIN
-// OPTION on the target role — `beekeepingit` itself (a plain login role)
-// has neither, so a manual `GRANT apiaries_svc TO beekeepingit` run BY
+// each `<schema>_svc` role (needed so beekeepingit can later `REASSIGN OWNED
+// BY`/`ALTER TABLE` a legacy-owned table — see cluster.yaml's `beekeepingit`
+// entry for the current, #541-updated rationale; #62 originally needed it
+// only for the now-deleted audit-immutability-job.yaml's `ALTER TABLE ...
+// OWNER TO beekeepingit`) can ONLY be granted by a role with CREATEROLE +
+// ADMIN OPTION on the target role — `beekeepingit` itself (a plain login
+// role) has neither, so a manual `GRANT apiaries_svc TO beekeepingit` run BY
 // beekeepingit fails with a permission error. This was shipped once (a
 // Job running `psql` as `beekeepingit` in a retry loop) and only caught by
 // CI's live k3d/helm-e2e run — the `until ... done` retry loop couldn't
@@ -46,6 +61,13 @@ type auditImmutabilityFixture struct {
 	superuser *pgx.Conn // bootstrap-only: stands in for CNPG's own privileged reconciliation connection — creates roles/db AND grants the beekeepingit/svc-role membership (mirrors managed.roles.inRoles, never a manual GRANT run by beekeepingit itself)
 	owner     *pgx.Conn // beekeepingit: owns the schema, not the table (until locked down)
 	svc       *pgx.Conn // apiaries_svc: creates the table via its "migration", is its owner until locked down
+
+	// DSNs for the same two roles, so a test can drive the REAL
+	// dbaccess.Migrate (which takes a DSN, not a *pgx.Conn) as either role —
+	// see migration_ownership_test.go, which needs exactly that to prove
+	// which role can migrate a locked-down history table.
+	ownerDSN string
+	svcDSN   string
 }
 
 const (
@@ -130,10 +152,21 @@ func newAuditImmutabilityFixture(t *testing.T) *auditImmutabilityFixture {
 		}
 	}
 
+	// Mirrors production: every service connects with `options=-c
+	// search_path=<schema>`, which is why goose's ledger lands in
+	// `<schema>.goose_db_version` (verified on staging) rather than public.
+	dsnWithSearchPath := func(user, password string) string {
+		c := configFor(user, password)
+		c.SearchPath = auditFixtureSchema
+		return c.DSN()
+	}
+
 	return &auditImmutabilityFixture{
 		superuser: su,
 		owner:     connect(auditFixtureOwner, "owner_pw"),
 		svc:       connect(auditFixtureSvcRole, "svc_pw"),
+		ownerDSN:  dsnWithSearchPath(auditFixtureOwner, "owner_pw"),
+		svcDSN:    dsnWithSearchPath(auditFixtureSvcRole, "svc_pw"),
 	}
 }
 
@@ -156,8 +189,10 @@ func (f *auditImmutabilityFixture) grantOwnerMembershipInSvcRoleAsIfByCNPGOperat
 
 // TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwnerFails is the
 // regression test for a real production bug this PR shipped once already:
-// an earlier version of audit-immutability-job.yaml/schema-grants-job.yaml
-// tried to establish beekeepingit's membership in apiaries_svc with `GRANT
+// an earlier version of the immutability lock-down Job (audit-
+// immutability-job.yaml, deleted under #541 and replaced by
+// table-grants-job.yaml) and schema-grants-job.yaml tried to establish
+// beekeepingit's membership in apiaries_svc with `GRANT
 // apiaries_svc TO beekeepingit` run FROM beekeepingit's OWN connection (the
 // `-app` Secret credential, exactly f.owner here). That shipped, passed this
 // file's OTHER tests (because they all bootstrapped the membership via a
@@ -186,12 +221,19 @@ func TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwnerFails(t *testing.
 	}
 }
 
-// createAuditLogAsService creates apiaries.audit_log AS apiaries_svc — the
-// same role that runs it in production, since dbaccess.Migrate opens its
-// connection with the service's own runtime Config/DSN (migrate.go), making
-// whichever role that Config names both the query-serving role AND the
-// migration-running role. This is step zero of the vulnerability: it makes
-// apiaries_svc the table's OWNER, not just a grantee.
+// createAuditLogAsService creates apiaries.audit_log AS apiaries_svc,
+// simulating the pre-#541 world (and any already-deployed cluster still in
+// it): every service migrated with dbaccess.Migrate opened against its own
+// runtime Config/DSN, making whichever role that Config named both the
+// query-serving role AND the migration-running role. #541 moved migrations
+// to a deploy-time Job running as beekeepingit (see
+// services/shared/dbaccess/migration_ownership_test.go's
+// TestServices_DoNotRunMigrationsAtStartup), so on a fresh install
+// apiaries_svc never creates this table at all — but table-grants-job.yaml's
+// `REASSIGN OWNED BY apiaries_svc TO beekeepingit` step exists precisely
+// because this legacy ownership is still real on any cluster that deployed
+// before #541. This is step zero of the vulnerability that state creates: it
+// makes apiaries_svc the table's OWNER, not just a grantee.
 func (f *auditImmutabilityFixture) createAuditLogAsService(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
@@ -252,13 +294,21 @@ func (f *auditImmutabilityFixture) assertServiceCannotUpdateDeleteOrTruncate(t *
 	}
 }
 
-// TestAuditImmutability_NaiveRevokeDoesNotDurablyBlockOwner is the
-// fail-first half of the #62 proof this issue demands: it shows that
-// REVOKE UPDATE, DELETE FROM apiaries_svc — the naive reading of the AC
-// ("the service runtime role has INSERT/SELECT but not UPDATE/DELETE") —
-// does NOT durably restrict apiaries_svc, because apiaries_svc is the
-// table's OWNER (it ran the CREATE TABLE, see createAuditLogAsService). Two
-// independent cracks in the naive approach, both demonstrated here:
+// TestAuditImmutability_NaiveRevokeDoesNotDurablyBlockOwner documents WHY
+// the model is what it is, rather than current production wiring: it is
+// #62's original fail-first proof, from when EVERY service migrated as its
+// own runtime role, so EVERY history table started out owned by
+// apiaries_svc (createAuditLogAsService). #541 removed that premise for
+// fresh installs — migrations now run as beekeepingit, which owns the table
+// from creation, so there is nothing left for a REVOKE to fail to durably
+// block — but the premise still holds on any already-deployed cluster,
+// which is exactly what table-grants-job.yaml's `REASSIGN OWNED BY` step
+// exists to adopt. The Postgres semantics proven here are exactly why that
+// step reassigns OWNERSHIP rather than shipping a REVOKE: REVOKE UPDATE,
+// DELETE FROM apiaries_svc — the naive reading of the AC ("the service
+// runtime role has INSERT/SELECT but not UPDATE/DELETE") — does NOT durably
+// restrict a role that owns the table. Two independent cracks in the naive
+// approach, both demonstrated here:
 //  1. TRUNCATE bypasses ACL/REVOKE entirely for owners — no REVOKE can ever
 //     block it.
 //  2. Even for UPDATE/DELETE, where the REVOKE does take initial effect,
@@ -304,14 +354,25 @@ func TestAuditImmutability_NaiveRevokeDoesNotDurablyBlockOwner(t *testing.T) {
 	}
 }
 
-// lockDownHistoryTable performs, from Go, the EXACT same two SQL steps
-// infra/helm/beekeepingit/charts/postgres/templates/audit-immutability-job.yaml
-// runs in production (as the `beekeepingit` app-owner connection, which
-// already has permanent plain membership in svcRole by the time this runs —
-// see newAuditImmutabilityFixture and schema-grants-job.yaml) — kept
-// byte-for-byte equivalent deliberately, so this test is a real proof of what
-// ships, not just of "a" fix. If that Job's SQL ever changes, this helper
-// must change with it (and vice versa).
+// lockDownHistoryTable reaches, from Go, the same locked-down END STATE that
+// table-grants-job.yaml (infra/helm/beekeepingit/charts/postgres/templates)
+// now produces for a history table on an already-deployed cluster — its
+// `REASSIGN OWNED BY <schema>_svc TO beekeepingit` step, followed by its
+// blanket DML grant and then its per-table `REVOKE UPDATE, DELETE,
+// TRUNCATE` — but NOT via the same literal SQL. audit-immutability-job.yaml,
+// which this helper WAS kept byte-for-byte equivalent to, is deleted (#541):
+// its `ALTER TABLE ... OWNER TO` + narrow `GRANT INSERT, SELECT` was the
+// original #62 mechanism, superseded by table-grants-job.yaml's
+// REASSIGN-then-revoke approach (needed because that Job also grants
+// ordinary DML on every domain table in the same pass, not just history
+// tables). The two sequences are equivalent in OUTCOME — owner =
+// beekeepingit, svcRole limited to INSERT/SELECT — which is what every
+// assertion below actually checks; this helper deliberately stays the
+// simpler of the two, since tracking the Job's literal statements buys
+// nothing once they've diverged for a reason unrelated to what these tests
+// prove. services/shared/dbaccess/migration_ownership_test.go reuses this
+// same helper to reach the identical starting state for #541's own
+// regression tests.
 func lockDownHistoryTable(t *testing.T, owner *pgx.Conn, schema, svcRole, table string) {
 	t.Helper()
 	ctx := context.Background()
@@ -329,14 +390,16 @@ func lockDownHistoryTable(t *testing.T, owner *pgx.Conn, schema, svcRole, table 
 }
 
 // TestAuditImmutability_OwnershipTransferBlocksUpdateDeleteTruncate is the
-// pass half of the #62 proof: after lockDownHistoryTable runs (the real
-// fix), apiaries_svc can still INSERT/SELECT (the AC's other half) but can
-// no longer UPDATE/DELETE/TRUNCATE apiaries.audit_log — including the two
-// specific cracks the naive-revoke test above demonstrated. It also proves
-// apiaries_svc can't just self-GRANT its way back in, since — unlike the
-// naive-revoke case — it no longer owns the table AND was never granted
-// membership in beekeepingit (only the reverse direction is ever granted,
-// permanently, to the owner role — see newAuditImmutabilityFixture).
+// pass half of #62's proof: after lockDownHistoryTable reaches the
+// locked-down end state (see its doc comment for how that maps onto
+// table-grants-job.yaml today), apiaries_svc can still INSERT/SELECT (the
+// AC's other half) but can no longer UPDATE/DELETE/TRUNCATE
+// apiaries.audit_log — including the two specific cracks the naive-revoke
+// test above demonstrated. It also proves apiaries_svc can't just self-GRANT
+// its way back in, since — unlike the naive-revoke case — it no longer owns
+// the table AND was never granted membership in beekeepingit (only the
+// reverse direction is ever granted, permanently, to the owner role — see
+// newAuditImmutabilityFixture).
 func TestAuditImmutability_OwnershipTransferBlocksUpdateDeleteTruncate(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
 	f.createAuditLogAsService(t)
@@ -404,14 +467,17 @@ func TestAuditImmutability_SyncConflictLogGetsTheSameTreatment(t *testing.T) {
 
 // TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing proves the
 // piece the ownership-transfer fix now depends on being safe to leave in
-// place forever (schema-grants-job.yaml's permanent `GRANT apiaries_svc TO
-// beekeepingit`, set up by every fixture in this file): apiaries_svc gains
-// NOTHING from beekeepingit being its member, because Postgres role
-// membership is strictly one-directional. Even with that membership active
-// and no table ever locked down, apiaries_svc still can't touch a table it
-// doesn't own via that channel — this isolates the membership grant itself
-// (as opposed to the ownership-transfer test above, which exercises it
-// combined with the ALTER/GRANT).
+// place forever (beekeepingit's permanent membership in apiaries_svc,
+// declared in cluster.yaml's `managed.roles` `inRoles` and reconciled by
+// CNPG's own operator connection — never a manual GRANT run by any Job, see
+// grantOwnerMembershipInSvcRoleAsIfByCNPGOperator — and set up by every
+// fixture in this file): apiaries_svc gains NOTHING from beekeepingit being
+// its member, because Postgres role membership is strictly one-directional.
+// Even with that membership active and no table ever locked down,
+// apiaries_svc still can't touch a table it doesn't own via that channel —
+// this isolates the membership grant itself (as opposed to the
+// ownership-transfer test above, which exercises it combined with the
+// ALTER/GRANT).
 func TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
 	f.grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t)
@@ -431,16 +497,16 @@ func TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing(t *testing.T)
 	}
 }
 
-// TestAuditImmutability_LockDownIsIdempotent proves lockDownHistoryTable (and
-// so the Helm Job it mirrors) is safe to re-run on every helm upgrade
-// (post-install,post-upgrade, ADR-0009's GitOps cadence) without erroring
-// once a table is already locked down — the Job's "already owned by
-// beekeepingit, nothing to do" skip path depends on this being safe to call
-// twice; here we call the underlying ALTER/GRANT sequence twice directly to
-// prove the sequence itself tolerates re-application (the Job's shell wraps
-// it with an owner check first, which is the actual skip mechanism, but the
-// SQL sequence itself must also not corrupt state if ever invoked again,
-// e.g. a future manual re-run).
+// TestAuditImmutability_LockDownIsIdempotent proves lockDownHistoryTable's
+// ALTER/GRANT sequence tolerates re-application without erroring once a
+// table is already locked down. table-grants-job.yaml (this helper's
+// production analogue — see its doc comment) runs unconditionally on every
+// helm upgrade (post-install,post-upgrade, ADR-0009's GitOps cadence), with
+// no owner check gating whether it re-runs: REASSIGN OWNED BY, the blanket
+// DML GRANT, and the per-table REVOKE are each individually idempotent SQL,
+// so the Job simply re-applies all of them every time rather than needing a
+// skip path. This test proves the equivalent property for the simpler
+// two-step sequence used here.
 func TestAuditImmutability_LockDownIsIdempotent(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
 	f.createAuditLogAsService(t)
@@ -456,24 +522,29 @@ func TestAuditImmutability_LockDownIsIdempotent(t *testing.T) {
 	f.assertServiceCannotUpdateDeleteOrTruncate(t, "audit_log")
 }
 
-// NOTE on the shell script's retry/concurrency shape itself (not exercised
-// by this file's tests): a second real production incident, found and fixed
-// in the same change as the cluster.yaml/managed.roles fix above, was in
-// audit-immutability-job.yaml's shell script — the FIRST version retried
-// each (schema, table) pair SERIALLY, up to 30 attempts x 10s = 5 minutes
-// per pair. Multiplied across every schema in .Values.schemas x {audit_log,
-// sync_conflict_log} (~14 pairs, most of which will NEVER exist —
-// activities/journeys/todos/ai have no Go service built yet), every missing
-// pair burned its full budget on every deploy: ~11 missing pairs x 5 min ≈
-// 55 minutes, which blew through CI's 15-minute `helm upgrade --timeout`
-// (confirmed live against the shared k3d cluster). Fixed by shortening the
-// per-table budget (5 attempts x 3s) and running every pair CONCURRENTLY
-// (backgrounded, then `wait`ed) instead of serially — verified manually
-// against a real container with the same 14-pair/1-existing shape: ~15s
-// total instead of ~55min. See audit-immutability-job.yaml's header comment
-// for the full incident note and the shell script itself for the mechanics.
-// An attempt to also cover this with a Go test that executes the real
+// NOTE, kept for institutional memory (not exercised by this file's tests,
+// and the Job it describes is gone): a second real production incident,
+// found and fixed in the same change as the cluster.yaml/managed.roles fix
+// above, was in the now-deleted audit-immutability-job.yaml's shell script —
+// the FIRST version retried each (schema, table) pair SERIALLY, up to 30
+// attempts x 10s = 5 minutes per pair. Multiplied across every schema in
+// .Values.schemas x {audit_log, sync_conflict_log} (~14 pairs, most of which
+// will NEVER exist — activities/journeys/todos/ai have no Go service built
+// yet), every missing pair burned its full budget on every deploy: ~11
+// missing pairs x 5 min ~= 55 minutes, which blew through CI's 15-minute
+// `helm upgrade --timeout` (confirmed live against the shared k3d cluster).
+// Fixed by shortening the per-table budget (5 attempts x 3s) and running
+// every pair CONCURRENTLY (backgrounded, then `wait`ed) instead of
+// serially — verified manually against a real container with the same
+// 14-pair/1-existing shape: ~15s total instead of ~55min. #541's
+// table-grants-job.yaml doesn't just inherit that fix, it removes the
+// polling entirely: it runs at hook-weight 3, strictly after migrations
+// complete at weight 2, so every table it needs already exists by
+// construction — see its own header comment. An attempt to also cover the
+// old retry/concurrency shape with a Go test that executes the real
 // rendered script inside a testcontainers Postgres (via Container.Exec) hit
 // an unreliable hang in that Exec path unrelated to the fix's correctness —
 // dropped rather than chased further; the manual verification above plus
-// this file's SQL-level tests are the coverage for #62's actual fix.
+// this file's SQL-level tests were the coverage for #62's actual fix, and
+// remain accurate history now that the polling itself is gone by
+// construction.

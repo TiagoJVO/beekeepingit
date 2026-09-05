@@ -5,7 +5,24 @@
 Postgres (CloudNativePG) + PostGIS. Schema-per-service (no cross-schema FKs;
 services own their data). Every owned row carries `organization_id` (tenancy).
 Soft-delete via `deleted_at`. Append-only `audit_log` per schema (`FR-HIS`).
-Migrations: goose, `services/<svc>/store/migrations/*.sql`, applied at boot.
+Migrations: goose, `services/<svc>/store/migrations/*.sql`, applied by a
+deploy-time Job (ADR-0023), never at boot.
+
+## Roles (two per schema, ADR-0024/#545)
+
+```text
+<schema>_migrator  owns every relation in <schema> (tables, indexes, sequences,
+                   audit_log, goose_db_version); USAGE+CREATE on that schema
+                   only; member of nothing. The migrate Job's credential.
+<schema>_svc       owns nothing; USAGE only (CREATE revoked); DML on domain
+                   tables; INSERT/SELECT on history; nothing on the ledger.
+                   The running service's credential.
+beekeepingit       database + schema owner. Grants ON SCHEMA. Owns no table,
+                   and is not mounted into any pod running application code.
+```
+
+No role is a member of any other, either direction — that is the isolation
+(negative proof: `services/shared/dbaccess/migrator_isolation_test.go`).
 
 ## Schemas & tables
 
@@ -22,7 +39,10 @@ audit_log    (id PK, organization_id NULL, entity_type, entity_id, change_type,
 ### `organizations`
 
 ```text
-organizations (id PK, name, address, created_by, created_at, updated_at)
+organizations (id PK, name, address, registration_number, created_by, created_at, updated_at)
+                                                 -- registration_number = the ORG DEFAULT
+                                                    beekeeper number (FR-AP-9, #296); '' when
+                                                    unset, apiaries may override it
 memberships   (id PK, organization_id FK→organizations, user_id, role[admin|user],
                status[active|invited|removed], UNIQUE(organization_id,user_id))
 invitations   (id PK, organization_id FK→organizations, email, role,
@@ -35,9 +55,20 @@ audit_log     (… entity_type[organization|membership|invitation], change JSONB
 ```text
 apiaries          (id PK, organization_id, name, created_at, updated_at, recorded_at,
                    deleted_at, location geography(Point,4326) NULL, notes NULL≤10k,
-                   place_label NULL≤200)          -- hive_count column RETIRED (#256)
+                   place_label NULL≤200, registration_number NULL≤50)
+                                                 -- hive_count column RETIRED (#256)
+                                                 -- registration_number = per-apiary OVERRIDE of
+                                                    the org default (FR-AP-9, #296); NULL =
+                                                    inherit
 apiary_counters   (id PK, organization_id, apiary_id FK→apiaries ON DELETE CASCADE,
                    counter_type, value≥0, UNIQUE(apiary_id,counter_type))   -- 1-N (#256)
+stock_declarations(id PK, organization_id, registration_number, declared_on DATE,
+                   total_hive_count≥0, breakdown JSONB[array], notes NULL≤2k,
+                   created_at, updated_at, recorded_at, deleted_at)
+                   -- what the beekeeper declared, on a date (FR-AP-10, #298). Keyed
+                      by REGISTRATION NUMBER, not apiary; identity is its own row id
+                      (unlike apiary_counters); NOT the live hive counter. A log
+                      only — no windows/thresholds are derived from it (D-19).
 sync_conflict_log (id PK, org_id, entity_type, entity_id, winning/losing_payload JSONB,
                    winner[server|client], actor_user_id, occurred_at, recorded_at)
 audit_log         (… change_type[create|update|delete], changed_fields[], change JSONB)
@@ -114,6 +145,8 @@ an ordinary patch, no bespoke wire op). List/filter (#53) is out of scope.
 identity.users ──(oidc_sub ← JWT sub; user_id ref, no FK)──► organizations.memberships
 organizations.organizations ─1─N─► memberships, invitations
 apiaries.apiaries ─1─N─► apiary_counters (hive count lives here, not on apiaries)
+apiaries.stock_declarations — org-scoped, keyed by registration_number (a VALUE,
+                              not an FK: what the declaration was filed under)
 apiaries.apiaries ─1─N─► audit_log / sync_conflict_log  (by entity_id, same schema)
 ```
 
@@ -123,9 +156,11 @@ never SQL FKs — each schema is independently owned.
 ## Client-side (on-device SQLite, PowerSync — powersync_schema.dart)
 
 ```text
-apiaries          (id, organization_id, name, notes, place_label,
+apiaries          (id, organization_id, name, notes, place_label, registration_number,
                    location_lon REAL, location_lat REAL, created_at, updated_at)
 apiary_counters   (id, organization_id, apiary_id, counter_type, value, timestamps)
+stock_declarations(id, registration_number, declared_on, total_hive_count,
+                   breakdown TEXT(JSON-encoded array), notes, created_at, updated_at)
 sync_rejected_ops (LOCAL-ONLY dead-letter: dedup_key, fix_apiary_id, op, payload,
                    error_code, error_detail, rejected_at)               -- D-12
 activities        (id, organization_id, apiary_id, performed_by, journey_id, type,
@@ -154,13 +189,22 @@ Projection: server `location geography` → client `location_lon/lat` via `ST_X`
 in PowerSync Sync Rules (`infra/helm/.../powersync/values.yaml`). Tombstones excluded
 down-sync (no local `deleted_at`).
 
+`apiaries`, `stock_declarations`, `activities`, `journeys`, `journey_plan_items`, `todos` also
+carry PowerSync's hidden `_metadata`/`_deleted` columns (`trackMetadata: true`) — never domain
+data: they exist only so a delete can persist its device-time LWW comparator with the queued op
+(#276, sync.md §4.5). Every syncable table with a delete path belongs on that list. Not on
+`apiary_counters` (never deleted locally) or the read-only/local-only tables.
+
 ## Migration history
 
 ```text
 identity:       00001 create_users · 00002 rename keycloak_sub→oidc_sub · 00003 audit_log
 organizations:  00001 create_organizations · 00002 create_invitations · 00003 audit_log
+                … · 00006 BASELINE · 00007 add_organization_registration_number
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
+                00007 org-scoped counter unique · 00008 BASELINE (squash of 00001-00008)
+                00009 add_apiary_registration_number · 00010 create_stock_declarations
 activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
 journeys:       00001 create_journeys(+journey_plan_items,+sync_conflict_log) · 00002 audit_log
 todos:          00001 create_todos(+sync_conflict_log) · 00002 audit_log · 00003 add_apiary_id
@@ -171,7 +215,11 @@ shared/dbaccess:00001 create_example_items (template reference only)
 
 - **sqlc**: `store/sqlc/queries/*.sql` → `store/sqlc/gen/*.sql.go`; `schema.sql` is a
   codegen-only virtual mirror of the cumulative migrations (kept in sync by hand).
-- **History**: writes append an `audit_log` row (delta via `shared/history`); immutability
-  enforced by a DB job (`infra/helm/.../postgres/templates/audit-immutability-job.yaml`).
+- **History**: writes append an `audit_log` row (delta via `shared/history`); immutability holds
+  because the runtime role `<schema>_svc` never owns a table — that schema's `<schema>_migrator`
+  does — so granting it `INSERT`/`SELECT` and withholding `UPDATE`/`DELETE` is durable and it
+  cannot self-`GRANT` back in (`infra/helm/.../postgres/templates/table-grants-job.yaml`,
+  ADR-0023/#541, ADR-0024/#545). The guarantee binds the service's **runtime role**, not its
+  deploy artifact — the migration SQL ships in the service's own image (history.md §7.1).
 
 See [backend.md](backend.md) for the query layer, [architecture.md](architecture.md) for sync.

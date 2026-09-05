@@ -95,7 +95,9 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
+    Locale('en', 'GB'),
     Locale('pt'),
+    Locale('pt', 'PT'),
   ];
 
   /// App title, shown in the browser tab and app switcher
@@ -103,6 +105,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BeekeepingIT'**
   String get appTitle;
+
+  /// Screen-reader label for the brand mark (the Melargil bee, #686) — an image with no text of its own, so it is announced by what it stands for rather than described
+  ///
+  /// In en, this message translates to:
+  /// **'BeekeepingIT logo'**
+  String get appLogoLabel;
 
   /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
   ///
@@ -164,13 +172,13 @@ abstract class AppLocalizations {
   /// **'Actions'**
   String get actionsMenuLabel;
 
-  /// Hive count subtitle on a list row
+  /// Hive count subtitle on a list row. decimalPattern groups the number for the active locale (#624, NFR-I18N-1) — `999.999.999 colmeias` in pt, `999,999,999 hives` in en, instead of a raw run of digits in both
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
 
-  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  /// Supers counter value badge on the apiary detail screen (#346, D-20). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
@@ -188,13 +196,13 @@ abstract class AppLocalizations {
   /// **'Supers'**
   String get counterTypeSuperLabel;
 
-  /// Empty-hive counter value badge on the apiary detail screen (#392)
+  /// Empty-hive counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}'**
   String emptyHiveCountValue(int count);
 
-  /// Swarm counter value badge on the apiary detail screen (#392)
+  /// Swarm counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}'**
@@ -362,6 +370,30 @@ abstract class AppLocalizations {
   /// **'Something went wrong. Please try again.'**
   String get profileGenericError;
 
+  /// Label for the read-only account email on the profile screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Account email'**
+  String get profileAccountEmailLabel;
+
+  /// Explains that the account email is owned by the identity provider.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the email you signed in with. Change it with our sign-in provider, in a new tab.'**
+  String get profileAccountEmailHint;
+
+  /// Opens the identity provider account page in a new tab.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage account'**
+  String get profileManageAccountButton;
+
+  /// Screen-reader label for the read-only account email value.
+  ///
+  /// In en, this message translates to:
+  /// **'Account email: {email}'**
+  String profileAccountEmailSemantics(String email);
+
   /// Organization creation screen app bar title
   ///
   /// In en, this message translates to:
@@ -409,6 +441,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not create your organization: {error}'**
   String organizationSaveError(String error);
+
+  /// Title of the waiting-for-an-invitation onboarding screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Join an organization'**
+  String get organizationWaitingTitle;
+
+  /// Explains that creating an organization is not required when an invitation is expected.
+  ///
+  /// In en, this message translates to:
+  /// **'If someone is inviting you to their organization, you don\'t need to create one. Check again once the invitation has been sent.'**
+  String get organizationWaitingIntro;
+
+  /// Tells the user which address the invitation must target.
+  ///
+  /// In en, this message translates to:
+  /// **'The invitation must be sent to the email you signed in with. Ask the organization\'s admin to invite that address.'**
+  String get organizationWaitingHint;
+
+  /// Re-checks whether a pending invitation has arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get organizationWaitingCheckButton;
+
+  /// Screen-reader label while the check is in flight.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for an invitation'**
+  String get organizationWaitingChecking;
+
+  /// Shown when a check finds no pending invitation.
+  ///
+  /// In en, this message translates to:
+  /// **'No invitation yet. Try again in a moment, or create your own organization.'**
+  String get organizationWaitingStillNone;
+
+  /// Fixed error message for a failed check - never shows the raw exception.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check for an invitation right now. Try again.'**
+  String get organizationWaitingCheckError;
+
+  /// Leaves the waiting screen for the create-organization form.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an organization instead'**
+  String get organizationWaitingCreateInsteadButton;
+
+  /// Leaves the create form for the waiting screen.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m waiting for an invitation'**
+  String get organizationJoinInsteadButton;
+
+  /// Warns that creating an organization is a one-way choice while #506 is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating an organization means you can\'t accept an invitation to another one later. If you\'re expecting an invitation, wait for it instead.'**
+  String get organizationCreateBlocksInvitationWarning;
 
   /// Members/invitations management screen app bar title
   ///
@@ -602,6 +694,12 @@ abstract class AppLocalizations {
   /// **'Activities'**
   String get activitiesTitle;
 
+  /// Home tab label and screen title — the centre tab of the bottom nav, replacing the Assistant placeholder (#658, D-35, FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeTitle;
+
   /// Journeys tab label and screen title (bottom nav, #197)
   ///
   /// In en, this message translates to:
@@ -613,36 +711,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Todos'**
   String get todosTitle;
-
-  /// Assistant tab label and screen title (bottom nav, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant'**
-  String get assistantTitle;
-
-  /// Placeholder shown on the Activities tab until its real screens land (M3, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Activities — coming soon'**
-  String get activitiesComingSoon;
-
-  /// Placeholder shown on the Journeys tab until its real screens land (M4, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Journeys — coming soon'**
-  String get journeysComingSoon;
-
-  /// Placeholder shown on the Todos tab until its real screens land (M5, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Todos — coming soon'**
-  String get todosComingSoon;
-
-  /// Placeholder shown on the Assistant tab until its real screens land (M8, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant — coming soon'**
-  String get assistantComingSoon;
 
   /// App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)
   ///
@@ -830,6 +898,12 @@ abstract class AppLocalizations {
   /// **'Hive count change'**
   String get syncNeedsFixCounterLabel;
 
+  /// Needs-fix list row title for a rejected stock-declaration write (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declaration change'**
+  String get syncNeedsFixDeclarationLabel;
+
   /// Needs-fix list row title for a rejected activity write (#379)
   ///
   /// In en, this message translates to:
@@ -860,11 +934,257 @@ abstract class AppLocalizations {
   /// **'{label} · {name}'**
   String syncNeedsFixTitleWithName(String label, String name);
 
-  /// Needs-fix list row fallback message when the server returned no field-level detail
+  /// Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)
   ///
   /// In en, this message translates to:
   /// **'This change was rejected and needs your attention.'**
   String get syncNeedsFixGenericProblem;
+
+  /// Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text
+  ///
+  /// In en, this message translates to:
+  /// **'{field}: {problem}'**
+  String syncNeedsFixFieldProblem(String field, String problem);
+
+  /// Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this is required.'**
+  String get syncNeedsFixRuleRequired;
+
+  /// Needs-fix rule fragment for the server's `invalid` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value isn\'t valid.'**
+  String get syncNeedsFixRuleInvalid;
+
+  /// Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value is outside the allowed range.'**
+  String get syncNeedsFixRuleOutOfRange;
+
+  /// Needs-fix rule fragment for the server's `too_long` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this text is too long.'**
+  String get syncNeedsFixRuleTooLong;
+
+  /// Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this no longer exists, or you no longer have access to it.'**
+  String get syncNeedsFixRuleNotFound;
+
+  /// Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single "Details" label
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here still needs filling in.'**
+  String get syncNeedsFixRuleAttributeRequired;
+
+  /// Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here isn\'t valid.'**
+  String get syncNeedsFixRuleAttributeInvalid;
+
+  /// Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is too long.'**
+  String get syncNeedsFixRuleAttributeTooLong;
+
+  /// Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is outside the allowed range.'**
+  String get syncNeedsFixRuleAttributeOutOfRange;
+
+  /// Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be 0 or more.'**
+  String get syncNeedsFixRuleNonNegative;
+
+  /// Needs-fix rule fragment for an out-of-range latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -90 and 90.'**
+  String get syncNeedsFixRuleLatitudeRange;
+
+  /// Needs-fix rule fragment for an out-of-range longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -180 and 180.'**
+  String get syncNeedsFixRuleLongitudeRange;
+
+  /// Needs-fix field label for an apiary's or journey's name (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get syncNeedsFixFieldName;
+
+  /// Needs-fix field label for a todo's title (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get syncNeedsFixFieldTitle;
+
+  /// Needs-fix field label for a todo's description (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get syncNeedsFixFieldDescription;
+
+  /// Needs-fix field label for an apiary's notes (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get syncNeedsFixFieldNotes;
+
+  /// Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Place label'**
+  String get syncNeedsFixFieldPlace;
+
+  /// Needs-fix field label for an apiary's location (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get syncNeedsFixFieldLocation;
+
+  /// Needs-fix field label for an apiary location's latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Latitude'**
+  String get syncNeedsFixFieldLatitude;
+
+  /// Needs-fix field label for an apiary location's longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Longitude'**
+  String get syncNeedsFixFieldLongitude;
+
+  /// Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Number of hives'**
+  String get syncNeedsFixFieldHiveCount;
+
+  /// Needs-fix field label for an apiary counter's value (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count'**
+  String get syncNeedsFixFieldCount;
+
+  /// Needs-fix field label for an apiary counter's type (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count type'**
+  String get syncNeedsFixFieldCountType;
+
+  /// Needs-fix field label for the apiary a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get syncNeedsFixFieldApiary;
+
+  /// Needs-fix field label for the journey a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get syncNeedsFixFieldJourney;
+
+  /// Needs-fix field label for a todo's assignee (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee'**
+  String get syncNeedsFixFieldAssignee;
+
+  /// Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get syncNeedsFixFieldActivityType;
+
+  /// Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Main activity type'**
+  String get syncNeedsFixFieldMainActivityType;
+
+  /// Needs-fix field label for the date an activity occurred (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get syncNeedsFixFieldDate;
+
+  /// Needs-fix field label for a todo's due date (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get syncNeedsFixFieldDueDate;
+
+  /// Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at'**
+  String get syncNeedsFixFieldCompletedAt;
+
+  /// Needs-fix field label for a todo's priority (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get syncNeedsFixFieldPriority;
+
+  /// Needs-fix field label for a journey's or todo's status (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get syncNeedsFixFieldStatus;
+
+  /// Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get syncNeedsFixFieldDetails;
+
+  /// Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults for activities'**
+  String get syncNeedsFixFieldActivityDefaults;
+
+  /// Needs-fix field label for a stock declaration's date — deliberately the same wording as stockDeclarationDateLabel (#443, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration date'**
+  String get syncNeedsFixFieldDeclarationDate;
+
+  /// Needs-fix field label for the hive total a stock declaration records across the whole organization — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count (#443, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Total hives'**
+  String get syncNeedsFixFieldTotalHiveCount;
+
+  /// Needs-fix field label for a beekeeper registration number — the same column, and the same wording, on a stock declaration and on an apiary (apiaryRegistrationNumberLabel) (#443, #296, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number'**
+  String get syncNeedsFixFieldRegistrationNumber;
+
+  /// Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected
+  ///
+  /// In en, this message translates to:
+  /// **'This change wasn\'t sent yet — please correct it.'**
+  String get syncNeedsFixLocalProblem;
+
+  /// Save-time validation-parity fallback shown against the offending form field (#597) when the (field, code) pair has no specific localized copy in the #443 mapping — never the server's English message, never the column name
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be saved as it is — please check this value.'**
+  String get syncSaveCheckGenericProblem;
 
   /// Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it
   ///
@@ -1184,6 +1504,174 @@ abstract class AppLocalizations {
   /// **'e.g. Montargil'**
   String get apiaryPlaceLabelHint;
 
+  /// Optional beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number'**
+  String get apiaryRegistrationNumberLabel;
+
+  /// Placeholder hint in the apiary form's registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Only if different from the organization\'s'**
+  String get apiaryRegistrationNumberHint;
+
+  /// Marker shown next to the registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'From the organization'**
+  String get apiaryRegistrationNumberInherited;
+
+  /// Title of the organization-details screen, reached from Account — the organization's name, address and registration number, and the label of the Account entry that opens it (FR-ONB-2/FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Organization details'**
+  String get organizationDetailsTitle;
+
+  /// Label of the organization-wide beekeeper registration number field on the organization-details screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number'**
+  String get organizationRegistrationNumberLabel;
+
+  /// Helper text under the organization registration number field (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'The beekeeper number shown at your apiaries'**
+  String get organizationRegistrationNumberHint;
+
+  /// Confirmation shown after the organization's name, address and registration number are saved (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Organization details saved'**
+  String get organizationDetailsSaved;
+
+  /// Shown when Save is pressed on the organization-details screen but nothing differs from the loaded values, so no request is sent — deliberately distinct from the success message, which must never stand in for a save that never happened (#296, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'No changes to save'**
+  String get organizationDetailsNoChanges;
+
+  /// Error shown when saving the organization details fails, e.g. offline or not an admin (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the organization details'**
+  String get organizationDetailsSaveFailed;
+
+  /// Error shown when the organization-details save is answered 409 because another admin changed the organization since this screen read it — the If-Match/ETag optimistic-concurrency check (#601, FR-TEN-2/FR-HIS-1). Deliberately distinct from organizationDetailsSaveFailed: retrying unchanged is exactly the wrong advice here
+  ///
+  /// In en, this message translates to:
+  /// **'Someone else changed these details. Reopen this screen to see the latest, then make your change again.'**
+  String get organizationDetailsSaveConflict;
+
+  /// Note shown to non-admin members, who can read but not edit the organization's details (#296, NFR-ROL-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Only an organization admin can change these.'**
+  String get organizationDetailsAdminOnly;
+
+  /// Title of the stock-declaration log screen, reached from Account, and the label of the Account entry that opens it (FR-AP-10, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declarations'**
+  String get stockDeclarationsTitle;
+
+  /// Intro paragraph on the stock-declarations screen making explicit that everything there is advisory and nothing is submitted to any authority (FR-AP-10, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Optional record-keeping to help with your stock-declaration obligations. The app never files anything for you.'**
+  String get stockDeclarationsIntro;
+
+  /// Empty state of the stock-declaration log (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No declarations recorded yet.'**
+  String get stockDeclarationsEmpty;
+
+  /// Group heading used for declarations recorded before any registration number was entered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No registration number'**
+  String get stockDeclarationsNoRegistrationNumber;
+
+  /// Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record declaration'**
+  String get stockDeclarationRecordAction;
+
+  /// Confirmation shown after a stock declaration is recorded (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration recorded'**
+  String get stockDeclarationSaved;
+
+  /// Action that deletes a mis-entered stock declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete declaration'**
+  String get stockDeclarationDeleteAction;
+
+  /// One row of the stock-declaration log: the declared date and the declared hive total (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{date} — {count, plural, =1{1 hive} other{{count} hives}}'**
+  String stockDeclarationSummary(String date, int count);
+
+  /// Secondary line of a declaration row: how many apiaries the snapshot covered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}'**
+  String stockDeclarationApiaryCount(int count);
+
+  /// The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)
+  ///
+  /// In en, this message translates to:
+  /// **'Current hive count: {count}'**
+  String stockDeclarationsCurrentHiveCount(int count);
+
+  /// Title of the dialog that records a stock declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record declaration'**
+  String get stockDeclarationRecordDialogTitle;
+
+  /// Label of the date field in the record-declaration dialog — the day the declaration was filed with the authority, which may be earlier than today (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration date'**
+  String get stockDeclarationDateLabel;
+
+  /// Label of the optional free-text note field in the record-declaration dialog (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Note (optional)'**
+  String get stockDeclarationNotesLabel;
+
+  /// Placeholder hint in the record-declaration dialog's note field (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. filed on the authority\'s portal'**
+  String get stockDeclarationNotesHint;
+
+  /// Cancel action in the record-declaration dialog (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get stockDeclarationRecordDialogCancelAction;
+
+  /// Confirm action in the record-declaration dialog, which writes the declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record'**
+  String get stockDeclarationRecordDialogConfirmAction;
+
+  /// The declared hive total shown in the record-declaration dialog, pre-filled from the current live count (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 hive} other{{count} hives}}'**
+  String stockDeclarationHiveTotal(int count);
+
   /// Section label above the map-pin picker on the apiary form (#252)
   ///
   /// In en, this message translates to:
@@ -1351,6 +1839,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Detection only (no treatment yet)'**
   String get treatmentContextDetectionOnlyLabel;
+
+  /// Display label for the stored disease value 'Varroose' — render-time only, the stored/wire value is unchanged (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Varroosis'**
+  String get diseaseConditionVarroosisLabel;
+
+  /// Display label for the stored disease value 'Loque americana' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'American foulbrood'**
+  String get diseaseConditionAmericanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Loque europeia' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'European foulbrood'**
+  String get diseaseConditionEuropeanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Nosemose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Nosemosis'**
+  String get diseaseConditionNosemosisLabel;
+
+  /// Display label for the stored disease value 'Acariose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Acarapisosis'**
+  String get diseaseConditionAcarapisosisLabel;
+
+  /// Display label for the stored disease value 'Aethina tumida (pequeno besouro da colmeia)' — the Latin name stays Latin in both languages, only its gloss is translated (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Aethina tumida (small hive beetle)'**
+  String get diseaseConditionSmallHiveBeetleLabel;
+
+  /// Display label for the stored disease value 'Tropilaelaps spp.' — a Latin name, identical in both languages (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Tropilaelaps spp.'**
+  String get diseaseConditionTropilaelapsLabel;
+
+  /// Display label for the stored disease catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get diseaseConditionOtherLabel;
+
+  /// Display label for the stored treatment-product value 'Apivar/amitraz' — a brand plus its active substance, identical in both languages (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Apivar/amitraz'**
+  String get treatmentTypeApivarAmitrazLabel;
+
+  /// Display label for the stored treatment-product value 'Ácido oxálico' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Oxalic acid'**
+  String get treatmentTypeOxalicAcidLabel;
+
+  /// Display label for the stored treatment-product value 'Timol' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Thymol'**
+  String get treatmentTypeThymolLabel;
+
+  /// Display label for the stored treatment-product catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get treatmentTypeOtherLabel;
+
+  /// Display label for the stored feed-type value 'Xarope 1:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'1:1 syrup'**
+  String get feedTypeSyrup11Label;
+
+  /// Display label for the stored feed-type value 'Xarope 2:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'2:1 syrup'**
+  String get feedTypeSyrup21Label;
+
+  /// Display label for the stored feed-type value 'Candi' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Candi (fondant)'**
+  String get feedTypeCandiLabel;
+
+  /// Display label for the stored feed-type value 'Pólen' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Pollen'**
+  String get feedTypePollenLabel;
 
   /// Screen header title for the add-activity form (#39, FR-AC-2)
   ///
@@ -1658,6 +2242,18 @@ abstract class AppLocalizations {
   /// **'All types'**
   String get journeyFilterTypeAll;
 
+  /// Field label for the Journeys tab's status filter dropdown (#658, D-35) — its options are the cleared 'All statuses' plus each journey status (Open/Closed, journeyStatusOpenLabel/journeyStatusClosedLabel)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get journeyFilterStatusLabel;
+
+  /// The Journeys tab's status filter's cleared/default option — no status filter applied, so open and closed journeys both show (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'All statuses'**
+  String get journeyFilterStatusAll;
+
   /// Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)
   ///
   /// In en, this message translates to:
@@ -1676,7 +2272,7 @@ abstract class AppLocalizations {
   /// **'{start} – {end}'**
   String journeyFilterDateRangeValue(String start, String end);
 
-  /// Button that resets both the Journeys tab's type and date-range filters at once (#47)
+  /// Button that resets the Journeys tab's type, status and date-range filters at once (#47, #658)
   ///
   /// In en, this message translates to:
   /// **'Clear filters'**
@@ -2015,7 +2611,7 @@ abstract class AppLocalizations {
   /// **'Apiaries visited'**
   String get journeyStatsApiariesVisitedLabel;
 
-  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1)
+  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{done}/{planned}'**
@@ -2051,7 +2647,7 @@ abstract class AppLocalizations {
   /// **'No data yet'**
   String get journeyStatsAverageSupersNoData;
 
-  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done")
+  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done"). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
@@ -2063,7 +2659,7 @@ abstract class AppLocalizations {
   /// **'Hives worked'**
   String get journeyStatsHivesWorkedLabel;
 
-  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or a plain number by the time it reaches this template
+  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or an already-locale-formatted number by the time it reaches this template (#624). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{worked}/{planned}'**
@@ -2201,7 +2797,7 @@ abstract class AppLocalizations {
   /// **'Total feed amount: {amount}'**
   String journeyStatsDetailFeedingSummary(String amount);
 
-  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity
+  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity. Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{treated}/{planned} apiaries treated'**
@@ -2822,6 +3418,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'All your changes are synced.'**
   String get notificationSyncCompleted;
+
+  /// Home summary section header over the todos that are overdue or due soon (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks needing attention'**
+  String get homeTasksSectionTitle;
+
+  /// Screen-reader label for the Home tasks section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 task needs attention} other{{count} tasks need attention}}'**
+  String homeTasksCountLabel(int count);
+
+  /// Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}'**
+  String homeTasksViewAllOverdueAction(int count);
+
+  /// Compact trailing badge on an overdue Home task row, paired with a warning icon so it never relies on colour alone (#658, D-35, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d late} other{{days} d late}}'**
+  String homeTodoOverdueBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeTodoOverdueBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day overdue} other{{days} days overdue}}'**
+  String homeTodoOverdueLabel(int days);
+
+  /// Compact trailing badge on a Home task row that is due soon but not yet overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Soon'**
+  String get homeTodoDueSoonBadge;
+
+  /// Screen-reader expansion of the abbreviated homeTodoDueSoonBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due soon'**
+  String get homeTodoDueSoonLabel;
+
+  /// Home summary section header over the journeys that are still open (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys in progress'**
+  String get homeJourneysSectionTitle;
+
+  /// Screen-reader label for the Home journeys section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 journey in progress} other{{count} journeys in progress}}'**
+  String homeJourneysCountLabel(int count);
+
+  /// Home journeys section footer link into the Journeys list (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'View all journeys'**
+  String get homeJourneysViewAllAction;
+
+  /// Home summary section header over the apiaries with no recorded activity inside the recency window (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited recently'**
+  String get homeApiariesSectionTitle;
+
+  /// Screen-reader label for the Home apiaries section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 apiary not visited recently} other{{count} apiaries not visited recently}}'**
+  String homeApiariesCountLabel(int count);
+
+  /// Subtitle of a Home apiary row that has never been visited — its own state, never rendered as '0 days ago' (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'No activity recorded yet'**
+  String get homeApiaryNeverVisitedSubtitle;
+
+  /// Compact trailing badge on a Home apiary row that has never been visited (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get homeApiaryNeverVisitedBadge;
+
+  /// Subtitle of a Home apiary row showing when it was last visited, already formatted for the active locale (#658, D-35, NFR-I18N-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Last visit {date}'**
+  String homeApiaryLastVisitSubtitle(String date);
+
+  /// Compact trailing badge on a Home apiary row: whole days since its last recorded activity (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d} other{{days} d}}'**
+  String homeApiaryStaleBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeApiaryStaleBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day since the last visit} other{{days} days since the last visit}}'**
+  String homeApiaryStaleLabel(int days);
+
+  /// Home's first-run state (#658, D-35): the org owns no records at all, so Home shows one message and one action instead of three empty sections
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.'**
+  String get homeFirstRunMessage;
+
+  /// The single action on Home's first-run state, opening the apiary create form (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first apiary'**
+  String get homeFirstRunAction;
+
+  /// Home's all-clear state (#658, D-35): the org has data but nothing matched any section. Names the recency window so the threshold is discoverable; {days} is apiaryVisitRecencyDays, never hardcoded here. Pluralized because that constant is D-35's own adjustable default — at 1 an unpluralized placeholder reads 'the last 1 days'
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in {days, plural, =1{the last day} other{the last {days} days}}.'**
+  String homeAllClearMessage(int days);
+
+  /// Home's data-unavailable state (#658 review, D-35): every local query failed, so Home knows nothing. Replaces the first-run state it used to settle on permanently — same notify-and-fix voice as the sync needs-fix screen, one honest sentence rather than an error dump
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the data stored on this device.\n\nHome can\'t show what needs your attention until that\'s fixed. Try reopening the app.'**
+  String get homeUnavailableMessage;
+
+  /// Notice above Home's sections when SOME local queries failed while others resolved (#658 review, D-35): the sections that loaded still show, but the screen admits the rest is missing or frozen rather than passing it off as empty
+  ///
+  /// In en, this message translates to:
+  /// **'Some data couldn\'t be read on this device, so this may be incomplete.'**
+  String get homeUnavailableNotice;
 }
 
 class _AppLocalizationsDelegate
@@ -2842,6 +3570,26 @@ class _AppLocalizationsDelegate
 }
 
 AppLocalizations lookupAppLocalizations(Locale locale) {
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'en':
+      {
+        switch (locale.countryCode) {
+          case 'GB':
+            return AppLocalizationsEnGb();
+        }
+        break;
+      }
+    case 'pt':
+      {
+        switch (locale.countryCode) {
+          case 'PT':
+            return AppLocalizationsPtPt();
+        }
+        break;
+      }
+  }
+
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
     case 'en':

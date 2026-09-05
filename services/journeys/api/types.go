@@ -23,6 +23,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -117,17 +118,35 @@ const maxApiaryIDsPerJourney = 500
 // documents above.
 const maxDefaultAttributesBytes = 8192
 
+// isJSONNull reports whether raw is the JSON `null` literal — 4 present wire
+// bytes, which `len(raw) == 0` does NOT catch (a json.RawMessage field keeps
+// the literal rather than going nil, unlike the `*string` fields beside it).
+//
+// It exists because a PowerSync `patch` that CLEARS a column carries exactly
+// that literal: the core extension's upload diff emits a column key only when
+// its value changed, and a value cleared to SQL NULL is emitted as JSON null
+// (verified against powersync-sqlite-core itself, contracts/validation/README.md
+// §"journey.default_attributes and an explicit null"). It is the RawMessage
+// counterpart of activities' journeyIDKeyPresent (#387), which solves the same
+// absent-vs-explicitly-cleared tri-state for a `*string` column. Trimming space
+// keeps it robust against a hand-written REST body; the sync path is always
+// compact.
+func isJSONNull(raw json.RawMessage) bool {
+	return string(bytes.TrimSpace(raw)) == "null"
+}
+
 // validateDefaultAttributes validates the SHAPE only of a journey's
 // default_attributes field (#385's design decision: journeys validates
 // shallow — JSON object, size-bounded — and does NOT deep-validate keys/
 // values against the per-type activity attribute schema, which lives in
 // services/activities and must not be imported here, this file's package
 // doc's hand-kept-mirror rule). Absent/empty is always valid (defaults are
-// entirely optional). A present value must decode to a JSON object; `null`
-// is treated the same as absent (mirrors activities' own attributes
-// validation, write.go's `err != nil || attrs == nil` check).
+// entirely optional), and so is an explicit `null` — the wire form of "this
+// journey has no defaults", which is what a device sends when a user clears
+// the bag ([isJSONNull]'s doc comment). A present, non-null value must decode
+// to a JSON object.
 func validateDefaultAttributes(raw json.RawMessage) []problem.FieldError {
-	if len(raw) == 0 {
+	if len(raw) == 0 || isJSONNull(raw) {
 		return nil
 	}
 	if len(raw) > maxDefaultAttributesBytes {
