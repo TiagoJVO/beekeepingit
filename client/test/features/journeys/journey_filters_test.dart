@@ -191,7 +191,12 @@ void main() {
 
       expect(result['j1'], [a1, a2]);
       expect(result['j2'], [a3]);
-      expect(result.containsKey(null), isFalse);
+      // Asserts the keys directly rather than `containsKey(null)`: the return
+      // type is Map<String, List<Activity>>, so a null key cannot exist and the
+      // old check could never fail — Flutter 3.47's analyzer flags it as
+      // `collection_methods_unrelated_type`. Naming the exact key set is the
+      // assertion that was meant: no bucket is invented for the journeyless one.
+      expect(result.keys, unorderedEquals(<String>['j1', 'j2']));
       expect(result.values.expand((v) => v), isNot(contains(noJourney)));
     });
   });
