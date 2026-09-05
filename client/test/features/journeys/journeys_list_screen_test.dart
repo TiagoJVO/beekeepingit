@@ -10,9 +10,11 @@ import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
+import 'package:beekeepingit_client/routing/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 /// A no-op [LocalStoreEngine] — [_FakeJourneysRepository] overrides every
 /// method the edit-route push touches, mirroring
@@ -141,6 +143,13 @@ Future<void> _openJourneysTab(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('shell-tab-journeys')));
   await tester.pumpAndSettle();
 }
+
+/// The app's [GoRouter], for the tests below that navigate a second time
+/// after the first `pumpWidget` — i.e. a deep link arriving at an
+/// already-mounted tab.
+GoRouter _routerOf(WidgetTester tester) => ProviderScope.containerOf(
+  tester.element(find.byType(BeekeepingitApp)),
+).read(routerProvider);
 
 void main() {
   testWidgets(
@@ -399,6 +408,162 @@ void main() {
       await _openJourneysTab(tester);
 
       expect(find.byKey(const Key('journey-progress-badge')), findsNothing);
+    });
+  });
+
+  // Task 14 of #658 (D-35): Home's "view all journeys" link must land on
+  // the Journeys tab showing the same set it previewed — the OPEN
+  // journeys. The tab had no status filter at all, so the link had nothing
+  // to hand off to; this group covers the new one, seeded from the URL for
+  // the same `autoDispose` reason the Todos tab's is (todos_list_screen.
+  // dart's own doc).
+  group('status filter (#658, D-35)', () {
+    const openJourney = Journey(
+      id: 'j-open',
+      name: 'Still going',
+      mainActivityType: 'harvest',
+      status: journeyStatusOpen,
+    );
+    const closedJourney = Journey(
+      id: 'j-closed',
+      name: 'All done',
+      mainActivityType: 'harvest',
+      status: journeyStatusClosed,
+    );
+
+    /// Deep-links to [location] rather than tapping the tab, so the query
+    /// parameters under test are what the screen is built from.
+    Future<void> openAt(
+      WidgetTester tester, {
+      required List<Journey> journeys,
+      required String location,
+    }) async {
+      await tester.pumpWidget(_buildApp(journeys: journeys));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(BeekeepingitApp)),
+      );
+      container.read(routerProvider).go(location);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('selecting "Open" shows only open journeys', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(journeys: const [openJourney, closedJourney]),
+      );
+      await _openJourneysTab(tester);
+
+      await tester.tap(find.byKey(const Key('journey-filter-status-field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsNothing);
+    });
+
+    testWidgets('?status=open renders only open journeys, with the control '
+        'showing "Open"', (tester) async {
+      await openAt(
+        tester,
+        journeys: const [openJourney, closedJourney],
+        location: '/journeys?status=open',
+      );
+
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('journey-filter-status-field')),
+          matching: find.text('Open'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unknown ?status= value falls back to showing every '
+        'journey instead of throwing', (tester) async {
+      await openAt(
+        tester,
+        journeys: const [openJourney, closedJourney],
+        location: '/journeys?status=not-a-status',
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsOneWidget);
+    });
+
+    testWidgets('clearing the seeded filter restores the full list', (
+      tester,
+    ) async {
+      await openAt(
+        tester,
+        journeys: const [openJourney, closedJourney],
+        location: '/journeys?status=open',
+      );
+
+      await tester.tap(find.byKey(const Key('journey-filter-clear-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsOneWidget);
+    });
+
+    testWidgets('a status filter that matches nothing shows the no-results '
+        'state, not the "no journeys yet" one', (tester) async {
+      await openAt(
+        tester,
+        journeys: const [closedJourney],
+        location: '/journeys?status=open',
+      );
+
+      expect(find.text('No journeys match your filters.'), findsOneWidget);
+      expect(
+        find.text('No journeys yet. Tap “New journey” to create one.'),
+        findsNothing,
+      );
+    });
+
+    // Review of #658: the same arrival-vs-change defect todos_list_screen_test
+    // covers for the Tasks tab — this branch's [State] is retained by
+    // [StatefulShellRoute.indexedStack], so a second, identical deep link
+    // compared `open == open` and skipped the re-seed, leaving the user on
+    // whatever filter they had last set rather than the set Home's "open
+    // journeys" count had just promised.
+    testWidgets('the same deep link arriving again re-applies its filter, '
+        'even after the user cleared it', (tester) async {
+      await openAt(
+        tester,
+        journeys: const [openJourney, closedJourney],
+        location: '/journeys?status=open',
+      );
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsNothing);
+
+      // The user clears the filter on the Journeys tab itself.
+      await tester.tap(find.byKey(const Key('journey-filter-clear-button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('journey-j-closed')), findsOneWidget);
+
+      // They leave for the Home tab (not the Journeys tab, whose own
+      // bottom-nav reset to a parameterless `/journeys` would mask this)...
+      await tester.tap(find.byKey(const Key('shell-tab-home')));
+      await tester.pumpAndSettle();
+
+      // ...and follow the same "view all journeys" link a second time.
+      _routerOf(tester).go('/journeys?status=open');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journey-j-open')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-closed')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('journey-filter-status-field')),
+          matching: find.text('Open'),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

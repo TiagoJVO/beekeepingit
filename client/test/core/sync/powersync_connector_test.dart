@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:beekeepingit_client/core/config/app_config.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/core/sync/powersync_connector.dart';
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/core/sync/sync_events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:powersync/powersync.dart';
 
 /// Unit tests for the connector's pure/injectable seams — the notify-and-fix
 /// wiring (sync.md §4.2/§8, D-12) split out of [BeekeepingitConnector.uploadData]
@@ -381,7 +383,10 @@ void main() {
     late _FakeRejectedStore store;
 
     setUp(() {
-      connector = BeekeepingitConnector(getAccessToken: () async => null);
+      connector = BeekeepingitConnector(
+        getAccessToken: () async => null,
+        hasMembership: () => true,
+      );
       store = _FakeRejectedStore();
     });
 
@@ -544,6 +549,7 @@ void main() {
       final client = _TrackingHttpClient();
       final connector = BeekeepingitConnector(
         getAccessToken: () async => null,
+        hasMembership: () => true,
         client: client,
       );
 
@@ -569,26 +575,51 @@ void main() {
 
     test('a delete (no payload) gets a device timestamp, captured once and '
         'reused on every subsequent retry of the same queued op — not '
-        'recomputed fresh each time', () async {
+        'recomputed fresh each time', () {
       final cache = <String, String>{};
 
       final firstAttempt = lwwTimestampFor('row-1', null, cache);
-      // A real retry is separated in time (the SDK's forward-retry
-      // backoff); without the fix each call recomputes DateTime.now(),
-      // so this delay would otherwise make the values differ.
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final retryAttempt = lwwTimestampFor('row-1', null, cache);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
 
       expect(
-        retryAttempt,
+        cache['row-1'],
         firstAttempt,
+        reason: 'the first attempt is what gets captured, once, in the cache',
+      );
+
+      final retryAttempt = lwwTimestampFor('row-1', null, cache);
+      final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
+
+      // Necessary but, on their own, no longer sufficient: with the real
+      // sleeps gone (see below) three calls land in the same instant, so a
+      // recomputing implementation could satisfy these too. The seeded block
+      // below is what actually discriminates.
+      expect(retryAttempt, firstAttempt);
+      expect(secondRetryAttempt, firstAttempt);
+
+      // #705: a real retry is separated in time (the SDK's forward-retry
+      // backoff), and this used to be simulated with two real
+      // `Future.delayed(5ms)` sleeps — so a `DateTime.now()`-recomputing
+      // implementation was only caught when at least a millisecond had
+      // actually passed. `fake_async` cannot help here, because the fallback
+      // reads `DateTime.now()` directly and fake time does not intercept it.
+      // Seeding the cache with a value no `now()` could ever return replaces
+      // the sleeps with an **unconditional** guard on the same property, and
+      // costs no wall clock at all.
+      const capturedAtDeleteTime = '2020-01-01T00:00:00.000Z';
+      final seeded = <String, String>{'row-1': capturedAtDeleteTime};
+
+      expect(
+        lwwTimestampFor('row-1', null, seeded),
+        capturedAtDeleteTime,
         reason:
             'a retry must reuse the original delete time, not a fresh '
             'now() that could spuriously win a later LWW conflict',
       );
-      expect(secondRetryAttempt, firstAttempt);
+      expect(
+        lwwTimestampFor('row-1', null, seeded),
+        capturedAtDeleteTime,
+        reason: 'and on every retry after that one',
+      );
     });
 
     test('two different deleted rows get independent timestamps', () {
@@ -601,6 +632,205 @@ void main() {
       expect(cache, hasLength(2));
     });
   });
+
+  group('lwwTimestampFor — the DURABLE delete stamp (#276: survives an app '
+      'restart with the delete still queued)', () {
+    test('a queued delete uses the timestamp captured at delete-time and '
+        'persisted on the op, not a fresh now()', () {
+      // What the op carries after `deleteWithLwwStamp` wrote it into the
+      // hidden `_metadata` column: PowerSync persists it with the queued op,
+      // so it is still there after an app restart — unlike the in-memory
+      // cache, which starts empty on every launch.
+      final cache = <String, String>{};
+
+      final result = lwwTimestampFor(
+        'row-1',
+        null,
+        cache,
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      expect(result, '2026-07-14T10:00:00.000Z');
+      // Nothing is cached for it — the durable value is authoritative, so
+      // the in-memory cache never shadows or drifts from it.
+      expect(cache, isEmpty);
+    });
+
+    test('a restart mid-retry replays the SAME timestamp — the ever-later '
+        'timestamp the in-memory cache could not prevent', () {
+      // First launch: the op uploads, fails transiently, stays queued.
+      final beforeRestart = lwwTimestampFor(
+        'row-1',
+        null,
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+      // App restarts → a brand-new connector with a brand-new empty cache.
+      final afterRestart = lwwTimestampFor(
+        'row-1',
+        null,
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      // Pinned to the exact captured value, not merely to each other: an
+      // implementation that ignored metadata and returned DateTime.now()
+      // twice would satisfy a self-equality assertion whenever both calls
+      // landed in the same millisecond.
+      expect(beforeRestart, '2026-07-14T10:00:00.000Z');
+      expect(
+        afterRestart,
+        '2026-07-14T10:00:00.000Z',
+        reason:
+            'the delete must not get a later LWW comparator just because '
+            'the app was restarted while it was still queued',
+      );
+    });
+
+    test('a put/patch payload\'s own updated_at still wins over any '
+        'metadata', () {
+      final result = lwwTimestampFor(
+        'row-1',
+        {'updated_at': '2026-07-14T09:00:00Z'},
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      expect(result, '2026-07-14T09:00:00Z');
+    });
+
+    test('a delete queued by a PRE-#276 app version (no metadata) still '
+        'falls back to the in-memory once-per-op cache', () {
+      final cache = <String, String>{};
+
+      final first = lwwTimestampFor('row-1', null, cache, metadata: null);
+      final retry = lwwTimestampFor('row-1', null, cache, metadata: null);
+
+      expect(retry, first);
+      expect(cache, hasLength(1));
+      expect(cache['row-1'], first);
+
+      // Pinned unconditionally rather than through a real-clock sleep — see
+      // the sibling test above (#705) for why the sleep was the weaker guard.
+      const capturedAtDeleteTime = '2020-01-01T00:00:00.000Z';
+
+      expect(
+        lwwTimestampFor('row-1', null, <String, String>{
+          'row-1': capturedAtDeleteTime,
+        }, metadata: null),
+        capturedAtDeleteTime,
+      );
+    });
+
+    test('an unparseable metadata string is ignored rather than sent as the '
+        'LWW comparator', () {
+      final cache = <String, String>{};
+
+      final result = lwwTimestampFor(
+        'row-1',
+        null,
+        cache,
+        metadata: 'not-a-timestamp',
+      );
+
+      expect(result, isNot('not-a-timestamp'));
+      expect(DateTime.tryParse(result), isNotNull);
+      expect(cache, hasLength(1), reason: 'fell back to the cache');
+    });
+  });
+
+  group('fetchCredentials — membership precondition (#622)', () {
+    test(
+      'no membership: returns null and issues NO request at all — the '
+      'org-scoped GET /v1/sync/token is 403 by construction before the '
+      'caller has an organization (FR-ONB-2, D-3), so it is never sent',
+      () async {
+        final client = _RecordingHttpClient();
+        final connector = BeekeepingitConnector(
+          // A perfectly good session: logged in, profile complete. What this
+          // caller does not have yet is a membership.
+          getAccessToken: () async => 'access-token',
+          hasMembership: () => false,
+          client: client,
+        );
+        addTearDown(connector.dispose);
+
+        expect(await connector.fetchCredentials(), isNull);
+
+        // THE assertion of #622: not "the 403 is handled" but "no request was
+        // sent". PowerSync's connect plus its internal retry loop turned this
+        // into ~8 consecutive 403s — one console error each — during
+        // onboarding, for a request that cannot succeed by design.
+        expect(
+          client.requests,
+          isEmpty,
+          reason: 'no sync token may be requested without an active membership',
+        );
+      },
+    );
+
+    test(
+      'with a membership: exactly one bearer-authenticated GET to the sync '
+      'token endpoint, returning those credentials (happy path intact)',
+      () async {
+        final client = _RecordingHttpClient(body: '{"token": "sync-token"}');
+        final connector = BeekeepingitConnector(
+          getAccessToken: () async => 'access-token',
+          hasMembership: () => true,
+          client: client,
+        );
+        addTearDown(connector.dispose);
+
+        final credentials = await connector.fetchCredentials();
+
+        expect(credentials, isA<PowerSyncCredentials>());
+        expect(credentials?.token, 'sync-token');
+        expect(client.requests, hasLength(1));
+        final request = client.requests.single;
+        expect(request.method, 'GET');
+        expect(request.url, Uri.parse(AppConfig.syncTokenUrl));
+        expect(request.headers['Authorization'], 'Bearer access-token');
+      },
+    );
+
+    test('logged out stays first-class: a null access token returns null and '
+        'sends nothing, membership or not', () async {
+      final client = _RecordingHttpClient();
+      final connector = BeekeepingitConnector(
+        getAccessToken: () async => null,
+        hasMembership: () => true,
+        client: client,
+      );
+      addTearDown(connector.dispose);
+
+      expect(await connector.fetchCredentials(), isNull);
+      expect(client.requests, isEmpty);
+    });
+  });
+}
+
+/// A minimal [http.Client] that records every request the connector actually
+/// sends and answers each with one canned response — so a test can assert on
+/// requests that were **not** issued (#622's actual acceptance criterion),
+/// which a stub returning a 403 could never show.
+class _RecordingHttpClient extends http.BaseClient {
+  _RecordingHttpClient({this.body = '{"token": "t"}'});
+
+  /// Answered with `200` unconditionally, on purpose: a test that stubbed the
+  /// real `403` would pass just as well against the broken behavior, since the
+  /// bug is the request being *sent*, not how its answer is handled.
+  final String body;
+  final List<http.BaseRequest> requests = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requests.add(request);
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(body)),
+      200,
+      request: request,
+    );
+  }
 }
 
 /// A minimal [http.Client] that records whether [close] was called, so

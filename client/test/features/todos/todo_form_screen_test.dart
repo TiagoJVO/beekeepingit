@@ -616,7 +616,7 @@ void main() {
           ),
         );
         await _goToEditForm(tester, repo: repo);
-        expect(find.text('Aug 1, 2026'), findsOneWidget);
+        expect(find.text('1 Aug 2026'), findsOneWidget);
 
         await _pickDayInDatePicker(
           tester,
@@ -625,8 +625,8 @@ void main() {
         );
 
         // Displayed on the field...
-        expect(find.text('Aug 15, 2026'), findsOneWidget);
-        expect(find.text('Aug 1, 2026'), findsNothing);
+        expect(find.text('15 Aug 2026'), findsOneWidget);
+        expect(find.text('1 Aug 2026'), findsNothing);
 
         // ...and persisted through save.
         await tester.tap(find.byKey(const Key('todo-save-button')));
@@ -898,4 +898,108 @@ void main() {
       );
     },
   );
+
+  /// Save-time validation parity (#597, FR-OF-2, D-12, sync.md §9): the same
+  /// evaluator and the same shared description the pre-push check runs, moved
+  /// to the moment the beekeeper presses Save.
+  group('save-time validation parity (#597)', () {
+    /// 300 'ç' are 300 characters — inside the field's 500-character
+    /// `maxLength` — and 600 UTF-8 bytes, over `todo.title`'s 500-**byte** cap.
+    final overlongTitle = 'ç' * 300;
+
+    testWidgets(
+      'a title the server would reject is caught in the form — the todo is '
+      'never created, and the offending field says why',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await _goToNewForm(tester, repo: repo);
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          overlongTitle,
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created, isEmpty);
+        expect(find.text('Title: this text is too long.'), findsOneWidget);
+        // Real text in the semantics tree, not colour alone (WCAG 2.2 AA).
+        expect(
+          tester.getSemantics(find.text('Title: this text is too long.')).label,
+          contains('too long'),
+        );
+      },
+    );
+
+    testWidgets('a valid todo still saves — the check adds no false positive', (
+      tester,
+    ) async {
+      final repo = _FakeTodosRepository();
+      await _goToNewForm(tester, repo: repo);
+      await tester.enterText(
+        find.byKey(const Key('todo-title-field')),
+        'Rever alças da Encosta',
+      );
+      await tester.enterText(
+        find.byKey(const Key('todo-description-field')),
+        'Antes da próxima colheita.',
+      );
+      await tester.tap(find.byKey(const Key('todo-save-button')));
+      await _pumpBounded(tester);
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.title, 'Rever alças da Encosta');
+    });
+
+    testWidgets(
+      'an EDIT is validated as the patch it queues, not as a full row',
+      (tester) async {
+        // #378 seen from the form: an edit queues a `patch`, where the server
+        // applies none of its `put`-only `required` rules. Validating it as a
+        // `put` would block edits the server accepts — the one direction this
+        // check must never take.
+        final repo = _FakeTodosRepository(
+          existing: const Todo(
+            id: 't1',
+            title: 'Existing todo',
+            priority: 'low',
+            status: 'open',
+          ),
+        );
+        await _goToEditForm(tester, repo: repo);
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Rever alças da Encosta',
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.updated, hasLength(1));
+        expect(repo.updated.single.title, 'Rever alças da Encosta');
+      },
+    );
+
+    testWidgets('correcting the field lets the same save through', (
+      tester,
+    ) async {
+      final repo = _FakeTodosRepository();
+      await _goToNewForm(tester, repo: repo);
+      await tester.enterText(
+        find.byKey(const Key('todo-title-field')),
+        overlongTitle,
+      );
+      await tester.tap(find.byKey(const Key('todo-save-button')));
+      await tester.pumpAndSettle();
+      expect(repo.created, isEmpty);
+
+      await tester.enterText(
+        find.byKey(const Key('todo-title-field')),
+        'Rever alças',
+      );
+      await tester.tap(find.byKey(const Key('todo-save-button')));
+      await _pumpBounded(tester);
+
+      expect(repo.created, hasLength(1));
+      expect(find.text('Title: this text is too long.'), findsNothing);
+    });
+  });
 }

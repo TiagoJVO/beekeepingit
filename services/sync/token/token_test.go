@@ -1,6 +1,7 @@
 package token_test
 
 import (
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"testing"
@@ -80,6 +81,42 @@ func TestJWKS_MatchesSigningKid(t *testing.T) {
 	}
 	if got := parsed.Headers[0].KeyID; got != jwks.Keys[0].KeyID {
 		t.Errorf("token kid %q != JWKS kid %q", got, jwks.Keys[0].KeyID)
+	}
+	// KID() is what the service logs at startup (#246) — it must name the same
+	// key, or that log line would point at the wrong thing while diagnosing a
+	// PowerSync auth rejection.
+	if m.KID() != jwks.Keys[0].KeyID {
+		t.Errorf("KID() = %q, want the JWKS kid %q", m.KID(), jwks.Keys[0].KeyID)
+	}
+}
+
+// Pins the property the startup kid log exists to expose (#246): the dev/CI
+// ephemeral key is regenerated per process, so a restarted sync pod signs with
+// a DIFFERENT kid — while the same key always yields the same kid.
+func TestKID_IsStablePerKeyAndChangesWithIt(t *testing.T) {
+	keyA, _, err := token.LoadOrGenerateKey("")
+	if err != nil {
+		t.Fatalf("generate A: %v", err)
+	}
+	keyB, _, err := token.LoadOrGenerateKey("")
+	if err != nil {
+		t.Fatalf("generate B: %v", err)
+	}
+
+	minterFor := func(k *rsa.PrivateKey) *token.Minter {
+		t.Helper()
+		m, err := token.NewMinter(k, "iss", "aud", time.Minute)
+		if err != nil {
+			t.Fatalf("NewMinter: %v", err)
+		}
+		return m
+	}
+
+	if got, want := minterFor(keyA).KID(), minterFor(keyA).KID(); got != want {
+		t.Errorf("same key produced different kids: %q vs %q", got, want)
+	}
+	if minterFor(keyA).KID() == minterFor(keyB).KID() {
+		t.Error("two independently generated keys share a kid")
 	}
 }
 

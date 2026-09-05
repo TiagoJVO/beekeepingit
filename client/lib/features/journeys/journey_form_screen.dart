@@ -9,10 +9,27 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
+import '../sync/save_time_validation.dart';
 import 'apiary_multi_select_field.dart';
 import 'journey_default_attributes_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
+
+/// The columns [JourneyFormScreen] binds to a control of its own, and can
+/// therefore put a save-time parity error against (#597).
+///
+/// Two are deliberately absent. `status` is not editable here (it changes
+/// through the close action), so an error on it would be unfixable in this
+/// form. `default_attributes` is capped in BYTES of encoded JSON server-side, a
+/// bound the defaults section cannot reach — its only free-text control is
+/// itself capped at 100 characters — so binding it would add an error surface
+/// for a failure no user can produce; it stays the pre-push pass's and the
+/// server's business, like every other rule this form does not mirror.
+///
+/// Every name here must be a real column of [JourneysRepository.draftForSave] —
+/// pinned by a test, because a column renamed there but not here would silently
+/// turn the check off for that field rather than fail anything.
+const journeyFormSyncCheckedColumns = {'name', 'main_activity_type'};
 
 /// Create a journey (#45, FR-JO-4), or — when [journeyId] is given — edit an
 /// existing one (name, main activity type, apiaries-to-visit plan) and
@@ -52,6 +69,13 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   // Journey-level subtype attribute defaults (#385) — see
   // journey_default_attributes_section.dart's own doc comment.
   final _defaultAttributes = JourneyDefaultAttributesController();
+
+  /// Whatever the save-time validation-parity check found last time [_save]
+  /// ran (#597, FR-OF-2, D-12): the same evaluator and the same shared
+  /// description the pre-push pass uses, run here so a rule the server would
+  /// break on is reported **in this form, with the journey still open**
+  /// rather than as a needs-fix card after the next push.
+  SaveTimeFieldErrors _syncErrors = const SaveTimeFieldErrors.none();
 
   @override
   void initState() {
@@ -108,13 +132,27 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
+    final name = _nameController.text.trim();
+    final defaultAttributes = _defaultAttributes.build(_mainActivityType);
+    // Run the save-time parity check BEFORE the Form's own validate(), so the
+    // field validators can read the result and report it inline (#597).
+    setState(() {
+      _syncErrors = SaveTimeFieldErrors.check(
+        JourneysRepository.draftForSave(
+          id: widget.journeyId,
+          name: name,
+          mainActivityType: _mainActivityType,
+          status: _status,
+          defaultAttributes: defaultAttributes,
+        ),
+        columns: journeyFormSyncCheckedColumns,
+      );
+    });
     if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
-      final name = _nameController.text.trim();
-      final defaultAttributes = _defaultAttributes.build(_mainActivityType);
       if (widget.isEdit) {
         await repo.update(
           widget.journeyId!,
@@ -229,8 +267,18 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
               key: _formKey,
               // Any field edit arms the unsaved-changes guard (#345); the
               // apiary multi-select below (outside the field tree) calls it
-              // directly.
-              onChanged: markUnsavedChanges,
+              // directly. It also drops the last save attempt's parity verdict
+              // (#597): the name field autovalidates on interaction, so a
+              // stale message would otherwise sit under a value the user has
+              // already corrected until they press Save again.
+              onChanged: () {
+                markUnsavedChanges();
+                if (_syncErrors.isNotEmpty) {
+                  setState(
+                    () => _syncErrors = const SaveTimeFieldErrors.none(),
+                  );
+                }
+              },
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -251,9 +299,14 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                       controller: _nameController,
                       maxLength: 200,
                       autovalidateMode: AutovalidateMode.onUserInteraction,
+                      // The form's own "required" rule first, then whatever
+                      // the shared sync description says about this column
+                      // (#597) — e.g. a name under the field's 200-character
+                      // allowance but over the server's 200-BYTE cap, which
+                      // only a save-time check can catch.
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? l10n.journeyNameRequired
-                          : null,
+                          : _syncErrors.messageFor(l10n, 'name'),
                     ),
                   ),
                   const SizedBox(height: BrandDimens.gapField),
@@ -282,6 +335,8 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                           });
                         }
                       },
+                      validator: (_) =>
+                          _syncErrors.messageFor(l10n, 'main_activity_type'),
                     ),
                   ),
                   JourneyDefaultAttributesSection(

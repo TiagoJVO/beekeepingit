@@ -1,5 +1,4 @@
-import '../todos/todo_filters.dart' show isOverdue;
-import '../todos/todo_priority.dart';
+import '../todos/todo_due.dart';
 import '../todos/todos_repository.dart';
 import 'notification_models.dart';
 
@@ -26,45 +25,6 @@ String _bucketKey(TodoDueBucket bucket) => switch (bucket) {
   TodoDueBucket.overdue => 'overdue',
 };
 
-/// How many days ahead of its due date a todo starts counting as "due soon"
-/// (#82 AC: "fire relative to the todo's due date/priority") — a higher
-/// priority todo warns earlier, since it typically needs more lead time to
-/// act on. No spec value is given anywhere in `requirements/`, so these are
-/// this story's own deliberate, simple default (documented here rather than
-/// left as a bare magic number, coding-style.md): high=3 days, medium=2,
-/// low=1. Adjusting the window later is a one-line, code-only change — the
-/// bucket *keys* persisted in `NotificationDedupState` don't encode the
-/// window width, so widening/narrowing it doesn't invalidate stored state.
-int _dueSoonWindowDays(String priority) => switch (priority) {
-  todoPriorityHigh => 3,
-  todoPriorityMedium => 2,
-  todoPriorityLow => 1,
-  _ => 1,
-};
-
-/// The due-date bucket [todo] currently falls in relative to [today], or
-/// null when it isn't due-soon/overdue at all (no due date, already done, or
-/// due further out than its own priority's window). Reuses
-/// `todo_filters.dart`'s own [isOverdue] for the overdue check (DRY,
-/// coding-style.md) rather than re-deriving "what counts as overdue" here —
-/// the Todos tab's filter and this engine must never disagree on that
-/// question.
-TodoDueBucket? _todoDueBucket(Todo todo, DateTime today) {
-  if (todo.isDone) return null;
-  final dueDate = todo.dueDate;
-  if (dueDate == null) return null;
-  if (isOverdue(todo, today)) return TodoDueBucket.overdue;
-
-  final due = DateTime.parse(dueDate);
-  final dueOnly = DateTime(due.year, due.month, due.day);
-  final todayOnly = DateTime(today.year, today.month, today.day);
-  final daysUntilDue = dueOnly.difference(todayOnly).inDays;
-  if (daysUntilDue >= 0 && daysUntilDue <= _dueSoonWindowDays(todo.priority)) {
-    return TodoDueBucket.dueSoon;
-  }
-  return null;
-}
-
 /// Detects todo due-date reminder events (#82, FR-TD-1, D-24) across
 /// [todos] — the caller's ENTIRE org-wide todo list (D-23: "assignment isn't
 /// an access boundary"), never pre-filtered by assignee, so the reminder
@@ -88,7 +48,7 @@ TodoDueComputation computeTodoDueNotifications({
   final toNotify = <AppNotification>[];
 
   for (final todo in todos) {
-    final bucket = _todoDueBucket(todo, today);
+    final bucket = todoDueBucket(todo, today);
     if (bucket == null) continue;
 
     final key = _bucketKey(bucket);

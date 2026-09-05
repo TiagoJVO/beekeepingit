@@ -133,7 +133,7 @@ func TestMiddleware_ValidToken_PopulatesClaims(t *testing.T) {
 	mw := newMiddleware(t, idp.srv.URL)
 
 	token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), map[string]any{
-		"email": "beekeeper@example.com", "email_verified": true,
+		"email": "beekeeper@example.com", "email_verified": true, "name": "Ana Silva",
 	})
 
 	var claims authn.Claims
@@ -147,6 +147,55 @@ func TestMiddleware_ValidToken_PopulatesClaims(t *testing.T) {
 	}
 	if claims.Email != "beekeeper@example.com" || !claims.EmailVerified {
 		t.Errorf("Email/EmailVerified = %q/%v, want beekeeper@example.com/true", claims.Email, claims.EmailVerified)
+	}
+	if claims.Name != "Ana Silva" {
+		t.Errorf("Name = %q, want %q", claims.Name, "Ana Silva")
+	}
+}
+
+// TestMiddleware_NameClaim_FailsSoft is the mirror image of the
+// email_verified test below, and the difference is the point. `name` is
+// DISPLAY data: the identity provider lets a user edit it freely, no claim
+// vouches for it, and nothing authorizes on it — so a malformed one must fail
+// SOFT (empty string, harmless) where email_verified fails CLOSED.
+//
+// The load-bearing assertion is the status code, not the field. A stricter
+// middleware that REJECTED a wrong-typed `name` would lock every user of a
+// mis-mapped IdP scope out of the product entirely, to protect a value used
+// only to prefill a text box (#365 follow-up, FR-ONB-1).
+func TestMiddleware_NameClaim_FailsSoft(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "claim missing", extra: map[string]any{"email": "beekeeper@example.com"}},
+		{name: "numeric", extra: map[string]any{"name": 42}},
+		{name: "null", extra: map[string]any{"name": nil}},
+		{name: "array", extra: map[string]any{"name": []any{"Ana"}}},
+		{name: "object", extra: map[string]any{"name": map[string]any{"given": "Ana"}}},
+		{name: "empty string", extra: map[string]any{"name": ""}},
+	}
+
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	mw := newMiddleware(t, idp.srv.URL)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), tc.extra)
+
+			var claims authn.Claims
+			rec := doRequest(mw, protectedHandler(&claims), "Bearer "+token)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (an odd name shape must never reject the token), body = %s",
+					rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if claims.Name != "" {
+				t.Errorf("Name = %q, want empty (fail soft) for %s", claims.Name, tc.name)
+			}
+		})
 	}
 }
 

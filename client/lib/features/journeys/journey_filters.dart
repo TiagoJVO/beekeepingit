@@ -102,6 +102,21 @@ List<Journey> filterJourneysByType(List<Journey> journeys, String? type) {
   return journeys.where((j) => j.mainActivityType == type).toList();
 }
 
+/// Keeps only journeys whose [Journey.status] equals [status], or every
+/// journey when [status] is null — the filter's cleared/default "all
+/// statuses" state, the same null-is-a-passthrough convention
+/// [filterJourneysByType] uses (#658, D-35).
+///
+/// Matches on the raw status string rather than [Journey.isOpen] so the
+/// control can offer every value in [knownJourneyStatuses] (open AND
+/// closed) without this predicate needing to know which of them exist —
+/// same extensible-vocabulary convention journey_status.dart itself
+/// documents.
+List<Journey> filterJourneysByStatus(List<Journey> journeys, String? status) {
+  if (status == null) return journeys;
+  return journeys.where((j) => j.status == status).toList();
+}
+
 /// Keeps only journeys with at least one activity (per [activitiesByJourney])
 /// whose [Activity.occurredAtDate] falls within [range], inclusive of both
 /// ends (#47 AC: "filterable by date range") — journeys carry no date of
@@ -127,17 +142,18 @@ List<Journey> filterJourneysByDateRange(
   }).toList();
 }
 
-/// Applies both filters together (#47 AC: "date-range and activity-type
-/// filters can be combined") — the two predicates are independent, so
-/// application order doesn't affect the result (mirrors activity_filters.
-/// dart's own `filterActivities`).
+/// Applies every filter together (#47 AC: "date-range and activity-type
+/// filters can be combined", plus the #658/D-35 status filter) — the
+/// predicates are independent, so application order doesn't affect the
+/// result (mirrors activity_filters.dart's own `filterActivities`).
 List<Journey> filterJourneys(
   List<Journey> journeys,
   Map<String, List<Activity>> activitiesByJourney, {
   String? type,
+  String? status,
   JourneyDateRange? dateRange,
 }) => filterJourneysByDateRange(
-  filterJourneysByType(journeys, type),
+  filterJourneysByStatus(filterJourneysByType(journeys, type), status),
   activitiesByJourney,
   dateRange,
 );
@@ -155,6 +171,20 @@ final journeyTypeFilterProvider = StateProvider.autoDispose<String?>(
 /// filter.
 final journeyDateRangeFilterProvider =
     StateProvider.autoDispose<JourneyDateRange?>((ref) => null);
+
+/// The status filter (#658, D-35), holding one of [knownJourneyStatuses] or
+/// null for "all statuses" — the same scoping (none), type (`String?`) and
+/// cleared-is-null convention as [journeyTypeFilterProvider], so the
+/// Journeys tab has one filter-state shape rather than two.
+///
+/// Defaults to null (every journey), NOT to open: the tab is the full
+/// journey list, and D-35 only asks that Home be able to hand off "the open
+/// ones" — which it does by routing to `/journeys?status=open`, seeded from
+/// inside the mounted screen (journeys_list_screen.dart's own doc explains
+/// why it cannot be written before navigating).
+final journeyStatusFilterProvider = StateProvider.autoDispose<String?>(
+  (ref) => null,
+);
 
 /// The filtered, ready-to-render state for the Journeys tab (#47) — mirrors
 /// activity_filters.dart's own `ActivitiesViewModel` split between "no
@@ -190,6 +220,7 @@ final journeysViewModelProvider =
           ref.watch(journeyPlanApiariesByJourneyProvider).value ??
           const <String, List<String>>{};
       final type = ref.watch(journeyTypeFilterProvider);
+      final status = ref.watch(journeyStatusFilterProvider);
       final dateRange = ref.watch(journeyDateRangeFilterProvider);
 
       return journeysAsync.whenData((journeys) {
@@ -198,6 +229,7 @@ final journeysViewModelProvider =
           journeys,
           activitiesByJourney,
           type: type,
+          status: status,
           dateRange: dateRange,
         );
         return JourneysViewModel(

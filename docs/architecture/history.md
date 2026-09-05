@@ -8,7 +8,7 @@
 **Issue:** #107 · **Epic:** #103 (EPIC-DESIGN) · **Milestone:** M0
 **Requirements:** FR-HIS-1, FR-TEN-2, NFR-CMP-1, NFR-ARC-1
 **Decisions:** [D-6](../../requirements/decisions.md#d-6--data--offline-sync-postgresql--postgis-sqlite-on-device-managed-sync) (schema-per-service, sync),
-[D-11](../../requirements/decisions.md#d-11--ai-write-actions-propose--confirm--owner-executes) (AI writes via owner), [D-1](../../requirements/decisions.md) (microservices)
+[D-11](../../requirements/decisions.md#d-11--ai-write-actions-propose--confirm--owner-executes) (AI writes via owner), [D-19](../../requirements/decisions.md#d-19--pteu-beekeeping--honey-traceability-obligations-scoped-hipaa-dropped) (PT/EU regulatory scope), [D-1](../../requirements/decisions.md) (microservices)
 **Questions:** **resolves [Q-HIS](../../requirements/open-questions.md)** (retention, immutability,
 visibility, offline behaviour) — now removed from open-questions; this doc + [ADR-0007](../adr/0007-history-audit.md) are its place of record
 **Depends on:** #105 (data model), #106 (sync) · **ADR:** [0007-history-audit](../adr/0007-history-audit.md)
@@ -264,8 +264,11 @@ not read as broader than it is.
 - **v1 retains history indefinitely** (it is immutable and small relative to domain data). No
   automatic purge ships in v1.
 - A **configurable retention window** and **legal-hold** semantics are **deferred to the compliance
-  epic (EPIC-14 #15)**; nothing in this design blocks adding a purge job later (it operates via the
+  epic (#586, EPIC-14 #15)**; nothing in this design blocks adding a purge job later (it operates via the
   privileged role of §7.1). Tombstone/soft-delete physical purge is the same concern.
+- **One retention _floor_ is already fixed**, though, and constrains that future purge job:
+  Treatment activities carry a ~5-year veterinary record-keeping expectation and may not be
+  physically purged inside it — §7.4.
 
 ### 7.3 GDPR / right-to-erasure — pseudonymous by construction (NFR-CMP)
 
@@ -289,6 +292,74 @@ never stores personal data in the first place:
 - **Design constraint this imposes:** the `change` delta and audit rows MUST NOT embed actor/member
   personal data — only soft ID references. Services build audit rows from IDs, not denormalized profiles.
   (This is a boundary/contract test target, NFR-TST.)
+
+### 7.4 Regulatory retention vs. erasure — Treatment activities (D-19, #295)
+
+§7.3 settles erasure for the **audit log**. It does not settle it for the **domain rows the audit
+log points at**, and for one activity type those rows carry an external retention expectation that
+pulls the opposite way from erasure. D-19 flagged the tension; this section is its reconciliation,
+owed **before the Treatment-activity work goes live** — which #291 now has.
+
+**The two obligations.**
+
+- **Erasure (GDPR Art. 17, FR-HIS-1, NFR-CMP-1).** A subject can ask for their personal data to be
+  deleted or anonymized; #90 builds that path.
+- **Veterinary record-keeping ([Reg (EU) 2019/6](https://eur-lex.europa.eu/eli/reg/2019/6/oj)).**
+  Records of veterinary medicinal product administration to food-producing animals — bees included,
+  so every varroacide or other treatment logged as a **Treatment activity** — must be kept for the
+  **longer of** 5 years from the record date or 1 year after the batch's expiry date
+  ([research note §B.7](../research/regulatory-pt-eu-beekeeping.md)).
+
+**The reconciliation, in one line:** they do not actually collide, because **the personal data and
+the regulated record are different data**, and erasure only reaches the first.
+
+1. **The retention obligation is the beekeeper's, not the app's.** Reg (EU) 2019/6 binds the
+   _keeper of the animals_. BeekeepingIT is the record-keeping tool they use, not the duty-holder.
+   So the app must not silently destroy a record its user is required to keep, and must let them
+   take it with them — but it also has no standing to refuse an erasure request by citing an
+   obligation that is not its own. The design consequence is **export-before-erase**, not
+   **retain-over-erase**: #90's erasure path must offer the org a portable export (EPIC-09 #69)
+   of its activity data _before_ it destroys anything, so the regulatory record survives with the
+   person who owes it.
+2. **A Treatment activity is not personal data.** Its regulated content — date, product, treatment
+   context, disease/condition, hive/apiary — is a record about **bees**, and D-19 already decided
+   bee-health data is ordinary, non-special-category data about an animal, not about a natural
+   person. The personal data attached to it is the **actor attribution** (`performed_by`, and the
+   audit rows in §7.3), plus whatever a user typed into **free-text notes**.
+3. **So erasure anonymizes attribution; it does not delete the treatment record.** This is exactly
+   §7.3's move, extended one layer out: scrubbing `identity.users` leaves the Treatment row intact
+   with an internal ID that no longer resolves to anyone. The record stays available for the
+   retention window, and no personal data remains in it. **Free-text `notes` is the one field this
+   reasoning does not cover** — it can contain anything, including third-party personal data — so
+   notes are in scope for #90's PII review (Q-EXPORT-PII), and the reconciliation above holds for
+   the structured attributes only.
+4. **Erasing the whole tenant is a different act, and it is the user's call.** Deleting an
+   _organization_ outright takes its Treatment activities with it. That is legitimate — the org is
+   asking for it — but it is the case where step 1's export is load-bearing rather than a courtesy,
+   because after it the app holds no copy at all. #90 should therefore treat a full-tenant erasure
+   as an explicit, confirmed, audited act with the export offered first, not as a bulk `DELETE`.
+
+**The design constraint this leaves for the deferred purge work (#586, §7.2).** v1 satisfies
+all of the above by doing nothing: deletes are soft-delete tombstones
+([data-model.md](data-model.md) §2), no physical purge ships, and history is retained indefinitely.
+The constraint bites when an automatic retention window is actually built:
+
+- A purge job **MUST NOT** physically remove a Treatment activity, its tombstone, or its `audit_log`
+  rows while it is inside the retention floor — **5 years from `occurred_at`** as the operative
+  test, since the app does not capture a product batch-expiry date and so cannot evaluate the
+  "1 year after expiry" limb. If a batch/expiry field is ever added to the Treatment attributes,
+  the floor becomes the **longer** of the two, per the regulation.
+- This is a **retention floor on one activity type**, not a legal hold on everything: other
+  activity types carry no equivalent obligation and remain purgeable under whatever window
+  #586 chooses.
+- The floor is **a constraint on physical purge only**. It does not stop a user from soft-deleting
+  a Treatment activity in the UI, and it does not stop erasure from anonymizing its attribution —
+  both leave the regulated record recoverable for its window.
+
+> **Not legal advice.** This section records how the design reconciles two requirements we have
+> written down; it does not opine on whether a given deployment meets its own regulatory duties.
+> The retention floor is a **conservative default**, deliberately set so the app is not the reason
+> a record went missing.
 
 ---
 
@@ -346,7 +417,8 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
 | Item                                                                                                                            | Status                                                                                                                                                                   | Where                                      |
 | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | Global / cross-entity audit timeline (outbox → projection)                                                                      | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1)                                                                   | future; EPIC-07 if needed                  |
-| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                                                                                            | EPIC-14 (#15)                              |
+| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                                                                                            | #586 (EPIC-14 #15)                         |
+| Treatment-activity retention floor (~5y, Reg (EU) 2019/6) vs. GDPR erasure                                                      | **Policy fixed** (#295) — anonymize attribution, never purge inside the floor; export-before-erase (§7.4)                                                                | #586 (purge) / #90 (erasure)               |
 | Diff / `changed_fields` presentation in the timeline                                                                            | **Built** (#60) — rendered as a localized "Changed: Name, Notes" sub-line; unmapped columns fall through to their raw server name                                        | EPIC-07 (#8), entity EPICs                 |
 | Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Built** for `identity`/`organizations`/`apiaries` (in-tx append on both the REST and sync-apply paths); remaining domain services follow the same pattern as they land | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
 | History view screens (per-entity timeline, EN/PT, a11y)                                                                         | **Built** for apiaries + activities (#60) — one entity-agnostic component pair (§8), local-first with a REST fallback; journeys #315, todos EPIC-05 reuse it             | EPIC-02/03/04, EPIC-07 (#8)                |
@@ -372,7 +444,9 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
   [data-model.md](data-model.md) (#105) · [sync.md](sync.md) (#106) ·
   [auth.md](auth.md) (#109, actor identity)
 - Intent: [functional-requirements.md](../../requirements/functional-requirements.md) (FR-HIS-1) ·
-  [decisions.md](../../requirements/decisions.md) (D-6, D-11) — resolves
+  [decisions.md](../../requirements/decisions.md) (D-6, D-11, D-19) — resolves
   [Q-HIS](../../requirements/open-questions.md)
+- Regulatory basis for §7.4: [regulatory-pt-eu-beekeeping.md](../research/regulatory-pt-eu-beekeeping.md)
+  §B.7 (#91) · GDPR export/erasure build: **#90** (M6) · retention/purge: **#586** (EPIC-14 #15)
 - Build: **EPIC-07 — History & Audit (#8)**
 - Last in EPIC-DESIGN's data/sync chain: #105 → #106 → **#107** → #108 (contracts) / #110 (skeleton)

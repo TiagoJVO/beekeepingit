@@ -175,8 +175,8 @@ to satisfy as more environments appear — not because fresh installs were slow.
   files it mirrored; those no longer exist, so each now points at the baseline instead. Drift
   between the two surfaces as wrong generated Go types, not as a failed migration.
 - Re-cutting a baseline is now a release-coordination step, not a refactor: it requires knowing
-  every live environment's goose version first. Recorded in `FOLLOWUPS.md` so the constraint
-  survives this PR.
+  every live environment's goose version first — §5 states that hard constraint, so it outlives
+  this PR.
 
 ## Alternatives considered
 

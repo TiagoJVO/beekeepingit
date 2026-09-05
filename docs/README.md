@@ -7,13 +7,13 @@ Written incrementally as features land.
 > stack) lives in [../requirements/](../requirements/). This folder documents what
 > _exists_ once implemented, so it stays trustworthy as the current state.
 
-The M0 walking skeleton has landed — the `identity`, `organizations`, `apiaries` and `sync`
-services plus the Flutter PWA client — so this folder now documents real as-built behavior
-alongside the **High-Level Design** from EPIC-DESIGN (#103) the build refined toward.
+This folder documents real as-built behavior alongside the **High-Level Design** from
+EPIC-DESIGN (#103) the build refined toward. What has landed so far is stated once, in the
+root [README's **Status** line](../README.md) — not repeated here.
 
 | Path                           | Contents                                                                                                                                                                                                                                                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [CODEMAPS/](CODEMAPS/)         | **Token-lean architecture maps** — routes, schemas, sync flow and dependencies as file-path + signature indexes for AI context and fast newcomer orientation; they point back to the prose below (`/ecc:update-codemaps` output)                                                     |
+| [CODEMAPS/](CODEMAPS/)         | **Token-lean architecture maps** — routes, schemas, sync flow and dependencies as file-path + signature indexes for AI context and fast newcomer orientation; they point back to the prose below (`/update-codemaps` output)                                                         |
 | [architecture/](architecture/) | System architecture — HLD now (service decomposition, C4 views, data model, API contracts, auth/authz, sync & conflict resolution, history/audit, and the [walking-skeleton slice design](architecture/walking-skeleton.md) consolidating them for M0), as-built as it's implemented |
 | [client/](client/)             | Client-specific as-built notes — e.g. [PWA installability](client/pwa-installability.md)                                                                                                                                                                                             |
 | [design/](design/)             | UI/UX design guideline — the [Melargil prototype](design/prototype.md) and the [accessibility & field-first UX checklist](design/accessibility-field-ux-checklist.md) (`D-18`, #79/#80) other epics' feature stories reuse                                                           |

@@ -25,7 +25,12 @@ CREATE TABLE apiaries.apiaries (
     -- hive_count retired (#256, 00008_baseline.sql (previously 00005_create_apiary_counters.sql)) — hive
     -- count now lives in apiary_counters, a 1-N child table keyed by
     -- counter_type, not a column here.
-    place_label     TEXT CHECK (place_label IS NULL OR char_length(place_label) <= 200)
+    place_label     TEXT CHECK (place_label IS NULL OR char_length(place_label) <= 200),
+    -- FR-AP-9 (#296, migration 00009): per-apiary OVERRIDE of the organization's
+    -- beekeeper registration-number default. NULL means "inherit the org
+    -- default" -- meaningfully distinct from an empty string, unlike the
+    -- organizations column, which has no inheritance to opt out of.
+    registration_number TEXT CHECK (registration_number IS NULL OR char_length(registration_number) <= 50)
 );
 
 -- apiary_counters — typed 1-N counters decoupled from apiaries (#256).
@@ -72,4 +77,26 @@ CREATE TABLE apiaries.audit_log (
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     changed_fields  TEXT[],
     change          JSONB NOT NULL
+);
+
+-- stock_declarations — the declared-stock log (#298, FR-AP-10, migration
+-- 00010; Portugal's "Declaração de Existências" is the motivating case).
+-- Scoped to a beekeeper registration number (FR-AP-9), not to an apiary: the
+-- real declaration covers a beekeeper's whole holding. The number is a plain
+-- text VALUE, not an FK — it is what was declared under, and must
+-- not shift if the organization's or an apiary's number is later corrected.
+-- `breakdown` is the per-apiary snapshot taken at record time, so a declaration
+-- still shows what it covered after apiaries are renamed or deleted.
+CREATE TABLE apiaries.stock_declarations (
+    id                       UUID PRIMARY KEY,
+    organization_id          UUID NOT NULL,
+    registration_number      TEXT NOT NULL DEFAULT '' CHECK (char_length(registration_number) <= 50),
+    declared_on              DATE NOT NULL,
+    total_hive_count         INTEGER NOT NULL CHECK (total_hive_count >= 0),
+    breakdown                JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes                    TEXT CHECK (notes IS NULL OR char_length(notes) <= 2000),
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL,
+    recorded_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at               TIMESTAMPTZ
 );

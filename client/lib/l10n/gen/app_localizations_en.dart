@@ -12,6 +12,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
+  String get appLogoLabel => 'BeekeepingIT logo';
+
+  @override
   String get loginPrompt =>
       'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.';
 
@@ -48,10 +51,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String hiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count hives',
+      other: '$countString hives',
       one: '1 hive',
       zero: 'No hives',
     );
@@ -60,10 +67,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String superCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count supers',
+      other: '$countString supers',
       one: '1 super',
       zero: 'No supers',
     );
@@ -78,10 +89,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String emptyHiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count empty hives',
+      other: '$countString empty hives',
       one: '1 empty hive',
       zero: 'No empty hives',
     );
@@ -90,10 +105,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String swarmCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count swarms',
+      other: '$countString swarms',
       one: '1 swarm',
       zero: 'No swarms',
     );
@@ -185,6 +204,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileGenericError => 'Something went wrong. Please try again.';
 
   @override
+  String get profileAccountEmailLabel => 'Account email';
+
+  @override
+  String get profileAccountEmailHint =>
+      'This is the email you signed in with. Change it with our sign-in provider, in a new tab.';
+
+  @override
+  String get profileManageAccountButton => 'Manage account';
+
+  @override
+  String profileAccountEmailSemantics(String email) {
+    return 'Account email: $email';
+  }
+
+  @override
   String get organizationTitle => 'Your organization';
 
   @override
@@ -210,6 +244,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String organizationSaveError(String error) {
     return 'Could not create your organization: $error';
   }
+
+  @override
+  String get organizationWaitingTitle => 'Join an organization';
+
+  @override
+  String get organizationWaitingIntro =>
+      'If someone is inviting you to their organization, you don\'t need to create one. Check again once the invitation has been sent.';
+
+  @override
+  String get organizationWaitingHint =>
+      'The invitation must be sent to the email you signed in with. Ask the organization\'s admin to invite that address.';
+
+  @override
+  String get organizationWaitingCheckButton => 'Check again';
+
+  @override
+  String get organizationWaitingChecking => 'Checking for an invitation';
+
+  @override
+  String get organizationWaitingStillNone =>
+      'No invitation yet. Try again in a moment, or create your own organization.';
+
+  @override
+  String get organizationWaitingCheckError =>
+      'Could not check for an invitation right now. Try again.';
+
+  @override
+  String get organizationWaitingCreateInsteadButton =>
+      'Create an organization instead';
+
+  @override
+  String get organizationJoinInsteadButton => 'I\'m waiting for an invitation';
+
+  @override
+  String get organizationCreateBlocksInvitationWarning =>
+      'Creating an organization means you can\'t accept an invitation to another one later. If you\'re expecting an invitation, wait for it instead.';
 
   @override
   String get membersTitle => 'Members & invitations';
@@ -313,25 +383,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activitiesTitle => 'Activities';
 
   @override
+  String get homeTitle => 'Home';
+
+  @override
   String get journeysTitle => 'Journeys';
 
   @override
   String get todosTitle => 'Todos';
-
-  @override
-  String get assistantTitle => 'Assistant';
-
-  @override
-  String get activitiesComingSoon => 'Activities — coming soon';
-
-  @override
-  String get journeysComingSoon => 'Journeys — coming soon';
-
-  @override
-  String get todosComingSoon => 'Todos — coming soon';
-
-  @override
-  String get assistantComingSoon => 'Assistant — coming soon';
 
   @override
   String get syncStatusOnline => 'Online';
@@ -462,6 +520,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Hive count change';
 
   @override
+  String get syncNeedsFixDeclarationLabel => 'Stock declaration change';
+
+  @override
   String get syncNeedsFixActivityLabel => 'Activity change';
 
   @override
@@ -481,6 +542,139 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get syncNeedsFixGenericProblem =>
       'This change was rejected and needs your attention.';
+
+  @override
+  String syncNeedsFixFieldProblem(String field, String problem) {
+    return '$field: $problem';
+  }
+
+  @override
+  String get syncNeedsFixRuleRequired => 'this is required.';
+
+  @override
+  String get syncNeedsFixRuleInvalid => 'this value isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleOutOfRange =>
+      'this value is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleTooLong => 'this text is too long.';
+
+  @override
+  String get syncNeedsFixRuleNotFound =>
+      'this no longer exists, or you no longer have access to it.';
+
+  @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'an entry here still needs filling in.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid => 'an entry here isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong => 'an entry here is too long.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'an entry here is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleNonNegative => 'this must be 0 or more.';
+
+  @override
+  String get syncNeedsFixRuleLatitudeRange =>
+      'this must be between -90 and 90.';
+
+  @override
+  String get syncNeedsFixRuleLongitudeRange =>
+      'this must be between -180 and 180.';
+
+  @override
+  String get syncNeedsFixFieldName => 'Name';
+
+  @override
+  String get syncNeedsFixFieldTitle => 'Title';
+
+  @override
+  String get syncNeedsFixFieldDescription => 'Description';
+
+  @override
+  String get syncNeedsFixFieldNotes => 'Notes';
+
+  @override
+  String get syncNeedsFixFieldPlace => 'Place label';
+
+  @override
+  String get syncNeedsFixFieldLocation => 'Location';
+
+  @override
+  String get syncNeedsFixFieldLatitude => 'Latitude';
+
+  @override
+  String get syncNeedsFixFieldLongitude => 'Longitude';
+
+  @override
+  String get syncNeedsFixFieldHiveCount => 'Number of hives';
+
+  @override
+  String get syncNeedsFixFieldCount => 'Count';
+
+  @override
+  String get syncNeedsFixFieldCountType => 'Count type';
+
+  @override
+  String get syncNeedsFixFieldApiary => 'Apiary';
+
+  @override
+  String get syncNeedsFixFieldJourney => 'Journey';
+
+  @override
+  String get syncNeedsFixFieldAssignee => 'Assignee';
+
+  @override
+  String get syncNeedsFixFieldActivityType => 'Activity type';
+
+  @override
+  String get syncNeedsFixFieldMainActivityType => 'Main activity type';
+
+  @override
+  String get syncNeedsFixFieldDate => 'Date';
+
+  @override
+  String get syncNeedsFixFieldDueDate => 'Due date';
+
+  @override
+  String get syncNeedsFixFieldCompletedAt => 'Completed at';
+
+  @override
+  String get syncNeedsFixFieldPriority => 'Priority';
+
+  @override
+  String get syncNeedsFixFieldStatus => 'Status';
+
+  @override
+  String get syncNeedsFixFieldDetails => 'Details';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
+
+  @override
+  String get syncNeedsFixFieldDeclarationDate => 'Declaration date';
+
+  @override
+  String get syncNeedsFixFieldTotalHiveCount => 'Total hives';
+
+  @override
+  String get syncNeedsFixFieldRegistrationNumber => 'Registration number';
+
+  @override
+  String get syncNeedsFixLocalProblem =>
+      'This change wasn\'t sent yet — please correct it.';
+
+  @override
+  String get syncSaveCheckGenericProblem =>
+      'This can\'t be saved as it is — please check this value.';
 
   @override
   String get syncNeedsFixFixAction => 'Fix';
@@ -688,6 +882,124 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryPlaceLabelHint => 'e.g. Montargil';
 
   @override
+  String get apiaryRegistrationNumberLabel => 'Registration number';
+
+  @override
+  String get apiaryRegistrationNumberHint =>
+      'Only if different from the organization\'s';
+
+  @override
+  String get apiaryRegistrationNumberInherited => 'From the organization';
+
+  @override
+  String get organizationDetailsTitle => 'Organization details';
+
+  @override
+  String get organizationRegistrationNumberLabel => 'Registration number';
+
+  @override
+  String get organizationRegistrationNumberHint =>
+      'The beekeeper number shown at your apiaries';
+
+  @override
+  String get organizationDetailsSaved => 'Organization details saved';
+
+  @override
+  String get organizationDetailsNoChanges => 'No changes to save';
+
+  @override
+  String get organizationDetailsSaveFailed =>
+      'Could not save the organization details';
+
+  @override
+  String get organizationDetailsSaveConflict =>
+      'Someone else changed these details. Reopen this screen to see the latest, then make your change again.';
+
+  @override
+  String get organizationDetailsAdminOnly =>
+      'Only an organization admin can change these.';
+
+  @override
+  String get stockDeclarationsTitle => 'Stock declarations';
+
+  @override
+  String get stockDeclarationsIntro =>
+      'Optional record-keeping to help with your stock-declaration obligations. The app never files anything for you.';
+
+  @override
+  String get stockDeclarationsEmpty => 'No declarations recorded yet.';
+
+  @override
+  String get stockDeclarationsNoRegistrationNumber => 'No registration number';
+
+  @override
+  String get stockDeclarationRecordAction => 'Record declaration';
+
+  @override
+  String get stockDeclarationSaved => 'Declaration recorded';
+
+  @override
+  String get stockDeclarationDeleteAction => 'Delete declaration';
+
+  @override
+  String stockDeclarationSummary(String date, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hives',
+      one: '1 hive',
+    );
+    return '$date — $_temp0';
+  }
+
+  @override
+  String stockDeclarationApiaryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries',
+      one: '1 apiary',
+      zero: 'no apiaries',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String stockDeclarationsCurrentHiveCount(int count) {
+    return 'Current hive count: $count';
+  }
+
+  @override
+  String get stockDeclarationRecordDialogTitle => 'Record declaration';
+
+  @override
+  String get stockDeclarationDateLabel => 'Declaration date';
+
+  @override
+  String get stockDeclarationNotesLabel => 'Note (optional)';
+
+  @override
+  String get stockDeclarationNotesHint =>
+      'e.g. filed on the authority\'s portal';
+
+  @override
+  String get stockDeclarationRecordDialogCancelAction => 'Cancel';
+
+  @override
+  String get stockDeclarationRecordDialogConfirmAction => 'Record';
+
+  @override
+  String stockDeclarationHiveTotal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hives',
+      one: '1 hive',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get apiaryLocationSectionLabel => 'Location';
 
   @override
@@ -782,6 +1094,55 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get treatmentContextDetectionOnlyLabel =>
       'Detection only (no treatment yet)';
+
+  @override
+  String get diseaseConditionVarroosisLabel => 'Varroosis';
+
+  @override
+  String get diseaseConditionAmericanFoulbroodLabel => 'American foulbrood';
+
+  @override
+  String get diseaseConditionEuropeanFoulbroodLabel => 'European foulbrood';
+
+  @override
+  String get diseaseConditionNosemosisLabel => 'Nosemosis';
+
+  @override
+  String get diseaseConditionAcarapisosisLabel => 'Acarapisosis';
+
+  @override
+  String get diseaseConditionSmallHiveBeetleLabel =>
+      'Aethina tumida (small hive beetle)';
+
+  @override
+  String get diseaseConditionTropilaelapsLabel => 'Tropilaelaps spp.';
+
+  @override
+  String get diseaseConditionOtherLabel => 'Other';
+
+  @override
+  String get treatmentTypeApivarAmitrazLabel => 'Apivar/amitraz';
+
+  @override
+  String get treatmentTypeOxalicAcidLabel => 'Oxalic acid';
+
+  @override
+  String get treatmentTypeThymolLabel => 'Thymol';
+
+  @override
+  String get treatmentTypeOtherLabel => 'Other';
+
+  @override
+  String get feedTypeSyrup11Label => '1:1 syrup';
+
+  @override
+  String get feedTypeSyrup21Label => '2:1 syrup';
+
+  @override
+  String get feedTypeCandiLabel => 'Candi (fondant)';
+
+  @override
+  String get feedTypePollenLabel => 'Pollen';
 
   @override
   String get newActivityTitle => 'Add activity';
@@ -957,6 +1318,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get journeyFilterTypeAll => 'All types';
+
+  @override
+  String get journeyFilterStatusLabel => 'Status';
+
+  @override
+  String get journeyFilterStatusAll => 'All statuses';
 
   @override
   String get journeyFilterDateRangeLabel => 'Date range';
@@ -1180,7 +1547,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String journeyStatsApiariesVisitedValue(int done, int planned) {
-    return '$done/$planned';
+    final intl.NumberFormat doneNumberFormat = intl.NumberFormat.decimalPattern(
+      localeName,
+    );
+    final String doneString = doneNumberFormat.format(done);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$doneString/$plannedString';
   }
 
   @override
@@ -1202,10 +1577,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String journeyStatsMissingLabel(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count apiaries missing',
+      other: '$countString apiaries missing',
       one: '1 apiary still missing',
       zero: 'All planned apiaries visited',
     );
@@ -1217,7 +1596,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String journeyStatsHivesWorkedValue(int worked, String planned) {
-    return '$worked/$planned';
+    final intl.NumberFormat workedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String workedString = workedNumberFormat.format(worked);
+
+    return '$workedString/$planned';
   }
 
   @override
@@ -1290,7 +1673,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String journeyStatsDetailTreatedSummary(int treated, int planned) {
-    return '$treated/$planned apiaries treated';
+    final intl.NumberFormat treatedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String treatedString = treatedNumberFormat.format(treated);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$treatedString/$plannedString apiaries treated';
   }
 
   @override
@@ -1635,4 +2025,152 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notificationSyncCompleted => 'All your changes are synced.';
+
+  @override
+  String get homeTasksSectionTitle => 'Tasks needing attention';
+
+  @override
+  String homeTasksCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tasks need attention',
+      one: '1 task needs attention',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTasksViewAllOverdueAction(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'View all $count overdue tasks',
+      one: 'View the 1 overdue task',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d late',
+      one: '1 d late',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days overdue',
+      one: '1 day overdue',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeTodoDueSoonBadge => 'Soon';
+
+  @override
+  String get homeTodoDueSoonLabel => 'Due soon';
+
+  @override
+  String get homeJourneysSectionTitle => 'Journeys in progress';
+
+  @override
+  String homeJourneysCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count journeys in progress',
+      one: '1 journey in progress',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeJourneysViewAllAction => 'View all journeys';
+
+  @override
+  String get homeApiariesSectionTitle => 'Not visited recently';
+
+  @override
+  String homeApiariesCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries not visited recently',
+      one: '1 apiary not visited recently',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeApiaryNeverVisitedSubtitle => 'No activity recorded yet';
+
+  @override
+  String get homeApiaryNeverVisitedBadge => 'Never';
+
+  @override
+  String homeApiaryLastVisitSubtitle(String date) {
+    return 'Last visit $date';
+  }
+
+  @override
+  String homeApiaryStaleBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d',
+      one: '1 d',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeApiaryStaleLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days since the last visit',
+      one: '1 day since the last visit',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeFirstRunMessage =>
+      'Let\'s set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.';
+
+  @override
+  String get homeFirstRunAction => 'Add your first apiary';
+
+  @override
+  String homeAllClearMessage(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'the last $days days',
+      one: 'the last day',
+    );
+    return 'Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in $_temp0.';
+  }
+
+  @override
+  String get homeUnavailableMessage =>
+      'Couldn\'t read the data stored on this device.\n\nHome can\'t show what needs your attention until that\'s fixed. Try reopening the app.';
+
+  @override
+  String get homeUnavailableNotice =>
+      'Some data couldn\'t be read on this device, so this may be incomplete.';
+}
+
+/// The translations for English, as used in the United Kingdom (`en_GB`).
+class AppLocalizationsEnGb extends AppLocalizationsEn {
+  AppLocalizationsEnGb() : super('en_GB');
 }

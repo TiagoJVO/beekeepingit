@@ -5,8 +5,10 @@ import { APIRequestContext, Browser, BrowserContext, expect, Page } from "@playw
  * verification-flow spec can reuse the same Flutter-semantics bootstrap and
  * provider-agnostic IdP form driving without duplicating it. The
  * Mailpit/invitation/token helpers moved here from verification.spec.ts when
- * the registration spec (#366) grew the same needs. Behavior is unchanged —
- * see each function's original rationale below.
+ * the registration spec (#366) grew the same needs, and `gotoSameOriginDocument`
+ * plus the content-type expectations moved here from cache-headers.spec.ts when
+ * the compression spec (#670) grew those. Behavior is unchanged — see each
+ * function's original rationale below.
  */
 
 // Shared env — the same defaults the specs used before extraction. An empty
@@ -83,6 +85,88 @@ export async function gotoAppRoot(page: Page) {
   }
 }
 
+// A same-origin document to fetch from, and NOTHING more. Extracted from
+// cache-headers.spec.ts (#621) when the compression spec (#670) grew the same
+// need — both measure what the nginx container put on the wire, and neither
+// needs Flutter to boot.
+//
+// Deliberately NOT `gotoAppRoot`: waiting up to 120s for the glass pane would
+// make any unrelated app-boot regression (PowerSync's worker, CanvasKit,
+// cross-origin isolation) report as a *header* failure and send the reader to
+// the wrong file.
+//
+// The 5xx tolerance is kept, and is not optional: on a freshly-booted k3d
+// cluster the gateway really does answer Traefik's own 502 page for a short
+// window, and we must not measure THAT origin's headers.
+//
+// Returns the document's own response, so a caller that needs a header off the
+// PWA container itself (map-tiles-csp.spec.ts reads the CSP it must enforce)
+// does not have to re-navigate to get one. Existing callers ignore it.
+export async function gotoSameOriginDocument(page: Page) {
+  const deadline = Date.now() + 60_000;
+  let lastStatus: number | null = null;
+  for (;;) {
+    const resp = await page.goto("/", { waitUntil: "domcontentloaded" }).catch(() => null);
+    lastStatus = resp?.status() ?? lastStatus;
+    if (resp != null && resp.status() < 500) return resp;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `the app origin never answered below 5xx (last HTTP status ${
+          lastStatus ?? "unknown"
+        }) — the gateway/PWA route is not ready, so no header here would be the PWA container's`,
+      );
+    }
+    await page.waitForTimeout(3_000);
+  }
+}
+
+// ── What a served path's `Content-Type` must look like ────────────────────
+//
+// Shared by cache-headers.spec.ts (#621) and compression.spec.ts (#670), which
+// both need it for the same reason: a bare `200` proves nothing against this
+// server. nginx's SPA fallback (`try_files $uri $uri/ /index.html`) answers ANY
+// miss with 200 + index.html, so a renamed, relocated or never-emitted asset
+// would leave a header assertion green while covering nothing. Pinning the
+// content-type costs no extra request and makes that collapse loud.
+//
+// `not-contains` is for the responses whose exact type is deliberately not
+// pinned — there the claim is only "this did not collapse to the fallback
+// document".
+export type ContentTypeExpectation =
+  { kind: "contains"; value: string } | { kind: "not-contains"; value: string };
+
+export const contains = (value: string): ContentTypeExpectation => ({ kind: "contains", value });
+
+export const notContains = (value: string): ContentTypeExpectation => ({
+  kind: "not-contains",
+  value,
+});
+
+// Asserts `actual` against `expectation`, with the diagnosis both specs want.
+export function expectContentType(
+  path: string,
+  expectation: ContentTypeExpectation,
+  actual: string | null,
+) {
+  const seen = actual ?? "no Content-Type at all";
+  const normalized = (actual ?? "").toLowerCase();
+  if (expectation.kind === "contains") {
+    expect(
+      normalized,
+      `${path} must be served as "${expectation.value}" (got ${seen}) — either the bundle no ` +
+        `longer emits this path, in which case try_files answered 200 with index.html and ` +
+        `everything asserted about it is vacuous, or its type changed`,
+    ).toContain(expectation.value);
+  } else {
+    expect(
+      normalized,
+      `${path} must NOT be served as "${expectation.value}" (got ${seen}) — that is nginx's ` +
+        `try_files fallback answering with index.html, i.e. the bundle no longer emits this ` +
+        `path and the assertions about it cover nothing`,
+    ).not.toContain(expectation.value);
+  }
+}
+
 // Provider-agnostic IdP login form driving. The app only redirects to the
 // discovered OIDC provider, so tests must not depend on any one provider's page
 // markup (fixed element ids like `#username`/`#kc-login`, etc.). Locate fields
@@ -94,7 +178,6 @@ export const submitButton = (page: Page) =>
   page.getByRole("button", { name: /log ?in|sign in|continue|next/i });
 
 export async function fillIfPresent(
-  page: Page,
   locator: ReturnType<Page["getByLabel"]>,
   value: string,
   timeout = 30_000,
@@ -111,8 +194,8 @@ export async function fillIfPresent(
 /**
  * Starts a login from the app and submits the given credentials on the IdP's
  * form — deliberately WITHOUT asserting where the flow lands afterwards: the
- * walking-skeleton login expects to arrive back on the Tasks tab (/todos,
- * D-29/#427), while the verification spec (#361) expects an unverified user to
+ * walking-skeleton login expects to arrive back on the Home tab (/home,
+ * D-35/#658), while the verification spec (#361) expects an unverified user to
  * be HELD at the IdP's email stage instead. Each caller asserts its own outcome.
  */
 export async function submitIdpCredentials(page: Page, user: string, pass: string) {
@@ -146,7 +229,7 @@ export async function submitAuthentikForm(page: Page, user: string, pass: string
   // page. fillIfPresent already tolerates absence, but this makes the wait
   // explicit and generous for the OIDC redirect + Authentik first paint.
   // ── Step 1: identifier (username/email) ───────────────────────────────
-  await fillIfPresent(page, page.getByLabel(/username|email/i), user);
+  await fillIfPresent(page.getByLabel(/username|email/i), user);
 
   // Two-step providers (e.g. Authentik) show the password only after the
   // identifier is submitted; a single-step page already has it, so only click
@@ -162,7 +245,7 @@ export async function submitAuthentikForm(page: Page, user: string, pass: string
   }
 
   // ── Step 2: password ──────────────────────────────────────────────────
-  await fillIfPresent(page, password, pass);
+  await fillIfPresent(password, pass);
   await submitButton(page).first().click();
 }
 
@@ -356,7 +439,7 @@ export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
 
 // A login that completed lands the user back on the app origin — the
 // onboarding gate then routes by profile/org state (/profile for a fresh
-// user, /todos — the Tasks tab, D-29/#427 — once onboarded/joined). Anything
+// user, /home — the Home tab, D-35/#658 — once onboarded/joined). Anything
 // still on the auth host means the flow didn't finish.
 export async function expectLoginCompleted(page: Page, expectedEmail: string) {
   await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });

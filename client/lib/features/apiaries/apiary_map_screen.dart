@@ -12,6 +12,7 @@ import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_info_sheet.dart';
+import 'map_tile_sources.dart';
 
 /// Default map center/zoom when there's no better signal yet (no apiaries,
 /// no user location) — mainland Portugal, since the Melargil prototype and
@@ -419,13 +420,22 @@ class _Map extends StatelessWidget {
     final points = _framedPoints;
     // Extra top/bottom padding keeps the initial fit clear of this screen's
     // own overlays — the permission-denied banner (top, when shown) and the
-    // tap-to-measure card (bottom, always) — so a marker isn't first shown
-    // obscured (and untappable) underneath either one.
+    // bottom-anchored column (attribution + tap-to-measure card) — so a
+    // marker isn't first shown obscured (and untappable) underneath either
+    // one.
+    //
+    // The bottom figure is bigger than the top one because that corner
+    // carries MORE than the measure card: the Esri/OSM attribution rides
+    // directly above it in the same Positioned column (see its own note
+    // below), and a marker's icon is anchored at its centre, so half its
+    // 60px box hangs below the point being framed. 96 only covered the card
+    // itself, which left the southernmost marker sitting under the
+    // attribution — visible, but swallowing every tap meant for the pin.
     final initialCameraFit = points.isEmpty
         ? null
         : CameraFit.bounds(
             bounds: LatLngBounds.fromPoints(points),
-            padding: const EdgeInsets.fromLTRB(48, 96, 48, 96),
+            padding: const EdgeInsets.fromLTRB(48, 96, 48, 152),
             maxZoom: _focusedZoom,
           );
     return FlutterMap(
@@ -437,21 +447,20 @@ class _Map extends StatelessWidget {
       ),
       children: [
         switch (layer) {
+          // Both templates come from map_tile_sources.dart rather than being
+          // written out here: their hosts have to be named in nginx.conf's CSP
+          // `connect-src` (flutter_map fetches tiles over package:http, i.e.
+          // XHR on web — so connect-src, not img-src), and a URL that lives in
+          // one place is a URL a test can hold that policy against. #671.
           MapLayer.satellite => TileLayer(
             key: const Key('apiary-map-tile-layer-satellite'),
-            // Esri World Imagery — no API key required for this REST tile
-            // endpoint. Note the {z}/{y}/{x} segment order: Esri's ArcGIS
-            // REST tile scheme puts the row (y) before the column (x),
-            // unlike the {z}/{x}/{y} order the OSM layer below uses.
-            urlTemplate:
-                'https://server.arcgisonline.com/ArcGIS/rest/services/'
-                'World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            userAgentPackageName: 'com.beekeepingit.client',
+            urlTemplate: satelliteTileUrlTemplate,
+            userAgentPackageName: mapTileUserAgentPackageName,
           ),
           MapLayer.streets => TileLayer(
             key: const Key('apiary-map-tile-layer-streets'),
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.beekeepingit.client',
+            urlTemplate: streetsTileUrlTemplate,
+            userAgentPackageName: mapTileUserAgentPackageName,
           ),
         },
         MarkerLayer(

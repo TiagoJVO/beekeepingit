@@ -164,14 +164,22 @@ async function typeInto(page: Page, field: ReturnType<Page["getByLabel"]>, value
 
 /**
  * Completes the FR-ONB-1 profile step (the app routes a fresh, verified user
- * here on first sign-in). The email field may arrive prefilled from the
- * first-seen profile row — overwrite it either way so the state is definite.
+ * here on first sign-in).
+ *
+ * The address is NOT typed: it is the IdP-verified one, seeded server-side
+ * from the token and rendered read-only. Asserting it is on screen before
+ * saving is therefore the live-stack regression test for the seeding itself —
+ * nothing here typed that address, so it can only have come from the token.
  */
-async function completeProfile(page: Page, name: string, email: string) {
+async function completeProfile(page: Page, name: string, expectedEmail: string) {
   await page.waitForURL(/\/profile/, { timeout: 60_000 });
   await enableSemantics(page);
   await typeInto(page, page.getByLabel("Name", { exact: true }), name);
-  await typeInto(page, page.getByLabel("Email", { exact: true }), email);
+  // Substring, not exact: the value is rendered read-only under a single
+  // combined semantics label ("Account email: <address>") rather than as bare
+  // text, so a screen reader announces it once instead of twice. The address
+  // still has to be THERE — and nothing in this test typed it.
+  await expect(page.getByText(expectedEmail, { exact: false })).toBeVisible();
   await page.getByText("Save profile", { exact: true }).click();
 }
 
@@ -273,10 +281,10 @@ test.describe("self-service registration (#366)", () => {
       // ── Onboarding proceeds as any first sign-in (AC 4, FR-ONB-1/3) ───────
       // Profile first; the org gate then auto-claims the (now claimable)
       // pending invitation on its GET /organizations/me, so the router lands
-      // on the Tasks tab (/todos, D-29/#427) — joined, not prompted to create
+      // on the Home tab (/home, D-35/#658) — joined, not prompted to create
       // an org.
       await completeProfile(page, "Reg Invitee", INVITEE_EMAIL);
-      await page.waitForURL(/\/todos/, { timeout: 60_000 });
+      await page.waitForURL(/\/home/, { timeout: 60_000 });
 
       await expect.poll(() => userToken, { timeout: 30_000 }).not.toBe("");
       const mine = await apiJson(page, userToken, "GET", "/organizations/me");
@@ -323,11 +331,11 @@ test.describe("self-service registration (#366)", () => {
     await enableSemantics(page);
     await typeInto(page, page.getByLabel("Organization name", { exact: true }), `Reg Org ${RUN}`);
     await page.getByText("Create organization", { exact: true }).click();
-    // Post-onboarding the app now lands on the Tasks tab (/todos, D-29/#427),
-    // not the apiaries list.
-    await page.waitForURL(/\/todos/, { timeout: 60_000 });
+    // Post-onboarding the app now lands on the Home tab (/home, D-35/#658) —
+    // the summary a brand-new org needs most, its Tasks list being empty.
+    await page.waitForURL(/\/home/, { timeout: 60_000 });
     await enableSemantics(page);
-    await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({
       timeout: 30_000,
     });
 

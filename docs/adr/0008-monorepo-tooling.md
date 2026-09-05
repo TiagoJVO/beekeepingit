@@ -92,7 +92,7 @@ Adopt three composable, single-binary tools plus per-language linter configs:
   **Superseded:** Renovate covers `mise.toml` pins — see #155 and
   [docs/development/tooling.md#dependency-updates](../development/tooling.md#dependency-updates).
 - **First run must normalize existing docs** to be Prettier/Markdown-clean (`task format`), a
-  one-time cost captured in [FOLLOWUPS.md](../../FOLLOWUPS.md).
+  one-time cost paid on this ADR's own branch (`#19`).
 
 ## Alternatives considered
 
@@ -113,7 +113,8 @@ Adopt three composable, single-binary tools plus per-language linter configs:
 ## Follow-ups
 
 - **EPIC-13** — per-language path-filtered CI matrices + OpenAPI lint / `oasdiff` / codegen /
-  contract tests, layered on these `task` targets (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)).
+  contract tests, layered on these `task` targets — both landed, as `#88` (CI matrices) and `#153`
+  (contract tooling).
 - **#83 landed first** (single-cluster k8s platform + Helm umbrella chart, merged ahead of this
   ADR) — reconciled here: `helm`/`kubectl`/`k3d` added to `mise.toml`, `infra/helm/**/templates/**`
   excluded from Prettier, and the repo-wide shellcheck task widened to cover `infra/cluster/*.sh`

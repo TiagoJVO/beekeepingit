@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/notifications/notification_checker.dart';
 import 'package:beekeepingit_client/features/notifications/notification_dedup_store.dart';
@@ -39,7 +40,7 @@ Widget _buildList({LocalPrefs? prefs, Locale locale = const Locale('en')}) {
     child: MaterialApp(
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: const Scaffold(body: NotificationEventTogglesList()),
     ),
   );
@@ -212,7 +213,7 @@ void main() {
         findsOneWidget,
       );
       // Sanity check this is genuinely Portuguese, not an English fallback.
-      expect(l10n.localeName, 'pt');
+      expect(l10n.localeName, 'pt_PT');
     });
   });
 }

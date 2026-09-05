@@ -514,8 +514,8 @@ adds it additively); the `powersync` publication is scoped `FOR TABLES IN SCHEMA
 apiaries, organizations` (§5.3, was `FOR ALL TABLES`); Go service images package
 a workspace-built static binary (distroless); the Flutter pin was bumped to
 3.44.4 (Dart ≥3.10, required by `powersync_core`). **Deploy-time validation
-items** (need the live cluster) are tracked in
-[`FOLLOWUPS.md`](../../FOLLOWUPS.md).
+items** (which need the live cluster) were all worked through on the slice's own
+branch (#160) — §11.1 below records the OIDC topology they settled.
 
 ### 11.1 Dev OIDC topology (resolved at live deploy)
 

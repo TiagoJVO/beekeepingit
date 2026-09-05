@@ -4,9 +4,12 @@ import 'package:uuid/uuid.dart';
 import '../../core/geo/distance.dart';
 import '../../core/l10n/diacritics.dart';
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../../core/sync/sync_op_draft.dart';
+import '../organization/organization_repository.dart';
 import 'counter_types.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
@@ -35,6 +38,7 @@ class Apiary {
     this.locationLon,
     this.locationLat,
     this.placeLabel,
+    this.registrationNumber,
     this.notes,
   });
 
@@ -44,6 +48,13 @@ class Apiary {
   final double? locationLon;
   final double? locationLat;
   final String? placeLabel;
+
+  /// The per-apiary OVERRIDE of the organization's beekeeper
+  /// registration-number default (FR-AP-9, #296). Null means "no override",
+  /// i.e. this apiary belongs to the beekeeper whose number the organization
+  /// carries -- the normal case. Resolve the number actually displayed with
+  /// [effectiveRegistrationNumber], never by reading this field alone.
+  final String? registrationNumber;
   final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
@@ -96,19 +107,77 @@ class ApiariesRepository {
       'WHERE hc.apiary_id = a.id AND hc.counter_type = \'$counterTypeHive\' '
       'ORDER BY hc.updated_at DESC LIMIT 1)';
 
-  Stream<List<Apiary>> watchAll() {
+  /// Every apiary in the caller's org, newest-created-first.
+  ///
+  /// Tenancy (FR-TEN-2) is primarily enforced by the org-scoped PowerSync
+  /// Sync Rule; the `organization_id = ? OR organization_id IS NULL` clause
+  /// is a second, defense-in-depth layer — the same convention
+  /// [TodosRepository.watchAll]/[ActivitiesRepository.watchAll]/
+  /// [JourneysRepository.watchAll] already carry, and the one this
+  /// repository was the last local read path in the client to be missing
+  /// (closed by #658, when Home became the landing screen and started
+  /// rendering apiary NAMES the moment a session opens).
+  ///
+  /// It must tolerate a just-created, not-yet-round-tripped local row (whose
+  /// `organization_id` is NULL until sync — [create] never sets it, the
+  /// server derives it from the token) while still excluding any row that
+  /// DOES carry a foreign `organization_id`. That case is not hypothetical
+  /// and needs no Sync-Rule failure to reach: nothing purges the local store
+  /// at LOGIN (the only [LocalStoreEngine.clear] call sites are logout and
+  /// membership loss), so on a shared device a previous user's replicated
+  /// rows are still on disk when the next user — possibly of another org —
+  /// signs in, and offline PowerSync never reconciles the buckets.
+  ///
+  /// [organizationId] is the caller's own org id (organization_repository.
+  /// dart's `organizationProvider`). A null value (no organization loaded
+  /// yet — the onboarding gate should make this unreachable in practice)
+  /// yields an empty stream rather than an unscoped query.
+  Stream<List<Apiary>> watchAll({required String? organizationId}) {
+    if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
-          'FROM $apiariesTable a ORDER BY a.created_at DESC, a.name',
+          'FROM $apiariesTable a '
+          'WHERE a.organization_id = ? OR a.organization_id IS NULL '
+          'ORDER BY a.created_at DESC, a.name',
+          [organizationId],
         )
         .map((rows) => rows.map(_fromRow).toList());
   }
 
-  Future<Apiary?> getById(String id) async {
+  /// One apiary by id, or null when it doesn't exist **or belongs to another
+  /// organization** — org-scoped exactly like [watchAll], and for the same
+  /// reason (#658): the detail screen this feeds is deep-linkable and is
+  /// linked into straight from Home, so an unscoped by-id read would hand
+  /// back a foreign row that the list itself refuses to show.
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
+    if (organizationId == null) return null;
     final row = await _store.getOptional(
-      'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+      'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
+      'COALESCE($_hiveCountSubquery, 0) AS hive_count '
+      'FROM $apiariesTable a WHERE a.id = ? '
+      'AND (a.organization_id = ? OR a.organization_id IS NULL)',
+      [id, organizationId],
+    );
+    return row == null ? null : _fromRow(row);
+  }
+
+  /// [update]'s own pre-read: the current values it merges its partial edit
+  /// into. Deliberately NOT org-scoped, unlike the public [getById].
+  ///
+  /// This is a write path, not a read path, and scoping only its pre-read
+  /// would be theater: the `UPDATE`/`DELETE` it precedes are themselves
+  /// by-id, and a cross-org write is authoritatively refused server-side
+  /// (the owning service derives `organization_id` from the token and never
+  /// from the payload). It would also have a real cost — an edit issued
+  /// before `organizationProvider` resolved would silently become a no-op
+  /// rather than saving. The foreign row is already unreachable through the
+  /// UI: every screen that can reach an edit gets there through [watchAll]
+  /// or [getById]/[watchById], all three of which exclude it.
+  Future<Apiary?> _currentForWrite(String id) async {
+    final row = await _store.getOptional(
+      'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
       'COALESCE($_hiveCountSubquery, 0) AS hive_count '
       'FROM $apiariesTable a WHERE a.id = ?',
       [id],
@@ -125,13 +194,18 @@ class ApiariesRepository {
   /// exist — deleted, or a stale deep link — which the caller
   /// (apiary_detail_screen.dart) already handles by bouncing back to the
   /// list.
-  Stream<Apiary?> watchById(String id) {
+  ///
+  /// Org-scoped like [watchAll]/[getById] (#658) — see [getById]'s doc for
+  /// why the by-id reads need the predicate too.
+  Stream<Apiary?> watchById(String id, {required String? organizationId}) {
+    if (organizationId == null) return Stream.value(null);
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
-          'FROM $apiariesTable a WHERE a.id = ?',
-          [id],
+          'FROM $apiariesTable a WHERE a.id = ? '
+          'AND (a.organization_id = ? OR a.organization_id IS NULL)',
+          [id, organizationId],
         )
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
   }
@@ -153,6 +227,46 @@ class ApiariesRepository {
         .map(_countersFromRows);
   }
 
+  /// The wire op a [create] (when [id] is null) or an [update] would queue for
+  /// these values — the input to the **save-time** validation-parity check
+  /// (#597, FR-OF-2, D-12, sync.md §9).
+  ///
+  /// Lives here, next to the SQL, on purpose: the column names below are the
+  /// same ones [create]'s INSERT and [update]'s UPDATE write, so a column
+  /// renamed in one has to be renamed in the other, in the same file, in the
+  /// same edit. A form supplies values, never a column-to-value mapping of its
+  /// own; the one place it does name columns is its allow-list of the columns
+  /// it binds, which a test pins to the keys this builds.
+  ///
+  /// `hive_count` is absent because this write path never touches a counter
+  /// row (#346, D-20 — counters go through [setCounter]).
+  static SyncOpDraft draftForSave({
+    String? id,
+    required String name,
+    String? notes,
+    String? placeLabel,
+    String? registrationNumber,
+    double? locationLon,
+    double? locationLat,
+  }) => SyncOpDraft(
+    // An edit rewrites the whole row, so it queues a `patch` carrying every
+    // column below; a create queues a `put`. The distinction matters — the
+    // server's `required` rules apply to `put` only (#378), so validating an
+    // edit as a `put` would reject partial updates the server accepts.
+    op: id == null ? 'put' : 'patch',
+    entityType: apiaryEntityType,
+    id: id ?? draftPlaceholderId,
+    data: {
+      'name': name,
+      'notes': notes,
+      'place_label': placeLabel,
+      'registration_number': registrationNumber,
+      'location_lon': locationLon,
+      'location_lat': locationLat,
+    },
+    updatedAt: draftUpdatedAt(),
+  );
+
   /// Creates an apiary. [locationLon]/[locationLat] (#252) are both-or-
   /// neither — a location-less create passes both null (the pre-#252
   /// default), matching the server's REST/sync-apply "both valid or both
@@ -172,6 +286,7 @@ class ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
+    String? registrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -183,9 +298,20 @@ class ApiariesRepository {
     // parent exists by the time the counter op applies.
     await _store.execute(
       'INSERT INTO $apiariesTable '
-      '(id, name, notes, place_label, location_lon, location_lat, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, name, notes, placeLabel, locationLon, locationLat, now, now],
+      '(id, name, notes, place_label, registration_number, '
+      'location_lon, location_lat, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        name,
+        notes,
+        placeLabel,
+        registrationNumber,
+        locationLon,
+        locationLat,
+        now,
+        now,
+      ],
     );
     if (hiveCount != null) {
       await _insertCounter(id, counterTypeHive, hiveCount, now);
@@ -235,27 +361,43 @@ class ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
+    String? registrationNumber,
+    bool registrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
   }) async {
-    final current = await getById(id);
+    final current = await _currentForWrite(id);
     if (current == null) return;
 
     final newName = name ?? current.name;
     final newNotes = notesProvided ? notes : current.notes;
     final newPlaceLabel = placeLabelProvided ? placeLabel : current.placeLabel;
+    final newRegistrationNumber = registrationNumberProvided
+        ? registrationNumber
+        : current.registrationNumber;
     final newLon = locationProvided ? locationLon : current.locationLon;
     final newLat = locationProvided ? locationLat : current.locationLat;
     if (newName != current.name ||
         newNotes != current.notes ||
         newPlaceLabel != current.placeLabel ||
+        newRegistrationNumber != current.registrationNumber ||
         newLon != current.locationLon ||
         newLat != current.locationLat) {
       await _store.execute(
         'UPDATE $apiariesTable SET name = ?, notes = ?, place_label = ?, '
+        'registration_number = ?, '
         'location_lon = ?, location_lat = ?, updated_at = ? WHERE id = ?',
-        [newName, newNotes, newPlaceLabel, newLon, newLat, _nowIso(), id],
+        [
+          newName,
+          newNotes,
+          newPlaceLabel,
+          newRegistrationNumber,
+          newLon,
+          newLat,
+          _nowIso(),
+          id,
+        ],
       );
     }
 
@@ -272,8 +414,13 @@ class ApiariesRepository {
   /// through the apiary row, which is gone) and inert — mirroring the
   /// server's own soft-delete treatment, where a tombstoned apiary's
   /// counter rows survive unreferenced.
+  ///
+  /// Goes through [deleteWithLwwStamp] (#276) rather than a plain
+  /// `DELETE FROM`, so the delete's LWW comparator is the moment the user
+  /// deleted — captured here and persisted with the queued op — instead of
+  /// whenever the op happens to upload.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $apiariesTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, apiariesTable, id);
 
   /// Insert-or-update of one counter row by (apiary_id, counter_type) — the
   /// client half of #256's "enforce the uniqueness by upsert semantics".
@@ -328,6 +475,7 @@ class ApiariesRepository {
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
     placeLabel: r['place_label'] as String?,
+    registrationNumber: r['registration_number'] as String?,
     notes: r['notes'] as String?,
   );
 
@@ -365,10 +513,15 @@ final apiariesRepositoryProvider = FutureProvider<ApiariesRepository>((
   return ApiariesRepository(PowerSyncLocalStore(session.db));
 });
 
-/// Live list of the org's apiaries, straight from local SQLite (offline-first).
+/// Live list of the org's apiaries, straight from local SQLite
+/// (offline-first) — depends on [organizationProvider] so the query is
+/// org-scoped in Dart as well as by the Sync Rule (#658, FR-TEN-2) and
+/// naturally re-scopes if the org context changes. Mirrors
+/// [todosStreamProvider]'s identical shape (todos_repository.dart).
 final apiariesStreamProvider = StreamProvider<List<Apiary>>((ref) async* {
   final repo = await ref.watch(apiariesRepositoryProvider.future);
-  yield* repo.watchAll();
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchAll(organizationId: org?.id);
 });
 
 /// Live counter rows for one apiary (#256) — what the detail screen's
@@ -389,7 +542,8 @@ final apiaryByIdProvider = StreamProvider.autoDispose.family<Apiary?, String>((
   apiaryId,
 ) async* {
   final repo = await ref.watch(apiariesRepositoryProvider.future);
-  yield* repo.watchById(apiaryId);
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchById(apiaryId, organizationId: org?.id);
 });
 
 /// Client-side search over the locally-synced apiary set (FR-AP-6, D-17:
