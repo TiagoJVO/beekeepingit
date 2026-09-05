@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
 import 'package:beekeepingit_client/core/sync/sync_gate.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:powersync/powersync.dart';
@@ -81,78 +82,143 @@ void main() {
     },
   );
 
+  // [TeardownGuard] is a *schedule* — "this wait does not resolve until that
+  // teardown has", "that one is fire-and-forget" — so every test in this group
+  // runs inside `fakeAsync` and advances time with `async.elapse`, exactly as
+  // `sync_gate_test.dart` does after #697/PR #704 (#705). A real
+  // `Future.delayed` window standing in for "by now the teardown must have
+  // finished" is only a lower bound on wall clock, and a `.timeout(...)`
+  // standing in for "this resolved immediately" is a real-clock deadline a
+  // starved isolate can miss while the code is perfectly correct. Under fake
+  // time the deadlines are exact, so the assertions below get stronger rather
+  // than weaker: they pin *when* each wait resolves, not merely that it
+  // eventually does.
   group('TeardownGuard (HIGH #2 — async ref.onDispose is fire-and-forget)', () {
-    test('waitForPrior resolves immediately when nothing is pending', () async {
-      final guard = TeardownGuard();
+    test('waitForPrior resolves immediately when nothing is pending', () {
+      fakeAsync((async) {
+        final guard = TeardownGuard();
+        var resolved = false;
 
-      // Would hang (and fail the test on timeout) if this incorrectly
-      // waited on something.
-      await guard.waitForPrior().timeout(const Duration(milliseconds: 200));
+        unawaited(guard.waitForPrior().then((_) => resolved = true));
+        // No `elapse`: "immediately" is zero elapsed time, not "within 200ms".
+        async.flushMicrotasks();
+
+        expect(
+          resolved,
+          isTrue,
+          reason: 'nothing is pending, so nothing may be waited on',
+        );
+      });
     });
 
     test('waitForPrior waits for a registered teardown to actually finish '
         'before returning — the fix for the dispose race: without this, the '
         "next powerSyncProvider open could race the previous instance's "
         'db.close() and trigger PowerSync\'s own "Multiple instances" '
-        'warning', () async {
-      final guard = TeardownGuard();
-      var teardownFinished = false;
+        'warning', () {
+      fakeAsync((async) {
+        final guard = TeardownGuard();
+        var teardownFinished = false;
 
-      guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        teardownFinished = true;
+        guard.registerTeardown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          teardownFinished = true;
+        });
+
+        // Immediately after registering — matches production, where the
+        // *next* provider read happens right after `ref.onDispose` fires.
+        expect(
+          teardownFinished,
+          isFalse,
+          reason: 'sanity check: the teardown really is still in flight',
+        );
+
+        var waitResolved = false;
+        unawaited(guard.waitForPrior().then((_) => waitResolved = true));
+
+        async.elapse(const Duration(milliseconds: 49));
+
+        expect(
+          waitResolved,
+          isFalse,
+          reason:
+              'waitForPrior must not return until the registered teardown '
+              'actually completed — and 1ms short of 50ms it has not',
+        );
+
+        async.elapse(const Duration(milliseconds: 1));
+
+        expect(teardownFinished, isTrue);
+        expect(
+          waitResolved,
+          isTrue,
+          reason: 'and it returns as soon as it has, at exactly 50ms',
+        );
       });
-
-      // Immediately after registering — matches production, where the
-      // *next* provider read happens right after `ref.onDispose` fires.
-      expect(
-        teardownFinished,
-        isFalse,
-        reason: 'sanity check: the teardown really is still in flight',
-      );
-
-      await guard.waitForPrior();
-
-      expect(
-        teardownFinished,
-        isTrue,
-        reason:
-            'waitForPrior must not return until the registered teardown '
-            'actually completed',
-      );
     });
 
     test('registerTeardown is fire-and-forget — it does not block the caller '
         '(mirrors ref.onDispose being a void Function())', () {
-      final guard = TeardownGuard();
-      var teardownFinished = false;
+      fakeAsync((async) {
+        final guard = TeardownGuard();
+        var teardownFinished = false;
 
-      guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(seconds: 10));
-        teardownFinished = true;
+        guard.registerTeardown(() async {
+          await Future<void>.delayed(const Duration(seconds: 10));
+          teardownFinished = true;
+        });
+
+        // registerTeardown returned synchronously without waiting for the
+        // (10-second) teardown to finish.
+        expect(teardownFinished, isFalse);
+
+        // ...and the teardown really was *started*, which the assertion above
+        // cannot tell apart from a `registerTeardown` that silently dropped
+        // it on the floor. Under real time this could not be checked without
+        // sleeping ten seconds (and the pending real `Timer` outlived the
+        // test); under fake time it costs nothing, so the mutation gap is
+        // closed rather than lived with.
+        async.elapse(const Duration(seconds: 10));
+
+        expect(
+          teardownFinished,
+          isTrue,
+          reason: 'fire-and-forget means not awaited, not never started',
+        );
       });
-
-      // registerTeardown returned synchronously without waiting for the
-      // (10-second) teardown to finish.
-      expect(teardownFinished, isFalse);
     });
 
     test('a second waitForPrior call after the first resolved does not wait '
-        'again (no stale/leaked pending future)', () async {
-      final guard = TeardownGuard();
-      guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        'again (no stale/leaked pending future)', () {
+      fakeAsync((async) {
+        final guard = TeardownGuard();
+        guard.registerTeardown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        });
+
+        var firstResolved = false;
+        unawaited(guard.waitForPrior().then((_) => firstResolved = true));
+        async.elapse(const Duration(milliseconds: 20));
+
+        expect(
+          firstResolved,
+          isTrue,
+          reason: 'sanity check: the first wait is done',
+        );
+
+        // The first teardown is done; a second call must resolve
+        // immediately rather than somehow re-waiting on it — at zero further
+        // elapsed time, which is stricter than the old "within 50ms".
+        var secondResolved = false;
+        unawaited(guard.waitForPrior().then((_) => secondResolved = true));
+        async.flushMicrotasks();
+
+        expect(secondResolved, isTrue);
       });
-
-      await guard.waitForPrior();
-
-      // The first teardown is done; a second call must resolve
-      // immediately rather than somehow re-waiting on it.
-      await guard.waitForPrior().timeout(const Duration(milliseconds: 50));
     });
 
     test('waitForPrior awaits EVERY teardown still in flight, not just the '
-        'most recently registered one', () async {
+        'most recently registered one', () {
       // The previous shape of this test only asserted that the *second*
       // teardown had run, which the old overwriting `_pending = teardown()`
       // satisfied while silently dropping the first from the wait. Two
@@ -162,28 +228,51 @@ void main() {
       // `close()` is still holding the file. The slow-then-fast ordering is
       // what makes the bug observable: with the old code `waitForPrior`
       // returned as soon as the *fast* one finished.
-      final guard = TeardownGuard();
-      final done = <String>[];
+      //
+      // Fake time lets that be asserted head-on: the wait is checked at the
+      // instant the fast teardown lands and must still be unresolved, where
+      // the old shape could only inspect the world *after* awaiting.
+      fakeAsync((async) {
+        final guard = TeardownGuard();
+        final done = <String>[];
 
-      guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        done.add('slow-first');
+        guard.registerTeardown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          done.add('slow-first');
+        });
+        guard.registerTeardown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          done.add('fast-second');
+        });
+
+        var waitResolved = false;
+        unawaited(guard.waitForPrior().then((_) => waitResolved = true));
+
+        async.elapse(const Duration(milliseconds: 5));
+
+        expect(done, <String>['fast-second']);
+        expect(
+          waitResolved,
+          isFalse,
+          reason:
+              'waitForPrior returned while an earlier teardown was still '
+              'in flight — the next PowerSyncDatabase could open against a '
+              'file the previous close() still holds',
+        );
+
+        async.elapse(const Duration(milliseconds: 54));
+
+        expect(
+          waitResolved,
+          isFalse,
+          reason: 'still 1ms short of the slow teardown',
+        );
+
+        async.elapse(const Duration(milliseconds: 1));
+
+        expect(waitResolved, isTrue);
+        expect(done, <String>['fast-second', 'slow-first']);
       });
-      guard.registerTeardown(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-        done.add('fast-second');
-      });
-
-      await guard.waitForPrior();
-
-      expect(
-        done,
-        containsAll(<String>['slow-first', 'fast-second']),
-        reason:
-            'waitForPrior returned while an earlier teardown was still '
-            'in flight — the next PowerSyncDatabase could open against a '
-            'file the previous close() still holds',
-      );
     });
   });
 
@@ -454,6 +543,22 @@ void main() {
     test('the async remainder still runs disconnect → close → disposeConnector '
         'in that order, and waitForPrior does not resolve until it has '
         'finished (the TeardownGuard contract is unchanged)', () async {
+      // Deliberately NOT on fake time, unlike the TeardownGuard group above
+      // (#705). Two reasons, and the first alone settles it:
+      //
+      // 1. This test never races a window. The two 20ms delays belong to the
+      //    injected `disconnect`/`close` fakes and the assertion waits on
+      //    `guard.waitForPrior()` — the thing itself — rather than on "surely
+      //    40ms was enough by now". A starved isolate makes it slower, never
+      //    wrong, so it has none of the lower-bound flake shape #697/#705 are
+      //    about.
+      // 2. It could not be converted anyway: `sessionTeardown`'s async
+      //    remainder opens with `await statusSub.cancel()`, and for a
+      //    `StreamController` with no `onCancel` — which is exactly the one
+      //    below — that cancel future is the root zone's, so it never
+      //    completes inside `fakeAsync` and the remainder would simply never
+      //    run. (A controller *with* an async `onCancel` does complete there;
+      //    this one has none.)
       final controller = StreamController<bool>();
       addTearDown(controller.close);
       final probe = _FakeProbe();
@@ -626,37 +731,42 @@ void main() {
     );
 
     test('autoSyncEnabled: false stops an already-running gate — a pending '
-        'backoff never fires another probe', () async {
-      final probe = _FakeProbe(result: false); // keeps backing off
-      final gate = SyncGate(
-        probe: probe,
-        onGatePassed: () async {},
-        initialBackoff: const Duration(milliseconds: 20),
-      );
-      addTearDown(gate.dispose);
-      gate.start();
-      await pumpEventQueue();
-      final callsWhileRunning = probe.checkCalls;
-      expect(
-        callsWhileRunning,
-        greaterThan(0),
-        reason: 'sanity check: the loop really is running',
-      );
+        'backoff never fires another probe', () {
+      // Fake time (#705): the old assertion was "no probe fired in the next
+      // real 60ms", three times the 20ms backoff. Under fake time the window
+      // is free, so it becomes a full hour — a loop that ignored the stop and
+      // kept probing, at any backoff length, growing or capped, would have
+      // fired dozens of probes inside it. Same property, far more of it.
+      fakeAsync((async) {
+        final probe = _FakeProbe(result: false); // keeps backing off
+        final gate = SyncGate(
+          probe: probe,
+          onGatePassed: () async {},
+          initialBackoff: const Duration(milliseconds: 20),
+        );
+        addTearDown(gate.dispose);
+        gate.start();
+        async.flushMicrotasks();
+        final callsWhileRunning = probe.checkCalls;
+        expect(
+          callsWhileRunning,
+          greaterThan(0),
+          reason: 'sanity check: the loop really is running',
+        );
 
-      applySyncPreconditions(
-        autoSyncEnabled: false,
-        hasMembership: true,
-        gate: gate,
-      );
-      // Longer than initialBackoff — if stop() failed to cancel the
-      // pending timer, another probe would fire in this window.
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+        applySyncPreconditions(
+          autoSyncEnabled: false,
+          hasMembership: true,
+          gate: gate,
+        );
+        async.elapse(const Duration(hours: 1));
 
-      expect(
-        probe.checkCalls,
-        callsWhileRunning,
-        reason: 'stop() must cancel the backoff timer',
-      );
+        expect(
+          probe.checkCalls,
+          callsWhileRunning,
+          reason: 'stop() must cancel the backoff timer',
+        );
+      });
     });
 
     test('autoSyncEnabled: true re-arms a gate previously stopped by this '
@@ -705,35 +815,39 @@ void main() {
     });
 
     test('no membership stops an already-running gate too — a pending backoff '
-        'fires no further probe (the membership-lost case, #125)', () async {
-      final probe = _FakeProbe(result: false); // keeps backing off
-      final gate = SyncGate(
-        probe: probe,
-        onGatePassed: () async {},
-        initialBackoff: const Duration(milliseconds: 20),
-      );
-      addTearDown(gate.dispose);
-      gate.start();
-      await pumpEventQueue();
-      final callsWhileRunning = probe.checkCalls;
-      expect(
-        callsWhileRunning,
-        greaterThan(0),
-        reason: 'sanity check: the loop really is running',
-      );
+        'fires no further probe (the membership-lost case, #125)', () {
+      fakeAsync((async) {
+        final probe = _FakeProbe(result: false); // keeps backing off
+        final gate = SyncGate(
+          probe: probe,
+          onGatePassed: () async {},
+          initialBackoff: const Duration(milliseconds: 20),
+        );
+        addTearDown(gate.dispose);
+        gate.start();
+        async.flushMicrotasks();
+        final callsWhileRunning = probe.checkCalls;
+        expect(
+          callsWhileRunning,
+          greaterThan(0),
+          reason: 'sanity check: the loop really is running',
+        );
 
-      applySyncPreconditions(
-        autoSyncEnabled: true,
-        hasMembership: false,
-        gate: gate,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+        applySyncPreconditions(
+          autoSyncEnabled: true,
+          hasMembership: false,
+          gate: gate,
+        );
+        // An hour of fake time, where this used to be a real 60ms window —
+        // see the sibling auto-sync test above.
+        async.elapse(const Duration(hours: 1));
 
-      expect(
-        probe.checkCalls,
-        callsWhileRunning,
-        reason: 'losing the membership must cancel the backoff timer too',
-      );
+        expect(
+          probe.checkCalls,
+          callsWhileRunning,
+          reason: 'losing the membership must cancel the backoff timer too',
+        );
+      });
     });
 
     test('membership gained: a gate stopped for lack of one starts probing AND '
@@ -877,32 +991,34 @@ void main() {
     });
 
     test('false: remembers the loss AND stops the gate — a pending backoff '
-        'fires no further probe (#125 membership loss)', () async {
-      final probe = _FakeProbe(result: false); // keeps backing off
-      final gate = SyncGate(
-        probe: probe,
-        onGatePassed: () async {},
-        initialBackoff: const Duration(milliseconds: 20),
-      );
-      addTearDown(gate.dispose);
-      gate.start();
-      await pumpEventQueue();
-      final callsWhileRunning = probe.checkCalls;
-      expect(callsWhileRunning, greaterThan(0), reason: 'sanity check');
-      bool? remembered;
+        'fires no further probe (#125 membership loss)', () {
+      fakeAsync((async) {
+        final probe = _FakeProbe(result: false); // keeps backing off
+        final gate = SyncGate(
+          probe: probe,
+          onGatePassed: () async {},
+          initialBackoff: const Duration(milliseconds: 20),
+        );
+        addTearDown(gate.dispose);
+        gate.start();
+        async.flushMicrotasks();
+        final callsWhileRunning = probe.checkCalls;
+        expect(callsWhileRunning, greaterThan(0), reason: 'sanity check');
+        bool? remembered;
 
-      final handler = membershipChangeHandler(
-        rememberMembership: (has) => remembered = has,
-        autoSyncEnabled: () => true,
-        gate: gate,
-      );
-      handler(false);
-      // Longer than initialBackoff — a stop that failed to cancel the pending
-      // timer would fire another probe inside this window.
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+        final handler = membershipChangeHandler(
+          rememberMembership: (has) => remembered = has,
+          autoSyncEnabled: () => true,
+          gate: gate,
+        );
+        handler(false);
+        // An hour of fake time, where this used to be a real 60ms window —
+        // a loop that ignored the stop would fire many probes inside it.
+        async.elapse(const Duration(hours: 1));
 
-      expect(remembered, isFalse);
-      expect(probe.checkCalls, callsWhileRunning);
+        expect(remembered, isFalse);
+        expect(probe.checkCalls, callsWhileRunning);
+      });
     });
 
     test('auto-sync off: still remembers the membership (the connector reads '
