@@ -13,6 +13,7 @@ import '../organization/organization_repository.dart';
 import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
 import 'apiary_location_picker_screen.dart';
+import 'map_tile_sources.dart';
 
 /// Default map-picker center/zoom when no location is set yet — same
 /// mainland-Portugal default as apiary_map_screen.dart's `_fallbackCenter`
@@ -837,10 +838,10 @@ class _LocationPicker extends StatelessWidget {
                 children: [
                   TileLayer(
                     key: const Key('apiary-location-picker-tile-layer'),
-                    urlTemplate:
-                        'https://server.arcgisonline.com/ArcGIS/rest/services/'
-                        'World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    userAgentPackageName: 'com.beekeepingit.client',
+                    // map_tile_sources.dart, not a literal: nginx.conf's CSP
+                    // `connect-src` has to name this host (#671).
+                    urlTemplate: satelliteTileUrlTemplate,
+                    userAgentPackageName: mapTileUserAgentPackageName,
                   ),
                   if (location != null)
                     MarkerLayer(
