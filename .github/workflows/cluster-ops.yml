@@ -140,7 +140,7 @@ jobs:
       - name: Set up toolchains from mise.toml (infra tools only)
         id: mise
         continue-on-error: true
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: kubectl helm aqua:scaleway/scaleway-cli
 
@@ -154,7 +154,7 @@ jobs:
       # again. A second failure fails the job, as it should.
       - name: Set up toolchains from mise.toml (infra tools only) (retry)
         if: steps.mise.outcome == 'failure'
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: kubectl helm aqua:scaleway/scaleway-cli
 

@@ -13,7 +13,7 @@ replace github.com/TiagoJVO/beekeepingit/services/servicetemplate => ../servicet
 require (
 	github.com/TiagoJVO/beekeepingit/services/servicetemplate v0.0.0-00010101000000-000000000000
 	github.com/TiagoJVO/beekeepingit/services/shared v0.0.0-20260705151231-aba1357e5333
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
