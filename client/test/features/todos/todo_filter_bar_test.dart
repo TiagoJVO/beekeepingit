@@ -74,9 +74,8 @@ Widget _buildBar({
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: kSupportedLocales,
     builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(
-        context,
-      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(textScale)),
       child: child!,
     ),
     home: Scaffold(

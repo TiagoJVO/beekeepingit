@@ -161,39 +161,36 @@ void main() {
       },
     );
 
-    test(
-      'the reminder audience is org-wide: assignee never gates the notification',
-      () {
-        final todos = [
-          _todo(
-            id: 'mine',
-            assigneeId: 'me',
-            dueDate: _isoDate(today.subtract(const Duration(days: 1))),
-          ),
-          _todo(
-            id: 'someone-elses',
-            assigneeId: 'someone-else',
-            dueDate: _isoDate(today.subtract(const Duration(days: 1))),
-          ),
-          _todo(
-            id: 'unassigned',
-            dueDate: _isoDate(today.subtract(const Duration(days: 1))),
-          ),
-        ];
+    test('the reminder audience is org-wide: assignee never gates the notification', () {
+      final todos = [
+        _todo(
+          id: 'mine',
+          assigneeId: 'me',
+          dueDate: _isoDate(today.subtract(const Duration(days: 1))),
+        ),
+        _todo(
+          id: 'someone-elses',
+          assigneeId: 'someone-else',
+          dueDate: _isoDate(today.subtract(const Duration(days: 1))),
+        ),
+        _todo(
+          id: 'unassigned',
+          dueDate: _isoDate(today.subtract(const Duration(days: 1))),
+        ),
+      ];
 
-        final result = computeTodoDueNotifications(
-          todos: todos,
-          today: today,
-          previousBuckets: const {},
-        );
+      final result = computeTodoDueNotifications(
+        todos: todos,
+        today: today,
+        previousBuckets: const {},
+      );
 
-        final notifiedIds = result.toNotify
-            .cast<TodoDueAppNotification>()
-            .map((n) => n.todoId)
-            .toSet();
-        expect(notifiedIds, {'mine', 'someone-elses', 'unassigned'});
-      },
-    );
+      final notifiedIds = result.toNotify
+          .cast<TodoDueAppNotification>()
+          .map((n) => n.todoId)
+          .toSet();
+      expect(notifiedIds, {'mine', 'someone-elses', 'unassigned'});
+    });
   });
 
   group(
@@ -222,38 +219,35 @@ void main() {
         expect(second.toNotify, isEmpty);
       });
 
-      test(
-        'crossing from due-soon into overdue re-notifies (a genuine state change)',
-        () {
-          final dueSoonTodo = _todo(
-            id: 't1',
-            priority: todoPriorityHigh,
-            dueDate: _isoDate(today.add(const Duration(days: 2))),
-          );
-          final firstCheck = computeTodoDueNotifications(
-            todos: [dueSoonTodo],
-            today: today,
-            previousBuckets: const {},
-          );
-          expect(firstCheck.nextBuckets['t1'], 'due_soon');
+      test('crossing from due-soon into overdue re-notifies (a genuine state change)', () {
+        final dueSoonTodo = _todo(
+          id: 't1',
+          priority: todoPriorityHigh,
+          dueDate: _isoDate(today.add(const Duration(days: 2))),
+        );
+        final firstCheck = computeTodoDueNotifications(
+          todos: [dueSoonTodo],
+          today: today,
+          previousBuckets: const {},
+        );
+        expect(firstCheck.nextBuckets['t1'], 'due_soon');
 
-          // Two days later, still with the same (now-past) due date: overdue.
-          final laterToday = today.add(const Duration(days: 3));
-          final secondCheck = computeTodoDueNotifications(
-            todos: [dueSoonTodo],
-            today: laterToday,
-            previousBuckets: firstCheck.nextBuckets,
-          );
+        // Two days later, still with the same (now-past) due date: overdue.
+        final laterToday = today.add(const Duration(days: 3));
+        final secondCheck = computeTodoDueNotifications(
+          todos: [dueSoonTodo],
+          today: laterToday,
+          previousBuckets: firstCheck.nextBuckets,
+        );
 
-          expect(secondCheck.toNotify, [
-            TodoDueAppNotification(
-              todoId: 't1',
-              title: dueSoonTodo.title,
-              bucket: TodoDueBucket.overdue,
-            ),
-          ]);
-        },
-      );
+        expect(secondCheck.toNotify, [
+          TodoDueAppNotification(
+            todoId: 't1',
+            title: dueSoonTodo.title,
+            bucket: TodoDueBucket.overdue,
+          ),
+        ]);
+      });
 
       test(
         'a todo that leaves the due-soon/overdue window (completed) drops its '

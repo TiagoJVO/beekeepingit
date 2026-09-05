@@ -93,9 +93,9 @@ class LocalizedNumberInput {
   /// space, say) never becomes one here.
   static final Set<String> _shippedDecimalSeparators = {
     for (final locale in kSupportedLocales)
-      intl.NumberFormat.decimalPattern(
-        locale.toLanguageTag(),
-      ).symbols.DECIMAL_SEP,
+      intl.NumberFormat.decimalPattern(locale.toLanguageTag())
+          .symbols
+          .DECIMAL_SEP,
   };
 
   /// The separator characters [parseDouble]/[parseInt] will even look at:

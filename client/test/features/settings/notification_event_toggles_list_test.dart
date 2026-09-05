@@ -82,9 +82,8 @@ void main() {
       tester,
     ) async {
       final prefs = _FakeLocalPrefs();
-      NotificationPreferencesRepository(
-        prefs: prefs,
-      ).setEnabled(notificationEventSyncFailure, false);
+      NotificationPreferencesRepository(prefs: prefs)
+          .setEnabled(notificationEventSyncFailure, false);
 
       await tester.pumpWidget(_buildList(prefs: prefs));
       await tester.pumpAndSettle();

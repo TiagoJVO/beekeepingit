@@ -54,9 +54,8 @@ class ActivitiesListScreen extends ConsumerWidget {
           onDateRangeChanged: (v) =>
               ref
                       .read(
-                        activityDateRangeFilterProvider(
-                          allActivitiesScope,
-                        ).notifier,
+                        activityDateRangeFilterProvider(allActivitiesScope)
+                            .notifier,
                       )
                       .state =
                   v,

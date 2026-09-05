@@ -82,8 +82,7 @@ Organization _organizationFixture() => Organization(
   name: 'Dev Apiary Co.',
   address: '',
   createdBy: 'u1',
-  role:
-      'admin', // not under test here — this fixture only exercises has-org routing
+  role: 'admin', // not under test here — this fixture only exercises has-org routing
   createdAt: DateTime.utc(2026, 1, 1),
   updatedAt: DateTime.utc(2026, 1, 1),
 );

@@ -497,32 +497,26 @@ void main() {
         );
       });
 
-      testWidgets(
-        'treatment only shows the disease field once a disease-tied context is chosen '
-        '(conditional requirement, D-19)',
-        (tester) async {
-          await _openAddActivityForm(tester);
+      testWidgets('treatment only shows the disease field once a disease-tied context is chosen '
+          '(conditional requirement, D-19)', (tester) async {
+        await _openAddActivityForm(tester);
 
-          await tester.tap(find.byKey(const Key('activity-type-field')));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Treatment').last);
-          await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('activity-type-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Treatment').last);
+        await tester.pumpAndSettle();
 
-          expect(find.byKey(const Key('activity-disease-field')), findsNothing);
+        expect(find.byKey(const Key('activity-disease-field')), findsNothing);
 
-          await tester.tap(
-            find.byKey(const Key('activity-treatment-context-field')),
-          );
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Specific disease/condition').last);
-          await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('activity-treatment-context-field')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Specific disease/condition').last);
+        await tester.pumpAndSettle();
 
-          expect(
-            find.byKey(const Key('activity-disease-field')),
-            findsOneWidget,
-          );
-        },
-      );
+        expect(find.byKey(const Key('activity-disease-field')), findsOneWidget);
+      });
 
       testWidgets(
         'the disease field is a dropdown populated from the DGAV-DDO-informed '
@@ -697,85 +691,76 @@ void main() {
       },
     );
 
-    testWidgets(
-      'a failing apiary lookup leaves the field empty and the form usable, '
-      'never blocking or crashing',
-      (tester) async {
-        await tester.pumpWidget(
-          _buildApp(
-            repo: _FakeActivitiesRepository(),
-            apiariesRepo: _FakeApiariesRepository(
-              _apiary,
-              throwOnGetById: true,
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('a failing apiary lookup leaves the field empty and the form usable, '
+        'never blocking or crashing', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          repo: _FakeActivitiesRepository(),
+          apiariesRepo: _FakeApiariesRepository(_apiary, throwOnGetById: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        // The form rendered and is usable; the prefill just no-op'd.
-        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
-        expect(
-          tester
-              .widget<TextFormField>(
-                find.byKey(const Key('activity-hives-involved-field')),
-              )
-              .controller!
-              .text,
-          isEmpty,
-        );
-        expect(tester.takeException(), isNull);
-      },
-    );
+      // The form rendered and is usable; the prefill just no-op'd.
+      expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const Key('activity-hives-involved-field')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+      expect(tester.takeException(), isNull);
+    });
 
-    testWidgets(
-      'a since-deleted apiary (getById returns null) leaves the field empty, '
-      'no crash',
-      (tester) async {
-        await tester.pumpWidget(
-          _buildApp(
-            repo: _FakeActivitiesRepository(),
-            apiariesRepo: _FakeApiariesRepository(null),
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('a since-deleted apiary (getById returns null) leaves the field empty, '
+        'no crash', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          repo: _FakeActivitiesRepository(),
+          apiariesRepo: _FakeApiariesRepository(null),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
-        expect(
-          tester
-              .widget<TextFormField>(
-                find.byKey(const Key('activity-hives-involved-field')),
-              )
-              .controller!
-              .text,
-          isEmpty,
-        );
-        expect(tester.takeException(), isNull);
-      },
-    );
+      expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const Key('activity-hives-involved-field')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('required-field validation before save (#39 AC)', () {
@@ -1320,74 +1305,63 @@ void main() {
       },
     );
 
-    testWidgets(
-      'switch: picking a different matching open journey from the picker '
-      'replaces the auto-selected one',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('switch: picking a different matching open journey from the picker '
+        'replaces the auto-selected one', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(
-          matches: [openJourney, otherOpenJourney],
-        );
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(
+        matches: [openJourney, otherOpenJourney],
+      );
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        // Initially auto-selected to the first match.
-        expect(find.text('Spring Harvest Round'), findsOneWidget);
+      // Initially auto-selected to the first match.
+      expect(find.text('Spring Harvest Round'), findsOneWidget);
 
-        await tester.tap(
-          find.byKey(const Key('activity-journey-change-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('journey-picker-option-j1')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const Key('journey-picker-option-j2')),
-          findsOneWidget,
-        );
+      expect(find.byKey(const Key('journey-picker-option-j1')), findsOneWidget);
+      expect(find.byKey(const Key('journey-picker-option-j2')), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+      await tester.pumpAndSettle();
 
-        expect(find.text('Second Harvest Round'), findsOneWidget);
+      expect(find.text('Second Harvest Round'), findsOneWidget);
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.journeyId, 'j2');
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, 'j2');
+    });
 
     testWidgets(
       'unplanned journeys (#440, D-31): hidden by default, revealed by the '
@@ -1585,270 +1559,247 @@ void main() {
       },
     );
 
-    testWidgets(
-      'closed journeys are hidden by default in the picker, revealed by '
-      'the "show hidden journeys" toggle',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('closed journeys are hidden by default in the picker, revealed by '
+        'the "show hidden journeys" toggle', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
-        await tester.pumpWidget(
-          _buildApp(
-            repo: _FakeActivitiesRepository(),
-            journeysRepo: journeysRepo,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+      await tester.pumpWidget(
+        _buildApp(
+          repo: _FakeActivitiesRepository(),
+          journeysRepo: journeysRepo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        // No open matches -> auto-match miss even though a closed one exists.
-        expect(find.text('No journey attached'), findsOneWidget);
+      // No open matches -> auto-match miss even though a closed one exists.
+      expect(find.text('No journey attached'), findsOneWidget);
 
-        await tester.tap(
-          find.byKey(const Key('activity-journey-change-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('journey-picker-option-j3')), findsNothing);
-        expect(
-          find.byKey(const Key('journey-picker-show-hidden-toggle')),
-          findsOneWidget,
-        );
+      expect(find.byKey(const Key('journey-picker-option-j3')), findsNothing);
+      expect(
+        find.byKey(const Key('journey-picker-show-hidden-toggle')),
+        findsOneWidget,
+      );
 
-        await tester.tap(
-          find.byKey(const Key('journey-picker-show-hidden-toggle')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-picker-show-hidden-toggle')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('journey-picker-option-j3')),
-          findsOneWidget,
-        );
-      },
-    );
+      expect(find.byKey(const Key('journey-picker-option-j3')), findsOneWidget);
+    });
 
-    testWidgets(
-      'closed-journey confirm: saving against a selected closed journey '
-      'shows a confirm dialog; cancel aborts the save',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('closed-journey confirm: saving against a selected closed journey '
+        'shows a confirm dialog; cancel aborts the save', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('activity-journey-change-button')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('journey-picker-show-hidden-toggle')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-picker-show-hidden-toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+      await tester.pumpAndSettle();
 
-        expect(find.text('Last Season'), findsOneWidget);
+      expect(find.text('Last Season'), findsOneWidget);
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('activity-closed-journey-confirm-dialog')),
-          findsOneWidget,
-        );
-        expect(repo.created, isEmpty);
+      expect(
+        find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+        findsOneWidget,
+      );
+      expect(repo.created, isEmpty);
 
-        await tester.tap(
-          find.byKey(const Key('activity-closed-journey-confirm-cancel')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('activity-closed-journey-confirm-cancel')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('activity-closed-journey-confirm-dialog')),
-          findsNothing,
-        );
-        expect(repo.created, isEmpty);
-        // Canceling stays on the form, nothing saved.
-        expect(find.byKey(const Key('activity-save-button')), findsOneWidget);
-      },
-    );
+      expect(
+        find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+        findsNothing,
+      );
+      expect(repo.created, isEmpty);
+      // Canceling stays on the form, nothing saved.
+      expect(find.byKey(const Key('activity-save-button')), findsOneWidget);
+    });
 
-    testWidgets(
-      'closed-journey confirm: confirming "add anyway" saves the activity '
-      'with the closed journey_id',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('closed-journey confirm: confirming "add anyway" saves the activity '
+        'with the closed journey_id', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('activity-journey-change-button')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('journey-picker-show-hidden-toggle')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-picker-show-hidden-toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+      await tester.pumpAndSettle();
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('activity-closed-journey-confirm-add')),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(
+        find.byKey(const Key('activity-closed-journey-confirm-add')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.journeyId, 'j3');
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, 'j3');
+    });
 
-    testWidgets(
-      'inline create: creating a new journey from the picker attaches it '
-      'to the activity being saved',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('inline create: creating a new journey from the picker attaches it '
+        'to the activity being saved', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository();
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository();
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('activity-journey-change-button')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('journey-picker-create-new-option')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-picker-create-new-option')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('journey-quick-create-name-field')),
-          findsOneWidget,
-        );
-        await tester.enterText(
-          find.byKey(const Key('journey-quick-create-name-field')),
-          'Brand New Journey',
-        );
-        await tester.tap(
-          find.byKey(const Key('journey-quick-create-save-button')),
-        );
-        await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('journey-quick-create-name-field')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const Key('journey-quick-create-name-field')),
+        'Brand New Journey',
+      );
+      await tester.tap(
+        find.byKey(const Key('journey-quick-create-save-button')),
+      );
+      await tester.pumpAndSettle();
 
-        // Quick-create sheet closed, back on the activity form, showing the
-        // just-created journey attached (name known immediately, before the
-        // (fake, static) matches list would ever reflect it).
-        expect(find.text('Brand New Journey'), findsOneWidget);
-        expect(journeysRepo.created, hasLength(1));
-        expect(journeysRepo.created.single.name, 'Brand New Journey');
-        expect(journeysRepo.created.single.apiaryIds, ['a1']);
-        expect(journeysRepo.created.single.mainActivityType, 'harvest');
+      // Quick-create sheet closed, back on the activity form, showing the
+      // just-created journey attached (name known immediately, before the
+      // (fake, static) matches list would ever reflect it).
+      expect(find.text('Brand New Journey'), findsOneWidget);
+      expect(journeysRepo.created, hasLength(1));
+      expect(journeysRepo.created.single.name, 'Brand New Journey');
+      expect(journeysRepo.created.single.apiaryIds, ['a1']);
+      expect(journeysRepo.created.single.mainActivityType, 'harvest');
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.journeyId, 'new-journey-0');
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, 'new-journey-0');
+    });
 
     testWidgets(
       'the "Create a new journey" row uses the accent (tertiary) color, not '

@@ -206,18 +206,16 @@ Map<String, List<String>> _declaredFontFamilies(String pubspecSource) {
     if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
     if (!line.startsWith('    ')) break;
 
-    final family = RegExp(
-      r'''^\s*-\s*family:\s*["']?(.+?)["']?\s*$''',
-    ).firstMatch(line);
+    final family = RegExp(r'''^\s*-\s*family:\s*["']?(.+?)["']?\s*$''')
+        .firstMatch(line);
     if (family != null) {
       // The regexes above cannot match without capturing group 1.
       current = family.group(1)!;
       families[current] = <String>[];
       continue;
     }
-    final asset = RegExp(
-      r'''^\s*-\s*asset:\s*["']?(.+?)["']?\s*$''',
-    ).firstMatch(line);
+    final asset = RegExp(r'''^\s*-\s*asset:\s*["']?(.+?)["']?\s*$''')
+        .firstMatch(line);
     if (asset != null && current != null) {
       families[current]!.add(asset.group(1)!);
     }
@@ -245,9 +243,8 @@ String _regularFaceOf(Map<String, List<String>> families, String family) {
 
 /// The `fontFallbackBaseUrl` [bootstrapSource] pins the web engine to.
 String _pinnedFallbackBaseUrl(String bootstrapSource) {
-  final match = RegExp(
-    r'''fontFallbackBaseUrl\s*:\s*["']([^"']*)["']''',
-  ).firstMatch(bootstrapSource);
+  final match = RegExp(r'''fontFallbackBaseUrl\s*:\s*["']([^"']*)["']''')
+      .firstMatch(bootstrapSource);
   if (match == null) {
     fail(
       'web/flutter_bootstrap.js does not set fontFallbackBaseUrl. Unset, the '

@@ -664,9 +664,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        NotificationPreferencesRepository(
-          prefs: prefs,
-        ).isEnabled(notificationEventSyncFailure),
+        NotificationPreferencesRepository(prefs: prefs)
+            .isEnabled(notificationEventSyncFailure),
         isFalse,
       );
     });

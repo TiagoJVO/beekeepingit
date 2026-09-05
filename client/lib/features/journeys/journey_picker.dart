@@ -194,9 +194,9 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                       children: [
                         _NoJourneyTile(
                           selected: widget.currentJourneyId == null,
-                          onTap: () => Navigator.of(
-                            context,
-                          ).pop(const JourneyPickerNone()),
+                          onTap: () =>
+                              Navigator.of(context)
+                                  .pop(const JourneyPickerNone()),
                         ),
                         if (candidates.open.isEmpty && !_showHidden)
                           Padding(
@@ -214,9 +214,9 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                           _JourneyTile(
                             journey: journey,
                             selected: journey.id == widget.currentJourneyId,
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pop(JourneyPickerSelected(journey.id)),
+                            onTap: () =>
+                                Navigator.of(context)
+                                    .pop(JourneyPickerSelected(journey.id)),
                           ),
                         if (candidates.closed.isNotEmpty) ...[
                           Divider(color: context.brand.cardBorder),
@@ -231,9 +231,9 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                               _JourneyTile(
                                 journey: journey,
                                 selected: journey.id == widget.currentJourneyId,
-                                onTap: () => Navigator.of(
-                                  context,
-                                ).pop(JourneyPickerSelected(journey.id)),
+                                onTap: () =>
+                                    Navigator.of(context)
+                                        .pop(JourneyPickerSelected(journey.id)),
                               ),
                         ],
                         if (unplanned.isNotEmpty) ...[
@@ -263,9 +263,9 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                         ],
                         Divider(color: context.brand.cardBorder),
                         _CreateJourneyTile(
-                          onTap: () => Navigator.of(
-                            context,
-                          ).pop(const JourneyPickerCreateNew()),
+                          onTap: () =>
+                              Navigator.of(context)
+                                  .pop(const JourneyPickerCreateNew()),
                         ),
                       ],
                     ),

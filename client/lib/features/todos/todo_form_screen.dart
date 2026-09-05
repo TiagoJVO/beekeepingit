@@ -145,9 +145,8 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.todoLoadError('$e'))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.todoLoadError('$e'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

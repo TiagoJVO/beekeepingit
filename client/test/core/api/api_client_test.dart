@@ -320,9 +320,8 @@ class _TrackingClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
-    return MockClient(
-      (req) async => http.Response('{}', 200, request: req),
-    ).send(request);
+    return MockClient((req) async => http.Response('{}', 200, request: req))
+        .send(request);
   }
 
   @override

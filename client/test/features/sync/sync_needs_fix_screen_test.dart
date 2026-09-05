@@ -55,8 +55,7 @@ void main() {
           _row(
             id: 'r1',
             entityType: 'apiary',
-            errorDetail:
-                '{"detail":"one or more ops are invalid","errors":[{"field":"data.hive_count","code":"out_of_range","message":"hive_count must be >= 0"}]}',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[{"field":"data.hive_count","code":"out_of_range","message":"hive_count must be >= 0"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
@@ -137,8 +136,7 @@ void main() {
           _row(
             id: 'r1',
             entityType: 'apiary',
-            errorDetail:
-                '{"detail":"one or more ops are invalid","errors":[{"field":"data.registration_number","code":"too_long","message":"registration_number must be at most 50 characters"}]}',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[{"field":"data.registration_number","code":"too_long","message":"registration_number must be at most 50 characters"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
@@ -160,8 +158,7 @@ void main() {
           _row(
             id: 'r1',
             entityType: 'apiary',
-            errorDetail:
-                '{"detail":"one or more ops are invalid","errors":[{"field":"data.internal_column","code":"invalid","message":"internal_column must be a widget"}]}',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[{"field":"data.internal_column","code":"invalid","message":"internal_column must be a widget"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
@@ -175,31 +172,33 @@ void main() {
       },
     );
 
-    testWidgets('a malformed error_detail still renders the row with the generic '
-        'message rather than throwing or losing the edit', (tester) async {
-      final store = _FakeRejectedStore([
-        _row(id: 'r1', entityType: 'apiary', errorDetail: 'not json at all'),
-        // Well-formed JSON, but an errors[] entry missing its `code`: the
-        // entry is skipped rather than defaulted, so it can't masquerade
-        // as a real issue — and it can't take the whole row down with it.
-        _row(
-          id: 'r2',
-          entityType: 'apiary',
-          errorDetail:
-              '{"detail":"x","errors":[{"field":"data.name","message":"name is required"}]}',
-        ),
-      ]);
-      await tester.pumpWidget(_harness(store));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'a malformed error_detail still renders the row with the generic '
+      'message rather than throwing or losing the edit',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(id: 'r1', entityType: 'apiary', errorDetail: 'not json at all'),
+          // Well-formed JSON, but an errors[] entry missing its `code`: the
+          // entry is skipped rather than defaulted, so it can't masquerade
+          // as a real issue — and it can't take the whole row down with it.
+          _row(
+            id: 'r2',
+            entityType: 'apiary',
+            errorDetail: '{"detail":"x","errors":[{"field":"data.name","message":"name is required"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
-      expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
-      expect(
-        find.text('This change was rejected and needs your attention.'),
-        findsNWidgets(2),
-      );
-      expect(find.textContaining('name is required'), findsNothing);
-    });
+        expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+        expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNWidgets(2),
+        );
+        expect(find.textContaining('name is required'), findsNothing);
+      },
+    );
 
     testWidgets(
       'falls back to the generic message when the op carries no field detail '
@@ -235,8 +234,7 @@ void main() {
         _row(
           id: 'r1',
           entityType: 'journey',
-          errorDetail:
-              '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid","message":"default_attributes must be a JSON object"}]}',
+          errorDetail: '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid","message":"default_attributes must be a JSON object"}]}',
         ),
       ]);
       await tester.pumpWidget(_harness(store));
@@ -285,8 +283,7 @@ void main() {
           _row(
             id: 'r1',
             errorCode: localValidationFailedCode,
-            errorDetail:
-                '{"detail":"client-side validation parity check rejected this push","errors":[]}',
+            errorDetail: '{"detail":"client-side validation parity check rejected this push","errors":[]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
@@ -337,8 +334,7 @@ void main() {
         _row(
           id: 'r1',
           entityType: 'journey',
-          errorDetail:
-              '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid_type","message":"default_attributes must be a JSON object"}]}',
+          errorDetail: '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid_type","message":"default_attributes must be a JSON object"}]}',
         ),
       ]);
       await tester.pumpWidget(_harness(store));
@@ -535,8 +531,7 @@ void main() {
             // The helper's default detail is an apiary_counter's field, which
             // validateDeclarationOp could never emit — use a real declaration
             // rejection so the whole fixture is one the server could produce.
-            errorDetail:
-                '{"detail":"one or more ops are invalid","errors":[{"field":"data.declared_on","code":"invalid","message":"declared_on must be a date in YYYY-MM-DD form"}]}',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[{"field":"data.declared_on","code":"invalid","message":"declared_on must be a date in YYYY-MM-DD form"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
@@ -730,9 +725,7 @@ Map<String, Object?> _row({
   'op': 'patch',
   'payload': payload ?? '{}',
   'error_code': errorCode,
-  'error_detail':
-      errorDetail ??
-      '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',
+  'error_detail': errorDetail ?? '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',
   'rejected_at': '2026-07-14T10:00:00Z',
 };
 

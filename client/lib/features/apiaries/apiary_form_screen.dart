@@ -238,9 +238,8 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.apiaryLoadError('$e'))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.apiaryLoadError('$e'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -612,9 +611,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   ),
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
                                       ),
                                 ),
                               ],
@@ -633,9 +632,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                     ),
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .error,
                                         ),
                                   ),
                                 ),
@@ -870,9 +869,8 @@ class _LocationPicker extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withValues(alpha: 0.85),
+                    color: Theme.of(context).colorScheme.surface
+                        .withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -898,9 +896,9 @@ class _LocationPicker extends StatelessWidget {
                   child: Tooltip(
                     message: l10n.apiaryMapPickerMaximizeAction,
                     child: Material(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
                       elevation: 2,
                       shape: const CircleBorder(),
                       child: InkWell(
@@ -916,9 +914,9 @@ class _LocationPicker extends StatelessWidget {
                           child: Icon(
                             Icons.fullscreen,
                             size: 22,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -943,9 +941,9 @@ class _LocationPicker extends StatelessWidget {
                     child: Tooltip(
                       message: l10n.apiaryMapPickerRecenterAction,
                       child: Material(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
                         elevation: 2,
                         shape: const CircleBorder(),
                         child: InkWell(
@@ -961,9 +959,9 @@ class _LocationPicker extends StatelessWidget {
                             child: Icon(
                               Icons.my_location,
                               size: 22,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ),
                         ),

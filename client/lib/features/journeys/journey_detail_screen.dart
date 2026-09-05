@@ -148,9 +148,8 @@ class _JourneyDetailBody extends StatelessWidget {
                       Text(
                         defaultAttributesSummary,
                         key: const Key('journey-detail-default-attributes'),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: brand.onHeroSurfaceMuted,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: brand.onHeroSurfaceMuted),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],

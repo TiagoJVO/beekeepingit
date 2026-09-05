@@ -347,9 +347,8 @@ class AppShell extends ConsumerWidget {
           .read(notificationPreferencesRepositoryProvider)
           .isEnabled(notificationEventSyncConflict);
       if (!conflictsEnabled) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
     });
 
     // Todo-due-reminder / sync-result notifications (#82, D-24) queued by

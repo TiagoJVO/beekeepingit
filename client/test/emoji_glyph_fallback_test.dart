@@ -227,9 +227,8 @@ void main() {
       // locations above are supersets of the literal `location ^~
       // /font-fallback/`, so a `contains` would stay green with this generic
       // block deleted — which is the regression it exists to catch.
-      final block = RegExp(
-        r'location\s+\^~\s+/font-fallback/\s*\{([^}]*)\}',
-      ).firstMatch(nginxConf.readAsStringSync());
+      final block = RegExp(r'location\s+\^~\s+/font-fallback/\s*\{([^}]*)\}')
+          .firstMatch(nginxConf.readAsStringSync());
 
       expect(block, isNotNull);
       expect(block?.group(1), contains(r'try_files $uri =404'));
@@ -304,9 +303,8 @@ void main() {
       // `NotoFont('<name>', '<url>')` pairs, of which only the emoji families
       // matter here — the rest are the scripts D-37 deliberately leaves as
       // boxes.
-      final entries = RegExp(
-        r"""NotoFont\(\s*'([^']*)',\s*'([^']*)',?\s*\)""",
-      ).allMatches(manifest);
+      final entries = RegExp(r"""NotoFont\(\s*'([^']*)',\s*'([^']*)',?\s*\)""")
+          .allMatches(manifest);
       expect(
         entries,
         isNotEmpty,

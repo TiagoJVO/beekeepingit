@@ -39,9 +39,8 @@ void main() {
     test('setNotificationsEnabled persists across a fresh repository '
         'instance (survives app restart)', () {
       final prefs = _FakeLocalPrefs();
-      NotificationSettingsRepository(
-        prefs: prefs,
-      ).setNotificationsEnabled(false);
+      NotificationSettingsRepository(prefs: prefs)
+          .setNotificationsEnabled(false);
 
       final reopened = NotificationSettingsRepository(prefs: prefs);
 
@@ -64,9 +63,8 @@ void main() {
 
     test('reads the persisted value on first read', () {
       final prefs = _FakeLocalPrefs();
-      NotificationSettingsRepository(
-        prefs: prefs,
-      ).setNotificationsEnabled(false);
+      NotificationSettingsRepository(prefs: prefs)
+          .setNotificationsEnabled(false);
       final container = buildContainer(prefs);
 
       expect(container.read(notificationsEnabledProvider), isFalse);

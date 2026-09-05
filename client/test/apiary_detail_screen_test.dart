@@ -580,69 +580,64 @@ void main() {
       },
     );
 
-    testWidgets(
-      'tapping the hive card from a COLD state (nothing previously open) '
-      'exposes "Hives" on the number field\'s actual SEMANTICS tree — the '
-      'e2e suite\'s getByLabel("Hives") reads the real accessibility DOM, '
-      'not the widget\'s decoration property, and a regression here is '
-      'exactly what timed out CI on PR #400 (#393)',
-      (tester) async {
-        final handle = tester.ensureSemantics();
-        final repo = _FakeApiariesRepository();
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 0),
-            ],
-            apiariesRepository: repo,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+    testWidgets('tapping the hive card from a COLD state (nothing previously open) '
+        'exposes "Hives" on the number field\'s actual SEMANTICS tree — the '
+        'e2e suite\'s getByLabel("Hives") reads the real accessibility DOM, '
+        'not the widget\'s decoration property, and a regression here is '
+        'exactly what timed out CI on PR #400 (#393)', (tester) async {
+      final handle = tester.ensureSemantics();
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 0)],
+          apiariesRepository: repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        // Cold state: no editor open for any counter yet — this is the exact
-        // gap the pre-existing #393 tests never covered (they all tapped the
-        // SAME hive card twice in a row within one test run, so the "does the
-        // very first tap on a fully-closed editor actually work" path was
-        // never isolated on its own).
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsNothing,
-        );
+      // Cold state: no editor open for any counter yet — this is the exact
+      // gap the pre-existing #393 tests never covered (they all tapped the
+      // SAME hive card twice in a row within one test run, so the "does the
+      // very first tap on a fully-closed editor actually work" path was
+      // never isolated on its own).
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsNothing,
+      );
 
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsOneWidget,
-        );
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsOneWidget,
+      );
 
-        final fieldSemantics = tester.getSemantics(
-          find.byKey(const Key('apiary-counter-edit-field')),
-        );
-        expect(
-          fieldSemantics.label,
-          contains('Hives'),
-          reason:
-              'the field must carry "Hives" as its accessible label even '
-              'though the field is pre-filled with "0" (currentValue) and '
-              'floatingLabelBehavior is never — an opacity-hidden label is '
-              'excluded from the semantics tree by default in Flutter, which '
-              'is exactly what silently dropped the label here',
-        );
+      final fieldSemantics = tester.getSemantics(
+        find.byKey(const Key('apiary-counter-edit-field')),
+      );
+      expect(
+        fieldSemantics.label,
+        contains('Hives'),
+        reason:
+            'the field must carry "Hives" as its accessible label even '
+            'though the field is pre-filled with "0" (currentValue) and '
+            'floatingLabelBehavior is never — an opacity-hidden label is '
+            'excluded from the semantics tree by default in Flutter, which '
+            'is exactly what silently dropped the label here',
+      );
 
-        // Dispose within the test body — the end-of-test handle-leak check
-        // runs before addTearDown callbacks would (matches the Actions-toggle
-        // semantics test above).
-        handle.dispose();
-      },
-    );
+      // Dispose within the test body — the end-of-test handle-leak check
+      // runs before addTearDown callbacks would (matches the Actions-toggle
+      // semantics test above).
+      handle.dispose();
+    });
 
     testWidgets(
       'the +/- stepper adjusts the draft value before saving (gloves-friendly)',
@@ -678,100 +673,90 @@ void main() {
       },
     );
 
-    testWidgets(
-      'tapping the counter card again with an unchanged draft collapses the '
-      'editor without a confirmation prompt (#393)',
-      (tester) async {
-        final repo = _FakeApiariesRepository();
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-            ],
-            apiariesRepository: repo,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+    testWidgets('tapping the counter card again with an unchanged draft collapses the '
+        'editor without a confirmation prompt (#393)', (tester) async {
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+          apiariesRepository: repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsOneWidget,
-        );
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsOneWidget,
+      );
 
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsNothing,
-        );
-        expect(repo.counterWrites, isEmpty);
-      },
-    );
+      expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsNothing,
+      );
+      expect(repo.counterWrites, isEmpty);
+    });
 
-    testWidgets(
-      'tapping the counter card again with a changed draft prompts before '
-      'discarding, and cancel keeps the editor open (#393)',
-      (tester) async {
-        final repo = _FakeApiariesRepository();
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-            ],
-            apiariesRepository: repo,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+    testWidgets('tapping the counter card again with a changed draft prompts before '
+        'discarding, and cancel keeps the editor open (#393)', (tester) async {
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+          apiariesRepository: repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-counter-increment')));
-        await tester.pump();
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-counter-increment')));
+      await tester.pump();
 
-        // Tap the card again — the draft (4) differs from the opened value
-        // (3), so a confirmation prompt appears instead of collapsing.
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key('discard-changes-dialog')), findsOneWidget);
+      // Tap the card again — the draft (4) differs from the opened value
+      // (3), so a confirmation prompt appears instead of collapsing.
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('discard-changes-dialog')), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('discard-changes-cancel')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsOneWidget,
-        );
-        expect(find.text('4'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('discard-changes-cancel')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsOneWidget,
+      );
+      expect(find.text('4'), findsOneWidget);
 
-        // Tap again, this time confirm — the editor collapses and the draft
-        // is discarded (no write).
-        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('discard-changes-confirm')));
-        await tester.pumpAndSettle();
+      // Tap again, this time confirm — the editor collapses and the draft
+      // is discarded (no write).
+      await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('discard-changes-confirm')));
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('apiary-detail-counter-editor')),
-          findsNothing,
-        );
-        expect(repo.counterWrites, isEmpty);
-      },
-    );
+      expect(
+        find.byKey(const Key('apiary-detail-counter-editor')),
+        findsNothing,
+      );
+      expect(repo.counterWrites, isEmpty);
+    });
 
     testWidgets(
       'the add-counter action lets the user pick a known type (Supers) and set '
@@ -878,90 +863,80 @@ void main() {
       },
     );
 
-    testWidgets(
-      'empty-hive and swarm counters render their own tappable cards with '
-      'localized labels (#392)',
-      (tester) async {
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+    testWidgets('empty-hive and swarm counters render their own tappable cards with '
+        'localized labels (#392)', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+          counters: const {
+            'a1': [
+              ApiaryCounter(
+                apiaryId: 'a1',
+                counterType: 'empty_hive',
+                value: 1,
+              ),
+              ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
             ],
-            counters: const {
-              'a1': [
-                ApiaryCounter(
-                  apiaryId: 'a1',
-                  counterType: 'empty_hive',
-                  value: 1,
-                ),
-                ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
-              ],
-            },
-            apiariesRepository: _FakeApiariesRepository(),
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+          },
+          apiariesRepository: _FakeApiariesRepository(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('apiary-detail-counter-empty_hive')),
-          findsOneWidget,
-        );
-        expect(find.text('1 empty hive'), findsOneWidget);
-        expect(
-          find.byKey(const Key('apiary-detail-counter-swarm')),
-          findsOneWidget,
-        );
-        expect(find.text('2 swarms'), findsOneWidget);
-      },
-    );
+      expect(
+        find.byKey(const Key('apiary-detail-counter-empty_hive')),
+        findsOneWidget,
+      );
+      expect(find.text('1 empty hive'), findsOneWidget);
+      expect(
+        find.byKey(const Key('apiary-detail-counter-swarm')),
+        findsOneWidget,
+      );
+      expect(find.text('2 swarms'), findsOneWidget);
+    });
 
-    testWidgets(
-      'the add-counter picker offers empty hives and swarms once hive and '
-      'super rows already exist (#392)',
-      (tester) async {
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+    testWidgets('the add-counter picker offers empty hives and swarms once hive and '
+        'super rows already exist (#392)', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+          counters: const {
+            'a1': [
+              ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
+              ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
             ],
-            counters: const {
-              'a1': [
-                ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
-                ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
-              ],
-            },
-            apiariesRepository: _FakeApiariesRepository(),
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+          },
+          apiariesRepository: _FakeApiariesRepository(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-counter-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-counter-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('apiary-add-counter-option-empty_hive')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const Key('apiary-add-counter-option-swarm')),
-          findsOneWidget,
-        );
-      },
-    );
+      expect(
+        find.byKey(const Key('apiary-add-counter-option-empty_hive')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('apiary-add-counter-option-swarm')),
+        findsOneWidget,
+      );
+    });
   });
 
   // --- Error state (HIGH #4: no test previously drove the error: branch) ---
@@ -1083,54 +1058,49 @@ void main() {
       },
     );
 
-    testWidgets(
-      'the Actions toggle announces its expanded/collapsed state to screen '
-      'readers (D-18 accessibility)',
-      (tester) async {
-        final handle = tester.ensureSemantics();
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+    testWidgets('the Actions toggle announces its expanded/collapsed state to screen '
+        'readers (D-18 accessibility)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        final toggle = find.byKey(const Key('actions-speed-dial-toggle'));
-        // Collapsed: a button named "Actions" that advertises an expandable
-        // state, currently not expanded.
-        expect(
-          tester.getSemantics(toggle),
-          isSemantics(
-            isButton: true,
-            label: 'Actions',
-            hasExpandedState: true,
-            isExpanded: false,
-          ),
-        );
+      final toggle = find.byKey(const Key('actions-speed-dial-toggle'));
+      // Collapsed: a button named "Actions" that advertises an expandable
+      // state, currently not expanded.
+      expect(
+        tester.getSemantics(toggle),
+        isSemantics(
+          isButton: true,
+          label: 'Actions',
+          hasExpandedState: true,
+          isExpanded: false,
+        ),
+      );
 
-        await tester.tap(toggle);
-        await tester.pumpAndSettle();
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
 
-        // Expanded: the same node now reports the expanded state.
-        expect(
-          tester.getSemantics(toggle),
-          isSemantics(hasExpandedState: true, isExpanded: true),
-        );
+      // Expanded: the same node now reports the expanded state.
+      expect(
+        tester.getSemantics(toggle),
+        isSemantics(hasExpandedState: true, isExpanded: true),
+      );
 
-        // Dispose within the test body — the end-of-test handle-leak check
-        // runs before addTearDown callbacks would.
-        handle.dispose();
-      },
-    );
+      // Dispose within the test body — the end-of-test handle-leak check
+      // runs before addTearDown callbacks would.
+      handle.dispose();
+    });
 
     testWidgets('tapping the add-todo option routes to the full create form, '
         'pre-selecting this apiary (#389, FR-UX-2 contextual create)', (
@@ -1163,46 +1133,41 @@ void main() {
       expect(find.text('Serra Norte'), findsOneWidget);
     });
 
-    testWidgets(
-      'the existing add-activity FAB still navigates as before (regression '
-      'guard)',
-      (tester) async {
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+    testWidgets('the existing add-activity FAB still navigates as before (regression '
+        'guard)', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        // Bounded pumps (not pumpAndSettle, which would hang forever): the
-        // pushed add-activity form's own journey-matching section
-        // (journeyMatchesProvider) depends on the real, never-resolving
-        // journeysRepositoryProvider in this environment, whose loading
-        // state renders an indeterminate LinearProgressIndicator — same
-        // rationale as this file's own edit-navigation test above, which
-        // hits the equivalent issue via apiariesRepositoryProvider.
-        for (var i = 0; i < 10; i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-        }
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      // Bounded pumps (not pumpAndSettle, which would hang forever): the
+      // pushed add-activity form's own journey-matching section
+      // (journeyMatchesProvider) depends on the real, never-resolving
+      // journeysRepositoryProvider in this environment, whose loading
+      // state renders an indeterminate LinearProgressIndicator — same
+      // rationale as this file's own edit-navigation test above, which
+      // hits the equivalent issue via apiariesRepositoryProvider.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
 
-        expect(find.byKey(const Key('shell-back-button')), findsOneWidget);
-        expect(find.text('Add activity'), findsWidgets);
-      },
-    );
+      expect(find.byKey(const Key('shell-back-button')), findsOneWidget);
+      expect(find.text('Add activity'), findsWidgets);
+    });
   });
 }
 

@@ -350,9 +350,8 @@ void main() {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      GoRouter.of(
-        tester.element(find.byKey(const Key('shell-bottom-nav'))),
-      ).go('/assistant');
+      GoRouter.of(tester.element(find.byKey(const Key('shell-bottom-nav'))))
+          .go('/assistant');
       await tester.pumpAndSettle();
 
       // No branch matches it any more, so the shell itself is gone (go_router
@@ -1195,9 +1194,8 @@ void main() {
         // Re-enable, then simulate a fresh app open (a genuinely new
         // ProviderScope, per the existing dedup-persistence test's own
         // rationale above).
-        NotificationSettingsRepository(
-          prefs: settingsPrefs,
-        ).setNotificationsEnabled(true);
+        NotificationSettingsRepository(prefs: settingsPrefs)
+            .setNotificationsEnabled(true);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
 

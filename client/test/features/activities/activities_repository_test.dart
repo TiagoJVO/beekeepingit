@@ -561,13 +561,10 @@ void main() {
   });
 
   group('ActivitiesRepository.watchAll() org-scoping (#43, FR-AC-6/FR-TEN-2)', () {
-    test(
-      'returns an empty stream when the organization id is null (not yet loaded)',
-      () async {
-        final activities = await repo.watchAll(organizationId: null).first;
-        expect(activities, isEmpty);
-      },
-    );
+    test('returns an empty stream when the organization id is null (not yet loaded)', () async {
+      final activities = await repo.watchAll(organizationId: null).first;
+      expect(activities, isEmpty);
+    });
 
     test(
       'excludes another organization\'s activities — never leaks cross-tenant '

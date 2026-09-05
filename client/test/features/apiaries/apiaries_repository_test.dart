@@ -873,9 +873,10 @@ void main() {
       // Without this, a column renamed in draftForSave but not in the form's
       // allow-list would silently turn the check off for that field — a
       // fail-open drift nothing else would catch.
-      final drafted = ApiariesRepository.draftForSave(
-        name: 'Montargil',
-      ).data!.keys.toSet();
+      final drafted = ApiariesRepository.draftForSave(name: 'Montargil')
+          .data!
+          .keys
+          .toSet();
       expect(
         apiaryFormSyncCheckedColumns.difference(drafted),
         // `location` is the description's own entity-level path for the

@@ -274,59 +274,53 @@ void main() {
   });
 
   group('login()', () {
-    test(
-      'redirects to the discovered authorize URL with PKCE challenge/state/redirect_uri',
-      () async {
-        final platform = FakeAuthPlatform();
-        final client = MockClient(
-          (req) async => http.Response('not found', 404),
-        );
-        final container = _container(platform, client);
-        await container.read(authControllerProvider.future);
+    test('redirects to the discovered authorize URL with PKCE challenge/state/redirect_uri', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = _container(platform, client);
+      await container.read(authControllerProvider.future);
 
-        await container.read(authControllerProvider.notifier).login();
+      await container.read(authControllerProvider.notifier).login();
 
-        expect(platform.assignedLocation, isNotNull);
-        final uri = Uri.parse(platform.assignedLocation!);
-        // Endpoint comes from discovery, not a hard-coded AppConfig getter.
-        expect('${uri.scheme}://${uri.host}${uri.path}', _authorizeUrl);
-        expect(uri.queryParameters['response_type'], 'code');
-        expect(uri.queryParameters['client_id'], 'beekeepingit-pwa');
-        expect(uri.queryParameters['redirect_uri'], platform.redirectUri);
-        expect(uri.queryParameters['code_challenge_method'], 'S256');
-        expect(uri.queryParameters['code_challenge'], isNotEmpty);
-        expect(uri.queryParameters['state'], isNotEmpty);
-        final requestedScopes = (uri.queryParameters['scope'] ?? '').split(' ');
-        expect(requestedScopes, contains('openid'));
-        // #236: `offline_access` MUST be requested so the provider issues a
-        // refresh token — build() restores a session on reload only from a
-        // persisted refresh token, so omitting this logs the user out on a full
-        // page reload (auth.md §7). Guards against a silent regression.
-        expect(
-          requestedScopes,
-          contains('offline_access'),
-          reason:
-              'offline_access must be requested so a refresh token is issued '
-              'for session restore on reload (#236, auth.md §7)',
-        );
+      expect(platform.assignedLocation, isNotNull);
+      final uri = Uri.parse(platform.assignedLocation!);
+      // Endpoint comes from discovery, not a hard-coded AppConfig getter.
+      expect('${uri.scheme}://${uri.host}${uri.path}', _authorizeUrl);
+      expect(uri.queryParameters['response_type'], 'code');
+      expect(uri.queryParameters['client_id'], 'beekeepingit-pwa');
+      expect(uri.queryParameters['redirect_uri'], platform.redirectUri);
+      expect(uri.queryParameters['code_challenge_method'], 'S256');
+      expect(uri.queryParameters['code_challenge'], isNotEmpty);
+      expect(uri.queryParameters['state'], isNotEmpty);
+      final requestedScopes = (uri.queryParameters['scope'] ?? '').split(' ');
+      expect(requestedScopes, contains('openid'));
+      // #236: `offline_access` MUST be requested so the provider issues a
+      // refresh token — build() restores a session on reload only from a
+      // persisted refresh token, so omitting this logs the user out on a full
+      // page reload (auth.md §7). Guards against a silent regression.
+      expect(
+        requestedScopes,
+        contains('offline_access'),
+        reason:
+            'offline_access must be requested so a refresh token is issued '
+            'for session restore on reload (#236, auth.md §7)',
+      );
 
-        // The verifier/state are persisted so the callback can validate them.
-        expect(platform.readSession('bk.pkce_verifier'), isNotEmpty);
-        expect(
-          platform.readSession('bk.oauth_state'),
-          uri.queryParameters['state'],
-        );
+      // The verifier/state are persisted so the callback can validate them.
+      expect(platform.readSession('bk.pkce_verifier'), isNotEmpty);
+      expect(
+        platform.readSession('bk.oauth_state'),
+        uri.queryParameters['state'],
+      );
 
-        // No federation hint on the plain "Sign in" action (#363) — the
-        // provider must show its own login form, not bounce to an upstream.
-        expect(
-          uri.queryParameters.containsKey('beekeepingit_idp'),
-          isFalse,
-          reason:
-              'login() without an idpHint must not send the federation hint',
-        );
-      },
-    );
+      // No federation hint on the plain "Sign in" action (#363) — the
+      // provider must show its own login form, not bounce to an upstream.
+      expect(
+        uri.queryParameters.containsKey('beekeepingit_idp'),
+        isFalse,
+        reason: 'login() without an idpHint must not send the federation hint',
+      );
+    });
 
     // #363 (FR-ONB-1, D-7). "Continue with Google" is the SAME authorize
     // request plus one extension parameter — that is what keeps the client
@@ -770,43 +764,40 @@ void main() {
   });
 
   group('logout()', () {
-    test(
-      'redirects to the front-channel end-session URL (id_token_hint) and clears local state',
-      () async {
-        final client = MockClient(
-          (req) async => _tokenResponse(req, idToken: 'id-1'),
-        );
-        final (_, platform, notifier) = await buildLoggedInContainer(
-          client: client,
-          localStore: FakeLocalStoreEngine(),
-        );
-        // A leftover mid-flow-login artifact the defensive sweep must also clear.
-        platform.writeSession('bk.pkce_verifier', 'leftover-verifier');
+    test('redirects to the front-channel end-session URL (id_token_hint) and clears local state', () async {
+      final client = MockClient(
+        (req) async => _tokenResponse(req, idToken: 'id-1'),
+      );
+      final (_, platform, notifier) = await buildLoggedInContainer(
+        client: client,
+        localStore: FakeLocalStoreEngine(),
+      );
+      // A leftover mid-flow-login artifact the defensive sweep must also clear.
+      platform.writeSession('bk.pkce_verifier', 'leftover-verifier');
 
-        await notifier.logout();
+      await notifier.logout();
 
-        // Front-channel RP-initiated logout: a browser redirect to the discovered
-        // end_session_endpoint carrying the id_token_hint (replaces the previous
-        // refresh-token POST to the provider's logout endpoint).
-        expect(platform.assignedLocation, isNotNull);
-        final logoutUri = Uri.parse(platform.assignedLocation!);
-        expect(
-          '${logoutUri.scheme}://${logoutUri.host}${logoutUri.path}',
-          _endSessionUrl,
-        );
-        expect(logoutUri.queryParameters['id_token_hint'], 'id-1');
-        expect(
-          logoutUri.queryParameters['post_logout_redirect_uri'],
-          platform.redirectUri,
-        );
+      // Front-channel RP-initiated logout: a browser redirect to the discovered
+      // end_session_endpoint carrying the id_token_hint (replaces the previous
+      // refresh-token POST to the provider's logout endpoint).
+      expect(platform.assignedLocation, isNotNull);
+      final logoutUri = Uri.parse(platform.assignedLocation!);
+      expect(
+        '${logoutUri.scheme}://${logoutUri.host}${logoutUri.path}',
+        _endSessionUrl,
+      );
+      expect(logoutUri.queryParameters['id_token_hint'], 'id-1');
+      expect(
+        logoutUri.queryParameters['post_logout_redirect_uri'],
+        platform.redirectUri,
+      );
 
-        expect(notifier.state.value, isNull);
-        expect(platform.hasAnySession, isFalse);
-        // #390: the refresh/id token now live in localStorage, not
-        // sessionStorage — logout must clear that store too.
-        expect(platform.hasAnyLocal, isFalse);
-      },
-    );
+      expect(notifier.state.value, isNull);
+      expect(platform.hasAnySession, isFalse);
+      // #390: the refresh/id token now live in localStorage, not
+      // sessionStorage — logout must clear that store too.
+      expect(platform.hasAnyLocal, isFalse);
+    });
 
     test(
       'degrades gracefully to locally-logged-out when discovery/redirect fails',

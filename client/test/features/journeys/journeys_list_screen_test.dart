@@ -147,9 +147,9 @@ Future<void> _openJourneysTab(WidgetTester tester) async {
 /// The app's [GoRouter], for the tests below that navigate a second time
 /// after the first `pumpWidget` — i.e. a deep link arriving at an
 /// already-mounted tab.
-GoRouter _routerOf(WidgetTester tester) => ProviderScope.containerOf(
-  tester.element(find.byType(BeekeepingitApp)),
-).read(routerProvider);
+GoRouter _routerOf(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(BeekeepingitApp)))
+        .read(routerProvider);
 
 void main() {
   testWidgets(

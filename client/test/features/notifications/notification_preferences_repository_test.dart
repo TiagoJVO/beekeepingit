@@ -50,9 +50,8 @@ void main() {
 
     test('a preference survives across repository instances (durability)', () {
       final prefs = _FakeLocalPrefs();
-      NotificationPreferencesRepository(
-        prefs: prefs,
-      ).setEnabled(notificationEventTodoDueReminder, false);
+      NotificationPreferencesRepository(prefs: prefs)
+          .setEnabled(notificationEventTodoDueReminder, false);
 
       final reloaded = NotificationPreferencesRepository(prefs: prefs);
 
@@ -100,9 +99,8 @@ void main() {
       // The write went through the injected repository too, not just
       // in-memory controller state.
       expect(
-        NotificationPreferencesRepository(
-          prefs: prefs,
-        ).isEnabled(notificationEventSyncFailure),
+        NotificationPreferencesRepository(prefs: prefs)
+            .isEnabled(notificationEventSyncFailure),
         isFalse,
       );
     });

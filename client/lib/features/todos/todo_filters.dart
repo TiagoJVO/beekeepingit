@@ -147,9 +147,8 @@ int _compareDueDate(Todo a, Todo b, SortDirection direction) {
 }
 
 int _comparePriority(Todo a, Todo b, SortDirection direction) {
-  final cmp = todoPriorityRank(
-    a.priority,
-  ).compareTo(todoPriorityRank(b.priority));
+  final cmp = todoPriorityRank(a.priority)
+      .compareTo(todoPriorityRank(b.priority));
   return direction == SortDirection.ascending ? cmp : -cmp;
 }
 

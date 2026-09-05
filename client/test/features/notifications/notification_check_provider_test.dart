@@ -140,9 +140,8 @@ void main() {
     test('the master notification switch off suppresses runCheck\'s published '
         'notifications entirely (#500, FR-ST-1, D-24)', () async {
       final prefs = _FakeLocalPrefs();
-      NotificationSettingsRepository(
-        prefs: prefs,
-      ).setNotificationsEnabled(false);
+      NotificationSettingsRepository(prefs: prefs)
+          .setNotificationsEnabled(false);
       final container = buildContainer(
         todos: [_overdueTodo('t1')],
         rejected: const [],

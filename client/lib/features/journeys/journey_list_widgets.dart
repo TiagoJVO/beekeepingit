@@ -139,9 +139,8 @@ class JourneyFilterBar extends StatelessWidget {
                       dateRange == null
                           ? l10n.journeyFilterDateRangeUnset
                           : l10n.journeyFilterDateRangeValue(
-                              LocaleFormatting.of(
-                                context,
-                              ).date(dateRange!.start),
+                              LocaleFormatting.of(context)
+                                  .date(dateRange!.start),
                               LocaleFormatting.of(context).date(dateRange!.end),
                             ),
                     ),

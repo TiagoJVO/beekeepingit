@@ -350,9 +350,8 @@ int _byUrgency(AttentionTodo a, AttentionTodo b) {
   // Descending rank: high before medium before low, matching
   // `defaultSortDirectionFor(TodoSortField.priority)`'s own most-urgent-first
   // default on the Todos tab.
-  final byPriority = todoPriorityRank(
-    b.todo.priority,
-  ).compareTo(todoPriorityRank(a.todo.priority));
+  final byPriority = todoPriorityRank(b.todo.priority)
+      .compareTo(todoPriorityRank(a.todo.priority));
   if (byPriority != 0) return byPriority;
 
   return a.todo.id.compareTo(b.todo.id);

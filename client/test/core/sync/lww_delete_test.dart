@@ -21,21 +21,18 @@ import 'package:flutter_test/flutter_test.dart';
 /// `powersync_delete_metadata_test.dart`.
 void main() {
   group('deleteWithLwwStamp — the durable delete-time capture (#276)', () {
-    test(
-      'issues the metadata-carrying delete form, not a plain DELETE',
-      () async {
-        final store = _RecordingStore();
+    test('issues the metadata-carrying delete form, not a plain DELETE', () async {
+      final store = _RecordingStore();
 
-        await deleteWithLwwStamp(store, apiariesTable, 'apiary-1');
+      await deleteWithLwwStamp(store, apiariesTable, 'apiary-1');
 
-        expect(store.statements, hasLength(1));
-        expect(
-          store.statements.single.sql,
-          'UPDATE $apiariesTable SET _deleted = TRUE, _metadata = ? WHERE id = ?',
-        );
-        expect(store.statements.single.args.last, 'apiary-1');
-      },
-    );
+      expect(store.statements, hasLength(1));
+      expect(
+        store.statements.single.sql,
+        'UPDATE $apiariesTable SET _deleted = TRUE, _metadata = ? WHERE id = ?',
+      );
+      expect(store.statements.single.args.last, 'apiary-1');
+    });
 
     test('stamps an ISO-8601 UTC device timestamp the connector can read '
         'back', () async {
