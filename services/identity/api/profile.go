@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -44,21 +43,58 @@ import (
 // column).
 const entityTypeProfile = "profile"
 
-const (
-	maxNameLength  = 200
-	maxEmailLength = 320 // RFC 5321 upper bound
-)
+const maxNameLength = 200
 
-var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+// supportedLocales maps a language code onto the ONE BCP 47 tag the app ships
+// for it (D-34, #656, NFR-I18N-1, C-2): European Portuguese and British
+// English. Generic `pt`/`en` are not neutral — CLDR resolves them to
+// Brazilian and American conventions — so they are not storable values, and
+// the identity.users.locale CHECK (migration 00005) enforces that at rest.
+//
+// Adding a language means adding it here, to that CHECK, to the sqlc schema
+// mirror, and to the client's kSupportedLocales. Deliberately four edits: the
+// set of locales the product supports is a decision, not a free-text field.
+var supportedLocales = map[string]string{
+	"pt": "pt-PT",
+	"en": "en-GB",
+}
+
+// normalizeLocale maps a submitted locale onto the supported tag it means,
+// reporting false when it means none of them.
+//
+// It NORMALIZES rather than requiring an exact match, because a client older
+// than #656 — a PWA still running a cached bundle, say — submits the bare
+// `pt`/`en` it has always submitted, and rejecting that would break language
+// switching for exactly the users the migration was meant to carry over. A
+// supported language in some other region (`pt-BR`, `en-US`) resolves to the
+// region we ship for the same reason the client does it: Portugal is the only
+// in-scope market (C-2), and answering "Portuguese" with European Portuguese
+// beats storing a locale the app cannot render.
+//
+// An unsupported LANGUAGE is a 422, not a silent coercion — a caller asking
+// for French must be told the app has no French, not quietly given English.
+func normalizeLocale(raw string) (string, bool) {
+	language, _, _ := strings.Cut(strings.ReplaceAll(raw, "_", "-"), "-")
+	tag, ok := supportedLocales[strings.ToLower(language)]
+	return tag, ok
+}
 
 // ProfileResponse is the client-facing profile shape
 // (contracts/openapi/identity.openapi.yaml's Profile schema).
 // ProfileComplete is computed on every response, never stored, so it can
-// never drift from the name/email it's derived from.
+// never drift from the name it's derived from.
+//
+// Email/EmailVerified are served from the CALLER'S TOKEN, not from the row:
+// the identity provider owns the address (D-7), and identity.users.email is
+// only a best-effort cache seeded once at first sight. The two can therefore
+// legitimately differ — after an address change at the provider, the token is
+// right and the cache is stale — so the authoritative value is the one
+// returned here (#365 follow-up, FR-ONB-1).
 type ProfileResponse struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
 	Email           string    `json:"email"`
+	EmailVerified   bool      `json:"email_verified"`
 	Locale          string    `json:"locale"`
 	ProfileComplete bool      `json:"profile_complete"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -67,6 +103,11 @@ type ProfileResponse struct {
 
 // profileUpdateRequest is the PATCH /v1/profile request body
 // (ProfileUpdate schema) — every field optional, partial update semantics.
+//
+// Email is NOT part of that schema any more (#365 follow-up): it is retained
+// here purely so a body that still carries one can be DETECTED and refused
+// with an explicit 422 `read_only`, rather than silently ignored — a silent
+// ignore would let a client believe it saved an address it did not.
 type profileUpdateRequest struct {
 	Name   *string `json:"name"`
 	Email  *string `json:"email"`
@@ -143,7 +184,27 @@ func writeProfileAuditLog(ctx context.Context, q *sqlcgen.Queries, entityID pgty
 // only ever surfaces a generic 500 to the client, so this is the one place
 // the real cause is recorded (auth-adjacent service: failures must never be
 // invisible).
-func createProfileOnFirstSeen(ctx context.Context, pool *pgxpool.Pool, q *sqlcgen.Queries, sub string) (sqlcgen.IdentityUser, error) {
+// seedParamsFromClaims maps a verified token onto the first-seen INSERT.
+// Pure, so the seeding rules are unit-testable without a database.
+//
+// The email is seeded ONLY when the token reports it verified: an unverified
+// address must never enter identity.users.email, or the cache would carry a
+// value no one has proven control of. The name carries whatever the provider
+// emitted, including nothing — an empty name simply leaves the profile
+// incomplete and the client prompts for it (#365 follow-up, FR-ONB-1).
+func seedParamsFromClaims(id pgtype.UUID, claims authn.Claims) sqlcgen.UpsertUserOnFirstSeenParams {
+	params := sqlcgen.UpsertUserOnFirstSeenParams{
+		ID:      id,
+		OidcSub: claims.Sub,
+		Name:    strings.TrimSpace(claims.Name),
+	}
+	if claims.EmailVerified {
+		params.Email = strings.TrimSpace(claims.Email)
+	}
+	return params
+}
+
+func createProfileOnFirstSeen(ctx context.Context, pool *pgxpool.Pool, q *sqlcgen.Queries, claims authn.Claims) (sqlcgen.IdentityUser, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		logging.FromContext(ctx).ErrorContext(ctx, "profile: begin first-seen create transaction failed", "error", err)
@@ -152,10 +213,10 @@ func createProfileOnFirstSeen(ctx context.Context, pool *pgxpool.Pool, q *sqlcge
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
 	txq := q.WithTx(tx)
 
-	u, err := txq.UpsertUserOnFirstSeen(ctx, sqlcgen.UpsertUserOnFirstSeenParams{
-		ID:      pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		OidcSub: sub,
-	})
+	// The seed lands inside the SAME transaction as the audit row, so the
+	// FR-HIS-1 "create" entry records the seeded values as the created
+	// baseline — one round trip, correct history, and no spurious "update".
+	u, err := txq.UpsertUserOnFirstSeen(ctx, seedParamsFromClaims(pgtype.UUID{Bytes: uuid.New(), Valid: true}, claims))
 	if err != nil {
 		logging.FromContext(ctx).ErrorContext(ctx, "profile: upsert user on first seen failed", "error", err)
 		return sqlcgen.IdentityUser{}, err
@@ -198,7 +259,7 @@ func getProfile(pool *pgxpool.Pool, q *sqlcgen.Queries) http.HandlerFunc {
 		// first-login-racing-itself is rare enough that closing it would
 		// need SELECT ... FOR UPDATE-style locking beyond what this seam
 		// needs.
-		_, err := q.GetUserByOidcSub(r.Context(), claims.Sub)
+		existing, err := q.GetUserByOidcSub(r.Context(), claims.Sub)
 		isNew := errors.Is(err, pgx.ErrNoRows)
 		if err != nil && !isNew {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "profile: get user by oidc sub failed", "error", err)
@@ -209,27 +270,21 @@ func getProfile(pool *pgxpool.Pool, q *sqlcgen.Queries) http.HandlerFunc {
 		if !isNew {
 			// Ordinary re-GET of an existing profile: no domain change, so
 			// no audit row (mirrors apiaries' "idempotent replay writes no
-			// new audit row", history.md §4).
-			u, err := q.UpsertUserOnFirstSeen(r.Context(), sqlcgen.UpsertUserOnFirstSeenParams{
-				ID:      pgtype.UUID{Bytes: uuid.New(), Valid: true},
-				OidcSub: claims.Sub,
-			})
-			if err != nil {
-				logging.FromContext(r.Context()).ErrorContext(r.Context(), "profile: upsert user on first seen failed", "error", err)
-				problem.Write(w, r, problem.Internal())
-				return
-			}
-			writeJSON(w, http.StatusOK, toProfileResponse(u))
+			// new audit row", history.md §4). The row read above is served
+			// directly — the upsert that used to run here was a semantic
+			// no-op re-read, and removing it also removes the one call site
+			// a reader could mistake for a re-sync of the seeded values.
+			writeJSON(w, http.StatusOK, toProfileResponse(existing, claims))
 			return
 		}
 
-		u, err := createProfileOnFirstSeen(r.Context(), pool, q, claims.Sub)
+		u, err := createProfileOnFirstSeen(r.Context(), pool, q, claims)
 		if err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
 
-		writeJSON(w, http.StatusOK, toProfileResponse(u))
+		writeJSON(w, http.StatusOK, toProfileResponse(u, claims))
 	}
 }
 
@@ -256,26 +311,19 @@ func parseProfileUpdateRequest(body profileUpdateRequest) (sqlcgen.UpdateUserPro
 		}
 	}
 
-	if body.Email != nil {
-		email := strings.TrimSpace(*body.Email)
-		switch {
-		case email == "":
-			fieldErrs = append(fieldErrs, problem.FieldError{Field: "email", Code: "required", Message: "email must not be empty"})
-		case utf8.RuneCountInString(email) > maxEmailLength || !emailPattern.MatchString(email):
-			fieldErrs = append(fieldErrs, problem.FieldError{Field: "email", Code: "invalid", Message: "email must be a valid email address"})
-		default:
-			params.SetEmail = true
-			params.Email = email
-		}
-	}
-
 	if body.Locale != nil {
 		locale := strings.TrimSpace(*body.Locale)
-		if locale == "" {
+		tag, supported := normalizeLocale(locale)
+		switch {
+		case locale == "":
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "locale", Code: "required", Message: "locale must not be empty"})
-		} else {
+		case !supported:
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "locale", Code: "unsupported", Message: "locale must be one of: en-GB, pt-PT"})
+		default:
+			// The NORMALIZED tag, never the raw submission — this is what
+			// keeps a legacy `pt` from being stored as `pt` again (D-34).
 			params.SetLocale = true
-			params.Locale = locale
+			params.Locale = tag
 		}
 	}
 
@@ -297,7 +345,22 @@ func updateProfile(pool *pgxpool.Pool, q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		if body.Name == nil && body.Email == nil && body.Locale == nil {
+		// Ordering is load-bearing: a body of ONLY {"email": ...} must be
+		// told the field is read-only, not that it sent no fields. Refused
+		// rather than ignored so a client can never believe it saved an
+		// address it did not (#365 follow-up, D-7).
+		if body.Email != nil {
+			problem.Write(w, r, problem.ValidationFailed(
+				"email is managed by the identity provider and cannot be set here",
+				problem.FieldError{
+					Field:   "email",
+					Code:    "read_only",
+					Message: "email is read-only; change it at your account provider",
+				}))
+			return
+		}
+
+		if body.Name == nil && body.Locale == nil {
 			problem.Write(w, r, problem.ValidationFailed("at least one field is required"))
 			return
 		}
@@ -358,17 +421,26 @@ func updateProfile(pool *pgxpool.Pool, q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, toProfileResponse(u))
+		writeJSON(w, http.StatusOK, toProfileResponse(u, claims))
 	}
 }
 
-func toProfileResponse(u sqlcgen.IdentityUser) ProfileResponse {
+// toProfileResponse renders a row for the client. The address and its
+// verification state come from CLAIMS, not from the row: the provider owns
+// them (D-7) and u.Email is only the cache seeded at first sight, which a
+// later change at the provider leaves stale.
+//
+// ProfileComplete is the NAME ALONE (#365 follow-up). It used to require an
+// email too, which is no longer something onboarding can complete — the
+// address arrives with the token or not at all.
+func toProfileResponse(u sqlcgen.IdentityUser, claims authn.Claims) ProfileResponse {
 	return ProfileResponse{
 		ID:              uuid.UUID(u.ID.Bytes).String(),
 		Name:            u.Name,
-		Email:           u.Email,
+		Email:           claims.Email,
+		EmailVerified:   claims.EmailVerified,
 		Locale:          u.Locale,
-		ProfileComplete: u.Name != "" && u.Email != "",
+		ProfileComplete: u.Name != "",
 		CreatedAt:       u.CreatedAt.Time,
 		UpdatedAt:       u.UpdatedAt.Time,
 	}

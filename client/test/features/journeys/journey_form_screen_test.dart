@@ -534,7 +534,11 @@ void main() {
       );
       await goToEditForm(tester, repo);
 
-      expect(find.text('Xarope 1:1'), findsOneWidget);
+      // The stored value is 'Xarope 1:1'; English renders '1:1 syrup'
+      // (#625, NFR-I18N-1). The resubmit test below pins that the STORED
+      // value is unaffected.
+      expect(find.text('1:1 syrup'), findsOneWidget);
+      expect(find.text('Xarope 1:1'), findsNothing);
     });
 
     testWidgets('an edit that resubmits the name unchanged still resubmits the '
@@ -771,4 +775,80 @@ void main() {
       );
     },
   );
+
+  /// Save-time validation parity (#597, FR-OF-2, D-12, sync.md §9): the same
+  /// evaluator and the same shared description the pre-push check runs, moved
+  /// to the moment the beekeeper presses Save.
+  group('save-time validation parity (#597)', () {
+    /// 150 'ç' are 150 characters — inside the field's 200-character
+    /// `maxLength` — and 300 UTF-8 bytes, over `journey.name`'s 200-**byte**
+    /// cap.
+    final overlongName = 'ç' * 150;
+
+    testWidgets(
+      'a name the server would reject is caught in the form — the journey is '
+      'never created',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          overlongName,
+        );
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created, isEmpty);
+        expect(find.text('Name: this text is too long.'), findsOneWidget);
+        expect(
+          tester.getSemantics(find.text('Name: this text is too long.')).label,
+          contains('too long'),
+        );
+      },
+    );
+
+    testWidgets(
+      'a journey with default attributes still saves — the bag reaches the '
+      'check DECODED, the shape the wire op carries, not as JSON text',
+      (tester) async {
+        // Regression guard for the one way this seam could reject every save:
+        // `default_attributes` is stored locally as JSON-encoded TEXT and only
+        // decoded on its way to the wire (#385). Validating the encoded string
+        // would fail the description's `jsonObject` rule every time.
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        await tester.enterText(
+          find.byKey(const Key('journey-default-lot-batch-field')),
+          'L-2026-01',
+        );
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.defaultAttributes, {
+          'lot_batch': 'L-2026-01',
+        });
+      },
+    );
+
+    testWidgets('a valid journey still saves — no false positive', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository();
+      await _openNewJourneyForm(tester, repo: repo);
+      await tester.enterText(
+        find.byKey(const Key('journey-name-field')),
+        'Colheita de Primavera',
+      );
+      await tester.tap(find.byKey(const Key('journey-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.name, 'Colheita de Primavera');
+    });
+  });
 }

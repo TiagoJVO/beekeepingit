@@ -1,0 +1,33 @@
+{
+  // Typecheck-only config (#696). Playwright transpiles the specs itself and strips
+  // types WITHOUT checking them, so nothing here emits — `tsc --noEmit` exists purely
+  // as the gate `task web:e2e-lint` runs. Modelled on admin/tsconfig.json; it drops
+  // that file's React/Vite options plus `noUncheckedIndexedAccess` and
+  // `verbatimModuleSyntax`, which would each add churn across 2.5k lines of existing
+  // specs without catching anything this suite gets wrong.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // The specs run on Node (process.env, Buffer) and drive a browser
+    // (page.evaluate bodies use document/window/caches/fetch) — both halves are
+    // typed here, which is why "lib" carries DOM as well.
+    "types": ["node"]
+  },
+  // Mirrors the format:check globs in package.json exactly, so a new root-level
+  // file (Playwright's conventional global-setup.ts, say) cannot end up
+  // format-checked but not typechecked.
+  "include": ["tests/**/*.ts", "*.ts"]
+}

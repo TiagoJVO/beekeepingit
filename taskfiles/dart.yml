@@ -124,8 +124,16 @@ tasks:
         template_keys_file="$(mktemp)"
         arb_keys "$template" > "$template_keys_file"
         arb_ok=0
+        # Region-variant ARBs (app_en_GB.arb, app_pt_PT.arb) are deliberately
+        # EMPTY — they carry only `@@locale`, so the generated class knows it
+        # is `en_GB`/`pt_PT` for `intl` formatting, and inherit every string
+        # from their base language (D-34, #656; see client/l10n.yaml). Parity
+        # applies to the base-language files that hold the translations.
         for f in "$d"/lib/l10n/arb/*.arb; do
           [ "$f" = "$template" ] && continue
+          case "$(basename "$f")" in
+            app_*_*.arb) echo "› [dart] $f is a region variant — inherits its base language, skipped"; continue ;;
+          esac
           keys_file="$(mktemp)"
           arb_keys "$f" > "$keys_file"
           missing="$(comm -23 "$template_keys_file" "$keys_file")"
@@ -175,11 +183,25 @@ tasks:
           d=$(dirname "$p")
           if grep -q 'sdk: *flutter' "$p"; then
             echo "› [dart] build $d (flutter build web)"
-            # --no-web-resources-cdn: bundle CanvasKit/fonts locally instead of fetching
-            # from Google's CDN at runtime — required for an offline-first PWA (the app
-            # must not depend on external network reachability just to paint its first
-            # frame), and avoids a blank page wherever that CDN is unreachable/blocked.
-            (cd "$d" && flutter build web --no-web-resources-cdn)
+            # --no-web-resources-cdn: bundle the CanvasKit engine payload locally instead
+            # of fetching it from Google's CDN at runtime — required for an offline-first
+            # PWA (the app must not depend on external network reachability just to paint
+            # its first frame), and avoids a blank page wherever that CDN is
+            # unreachable/blocked. It does NOT cover the engine's own font fetches from
+            # fonts.gstatic.com; those are closed in client/pubspec.yaml and
+            # client/web/flutter_bootstrap.js (#620).
+            # build_app_shell_cache: generate the app-shell precache manifest
+            # inside build/web's service worker (#619, FR-OF-1). Nothing Flutter
+            # emits is content-hashed, so that manifest is what gives the worker
+            # a per-release cache key — without it the worker stays inert and
+            # the app cannot start offline. Required after EVERY
+            # `flutter build web`; scripts/check-app-shell-precache-wired.sh
+            # fails `task lint` if a build site ever loses it. Guarded on the
+            # tool's presence so a future Flutter package without it still
+            # builds.
+            (cd "$d" && flutter build web --no-web-resources-cdn \
+              && { [ ! -f tool/build_app_shell_cache.dart ] \
+                   || dart run tool/build_app_shell_cache.dart build/web; })
           else
             echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
           fi

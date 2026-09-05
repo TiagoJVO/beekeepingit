@@ -4,7 +4,7 @@
 -- never observable without its org, or vice versa (D-3).
 INSERT INTO organizations.organizations (id, name, address, created_by)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, created_by, created_at, updated_at;
+RETURNING id, name, address, registration_number, created_by, created_at, updated_at;
 
 -- name: GetOrganizationForUpdate :one
 -- Row-locking read for the PATCH path (#289): SELECT ... FOR UPDATE so the
@@ -13,7 +13,7 @@ RETURNING id, name, address, created_by, created_at, updated_at;
 -- commits, then observes the bumped updated_at, so its stale If-Match is
 -- rejected with 409 rather than silently clobbering (optimistic concurrency,
 -- FR-TEN-2). Mirrors apiaries' GetApiaryForUpdate.
-SELECT id, name, address, created_by, created_at, updated_at
+SELECT id, name, address, registration_number, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 FOR UPDATE;
@@ -26,9 +26,10 @@ FOR UPDATE;
 UPDATE organizations.organizations
 SET name = $2,
     address = $3,
-    updated_at = $4
+    registration_number = $4,
+    updated_at = $5
 WHERE id = $1
-RETURNING id, name, address, created_by, created_at, updated_at;
+RETURNING id, name, address, registration_number, created_by, created_at, updated_at;
 
 -- name: ListOrganizations :many
 -- Platform-operator-only cross-org list (#467, D-32, FR-TEN-2, NFR-ROL-1):

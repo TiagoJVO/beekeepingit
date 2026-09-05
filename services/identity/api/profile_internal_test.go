@@ -48,7 +48,7 @@ func TestWriteProfileAuditLog_InsertFailure_WrapsErrorWithContext(t *testing.T) 
 
 	entityID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	actorID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	after := sqlcgen.IdentityUser{Name: "Ana", Email: "ana@example.com", Locale: "en"}
+	after := sqlcgen.IdentityUser{Name: "Ana", Email: "ana@example.com", Locale: "en-GB"}
 
 	err := writeProfileAuditLog(context.Background(), q, entityID, actorID, history.ChangeCreate, sqlcgen.IdentityUser{}, after)
 	if err == nil {

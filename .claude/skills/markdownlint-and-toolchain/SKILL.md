@@ -1,31 +1,22 @@
 ---
 name: markdownlint-and-toolchain
 description: >-
-  How BeekeepingIT's markdownlint gate works and how to verify it locally. Use when writing or
-  editing any Markdown file with fenced code blocks (ASCII diagrams, directory trees, route/table
-  listings) — every opening fence needs a language tag (`.markdownlint-cli2.yaml` enforces MD040
-  by default; this repo's convention is ` ```text ` for non-code content). Also use whenever a
-  markdownlint/Node-based tool fails locally with an ESM `SyntaxError: Invalid regular expression
-  flags` — that means the toolchain `mise.toml` pins (Node 22) isn't actually active in your
-  shell, not that the target files are broken.
+  The two things about BeekeepingIT's Markdown gate that aren't obvious. Use when writing or
+  editing Markdown with fenced code blocks (ASCII diagrams, directory trees, route/table listings)
+  — every opening fence needs a language tag, and this repo's convention is a `text` tag for
+  non-code content. Also use whenever markdownlint or any Node-based repo tool fails with an ESM
+  `SyntaxError: Invalid regular expression flags` — that means the mise.toml toolchain pins
+  (Node 22) aren't active in your shell, not that the target files are broken.
 ---
 
-# Markdownlint gate & mise toolchain verification
+# Markdown fences & mise toolchain gotchas
 
-## Fenced code blocks need a language tag (MD040)
+## Non-code fences are ` ```text `
 
-`prettier --write` passing is **not** evidence markdownlint will pass — they check different
-things, and prettier doesn't touch fence languages. `task ci` runs both; a bare ` ``` ` opening
-fence (ASCII diagrams, directory trees, route/table listings, log samples — any non-source-code
-content) fails `MD040/fenced-code-language`.
-
-- Default to ` ```text ` for non-code content — the convention already used in
-  `docs/architecture/sync.md`, `docs/architecture/history.md`, `docs/spikes/sp-1-*.md`, and root
-  `README.md`'s repo-layout tree. Grep for it before guessing if unsure:
-  `grep -rn '^```text$' docs/`.
-- The closing fence stays bare (` ``` ` with no language) — only the _opening_ fence needs the tag.
-- When fixing a CI-reported batch of these errors, the number of openers you tag should exactly
-  match the reported error count — verify by counting bare vs. tagged fences before re-pushing.
+`.markdownlint-cli2.yaml` enforces MD040, so every **opening** fence needs a language tag. For
+non-source-code content — ASCII diagrams, directory trees, route/table listings, log samples — this
+repo's convention is ` ```text ` (see `docs/architecture/sync.md`, `docs/architecture/history.md`,
+root `README.md`). The **closing** fence stays bare.
 
 ## `mise` may not be active in a non-interactive/tool-spawned shell
 

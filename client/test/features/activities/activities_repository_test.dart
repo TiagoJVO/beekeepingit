@@ -41,9 +41,27 @@ class FakeLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => _select(sql, args);
 
+  /// The delete-time LWW stamp (#276) each deleted row id was removed with —
+  /// what `deleteWithLwwStamp` wrote into the hidden `_metadata` column and
+  /// PowerSync persists with the queued op.
+  final Map<String, String> deleteStamps = {};
+
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
+    // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
+    // TRUE, _metadata = ? WHERE id = ?`) — checked BEFORE the broad
+    // `UPDATE ACTIVITIES` branch below, which would otherwise swallow it and
+    // then mis-read its args as an edit's. The real core extension turns
+    // exactly this statement into a local row delete plus a queued DELETE op
+    // carrying the metadata.
+    if (normalized.startsWith('UPDATE ACTIVITIES SET _DELETED')) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      rows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
     if (normalized.startsWith('INSERT INTO ACTIVITIES')) {
       // (id, apiary_id, journey_id, type, occurred_at, attributes,
       // created_at, updated_at) — create() never sets performed_by/
@@ -165,6 +183,35 @@ void main() {
         expect(row['organization_id'], isNull);
       },
     );
+  });
+
+  group('ActivitiesRepository.delete() (#41, FR-AC-4)', () {
+    test('removes the local row', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+      );
+
+      await repo.delete(id);
+
+      expect(store.rows, isEmpty);
+    });
+
+    test('captures the delete-time LWW stamp on the queued op (#276, '
+        'FR-OF-1)', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+      );
+
+      await repo.delete(id);
+
+      expect(DateTime.parse(store.deleteStamps[id]!).isUtc, isTrue);
+    });
   });
 
   group('ActivitiesRepository.update() (#378)', () {

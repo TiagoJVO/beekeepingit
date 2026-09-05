@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/config/app_config.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
+import 'package:beekeepingit_client/core/platform/external_link_platform.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_screen.dart';
@@ -52,9 +55,7 @@ class _FakeProfileController extends ProfileController {
         name: name ?? _initial.name,
         email: email ?? _initial.email,
         locale: locale ?? _initial.locale,
-        complete:
-            (name ?? _initial.name).isNotEmpty &&
-            (email ?? _initial.email).isNotEmpty,
+        complete: (name ?? _initial.name).isNotEmpty,
       ),
     );
   }
@@ -95,19 +96,35 @@ class _ErrorProfileController extends ProfileController {
   }
 }
 
-Widget _buildScreen(ProfileController controller) {
+/// Records link-outs instead of opening a browser tab. The real
+/// implementation is web-only and throws on the VM, so without this seam the
+/// "Manage account" affordance could not be asserted at all.
+class _RecordingExternalLinkPlatform implements ExternalLinkPlatform {
+  final List<String> opened = [];
+
+  @override
+  void openInNewTab(String url) => opened.add(url);
+}
+
+Widget _buildScreen(
+  ProfileController controller, {
+  ExternalLinkPlatform? links,
+}) {
   return ProviderScope(
-    overrides: [profileProvider.overrideWith(() => controller)],
+    overrides: [
+      profileProvider.overrideWith(() => controller),
+      if (links != null) externalLinkPlatformProvider.overrideWithValue(links),
+    ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: ProfileScreen(),
     ),
   );
 }
 
 void main() {
-  testWidgets('renders name/email fields with current profile state', (
+  testWidgets('renders the name field and the read-only account email', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -120,10 +137,80 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('profile-name-field')), findsOneWidget);
-    expect(find.byKey(const Key('profile-email-field')), findsOneWidget);
+    // The address is owned by the identity provider: shown, never editable.
+    expect(find.byKey(const Key('profile-email-field')), findsNothing);
+    expect(
+      find.byKey(const Key('profile-account-email-value')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('profile-manage-account-button')),
+      findsOneWidget,
+    );
     expect(find.text('Ana'), findsOneWidget);
     expect(find.text('ana@example.com'), findsOneWidget);
   });
+
+  testWidgets('the manage-account action links out to the identity provider', (
+    tester,
+  ) async {
+    final links = _RecordingExternalLinkPlatform();
+    await tester.pumpWidget(
+      _buildScreen(
+        _FakeProfileController(
+          _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+        ),
+        links: links,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile-manage-account-button')));
+    await tester.pumpAndSettle();
+
+    // Exactly the configured provider account page (D-7: the app links out,
+    // it does not own account identity) — not a hand-built URL.
+    expect(links.opened, [AppConfig.oidcAccountUrl]);
+  });
+
+  testWidgets(
+    'a server field error with no rendered slot still reaches the user',
+    (tester) async {
+      // Regression guard for `_save`'s unrendered-field filter: the email
+      // field is gone, so a 422 naming `email` has no errorText slot. It must
+      // surface via the snackbar rather than being silently swallowed.
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', complete: true),
+            onUpdate: ({name, email, locale}) async {
+              throw const ApiException(
+                statusCode: 422,
+                code: 'validation_failed',
+                detail: 'one or more fields are invalid',
+                fieldErrors: [
+                  ApiFieldError(
+                    field: 'email',
+                    code: 'read_only',
+                    message: 'email is read-only; change it at your provider',
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('email is read-only; change it at your provider'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('shows onboarding intro when profile is incomplete', (
     tester,
@@ -137,7 +224,7 @@ void main() {
     );
   });
 
-  testWidgets('validates empty name and email client-side', (tester) async {
+  testWidgets('validates the empty name client-side', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
@@ -145,20 +232,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Enter your name.'), findsOneWidget);
-    expect(find.text('Enter your email.'), findsOneWidget);
   });
 
-  testWidgets('submits valid name+email and shows success', (tester) async {
+  testWidgets('submits a valid name and shows success', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('profile-name-field')),
       'Beatriz',
-    );
-    await tester.enterText(
-      find.byKey(const Key('profile-email-field')),
-      'bea@example.com',
     );
     await tester.tap(find.byKey(const Key('profile-save-button')));
     await tester.pumpAndSettle();
@@ -181,7 +263,11 @@ void main() {
         initialLocation: '/profile',
         routes: [
           GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
-          GoRoute(path: '/todos', builder: (_, _) => const SizedBox.shrink()),
+          // The screen's post-save hand-off target (#658, D-35: the app home
+          // is /home now, not the Tasks list) — a stand-in, since this test
+          // is about the org re-fetch, not about where it lands. Where it
+          // lands is pinned end-to-end in app_router_test.dart.
+          GoRoute(path: '/home', builder: (_, _) => const SizedBox.shrink()),
         ],
       );
       addTearDown(router.dispose);
@@ -196,7 +282,7 @@ void main() {
           ],
           child: MaterialApp.router(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             routerConfig: router,
           ),
         ),
@@ -223,10 +309,6 @@ void main() {
         find.byKey(const Key('profile-name-field')),
         'Beatriz',
       );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'bea@example.com',
-      );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();
       expect(
@@ -249,9 +331,9 @@ void main() {
           detail: 'one or more fields are invalid',
           fieldErrors: [
             ApiFieldError(
-              field: 'email',
+              field: 'name',
               code: 'invalid',
-              message: 'email must be a valid email address',
+              message: 'name must not be empty',
             ),
           ],
         );
@@ -264,14 +346,10 @@ void main() {
       find.byKey(const Key('profile-name-field')),
       'Carlos',
     );
-    await tester.enterText(
-      find.byKey(const Key('profile-email-field')),
-      'carlos@example.com',
-    );
     await tester.tap(find.byKey(const Key('profile-save-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('email must be a valid email address'), findsOneWidget);
+    expect(find.text('name must not be empty'), findsOneWidget);
   });
 
   testWidgets(
@@ -323,10 +401,6 @@ void main() {
         find.byKey(const Key('profile-name-field')),
         'Carlos',
       );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'carlos@example.com',
-      );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();
 
@@ -358,7 +432,7 @@ void main() {
               ApiFieldError(
                 field: 'locale',
                 code: 'unsupported',
-                message: 'locale must be "en" or "pt"',
+                message: 'locale must be one of: en-GB, pt-PT',
               ),
             ],
           );
@@ -371,10 +445,6 @@ void main() {
         find.byKey(const Key('profile-name-field')),
         'Carlos',
       );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'carlos@example.com',
-      );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();
 
@@ -386,7 +456,9 @@ void main() {
       // snackbar was suppressed because `_fieldErrors` was non-empty). It
       // must still be visibly surfaced, via the snackbar.
       expect(
-        find.text('Could not save your profile: locale must be "en" or "pt"'),
+        find.text(
+          'Could not save your profile: locale must be one of: en-GB, pt-PT',
+        ),
         findsOneWidget,
       );
     },

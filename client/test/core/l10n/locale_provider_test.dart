@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/l10n/locale_provider.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -55,7 +56,7 @@ class _LocaleProbeApp extends ConsumerWidget {
     return MaterialApp(
       locale: ref.watch(localeProvider),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Text(AppLocalizations.of(context).accountTitle),
       ),
@@ -112,11 +113,28 @@ void main() {
         return container.read(localeProvider);
       }
 
-      expect(await resolve('pt'), const Locale('pt'));
-      expect(await resolve('en'), const Locale('en'));
+      expect(await resolve('pt-PT'), const Locale('pt', 'PT'));
+      expect(await resolve('en-GB'), const Locale('en', 'GB'));
+
+      // #656 migration: profiles written before pt-PT/en-GB existed store
+      // the bare language. They must land on the supported country variant,
+      // NOT on the device locale and NOT on Brazilian/American conventions.
+      expect(await resolve('pt'), const Locale('pt', 'PT'));
+      expect(await resolve('en'), const Locale('en', 'GB'));
+
+      // Tolerant about the separator/case a stored tag happens to use.
+      expect(await resolve('pt_PT'), const Locale('pt', 'PT'));
+      expect(await resolve('en-gb'), const Locale('en', 'GB'));
+
+      // Any other region of a supported language resolves to the one we
+      // ship, rather than silently formatting as pt-BR/en-US (D-34).
+      expect(await resolve('pt-BR'), const Locale('pt', 'PT'));
+      expect(await resolve('en-US'), const Locale('en', 'GB'));
+
       // Unset or unsupported → null so MaterialApp uses the device locale.
       expect(await resolve(''), isNull);
       expect(await resolve('xx'), isNull);
+      expect(await resolve('fr-FR'), isNull);
     },
   );
 }

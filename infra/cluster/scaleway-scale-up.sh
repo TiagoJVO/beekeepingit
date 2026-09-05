@@ -37,8 +37,10 @@
 # `scw init` profile, or SCW_ACCESS_KEY/SCW_SECRET_KEY/... env vars — locally
 # via infra/cluster/.env (see .env.example), in CI via GitHub secrets. The
 # same optional Cloudflare dynamic-DNS variables as scaleway-up.sh apply here
-# too (CF_API_TOKEN/CF_ZONE_ID/APP_HOST/AUTH_HOST) — a fresh LoadBalancer
-# means a fresh IP to (re-)push.
+# too (CF_API_TOKEN/CF_ZONE_ID/APP_HOST/AUTH_HOST, plus the OPTIONAL
+# ADMIN_HOST — e.g. admin.beekeepingit-rc.melargil.pt — whose A record is
+# simply skipped when unset, #556) — a fresh LoadBalancer means a fresh IP to
+# (re-)push.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +51,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 app_host="${APP_HOST:-${STAGING_APP_HOST:-}}"
 auth_host="${AUTH_HOST:-${STAGING_AUTH_HOST:-}}"
+# Optional, unlike the two above (#556) — see scw-cluster-prereqs.sh.
+admin_host="${ADMIN_HOST:-}"
 target_size="${SCW_NODE_POOL_SIZE:-1}"
 # Same default/rationale as scaleway-up.sh's node_type: DEV1-M proved
 # insufficient for the full stack's memory requests on first bring-up.
@@ -136,9 +140,10 @@ cat <<EOF
 
 Cluster '$cluster_name' ($env_name) scaled up.
 
-- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts were
-  re-pushed to Cloudflare above (the LoadBalancer got a new IP). Otherwise
-  point them at Traefik's LoadBalancer IP manually:
+- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts — and
+  the admin host, when ADMIN_HOST is set — were re-pushed to Cloudflare above
+  (the LoadBalancer got a new IP). Otherwise point them at Traefik's
+  LoadBalancer IP manually:
 
     kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 

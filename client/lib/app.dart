@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/l10n/locale_provider.dart';
+import 'core/l10n/supported_locales.dart';
 import 'core/sync/local_data_purge.dart';
 import 'features/notifications/notification_check_provider.dart';
 import 'l10n/gen/app_localizations.dart';
@@ -37,7 +38,12 @@ class BeekeepingitApp extends ConsumerWidget {
       themeMode: ThemeMode.system,
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      // The OFFERED set — European Portuguese and British English only
+      // (D-34, #656). Not `AppLocalizations.supportedLocales`, which also
+      // lists the generic `en`/`pt` base ARBs that `flutter gen-l10n`
+      // requires behind each region variant; offering those would let a
+      // `pt-BR` device resolve to Brazilian conventions again.
+      supportedLocales: kSupportedLocales,
       routerConfig: router,
     );
   }
