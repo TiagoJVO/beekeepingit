@@ -102,11 +102,27 @@ const List<String> kExcludedSuffixes = ['.symbols', '.map'];
 /// - `assets/NOTICES` (1.4 MB): only fetched when the licences page is opened.
 /// - `assets/AssetManifest.bin.json`: the JSON companion of the `.bin` the
 ///   engine actually reads; tooling-only.
+/// - `font-fallback/` (#673, D-37): the monochrome emoji face the web engine's
+///   glyph fallback is served from (865 KB on disk, 589 KB gzipped on the
+///   wire) plus its licence.
+///   This is the one entry here whose tier is a JUDGEMENT rather than
+///   an obvious saving, so it is worth stating: precaching it would put those
+///   bytes on every install — that is once per client per RELEASE, since a new
+///   [BUILD_REVISION] re-primes every installed shell — to cover a fallback for
+///   text most users never type. Storing it on first use costs nothing at boot,
+///   and from that first emoji onward it is offline-available exactly like a
+///   precached asset. The cost of choosing the lazy tier is bounded and
+///   narrow: a client that has never yet rendered an emoji, and is offline the
+///   first time it meets one, still sees the missing-glyph box — which is
+///   precisely the behaviour of every build before #673, so nothing regresses.
+///   `web/service_worker.js` is what maps the engine's chunk URLs onto this
+///   entry; there is no FILE with a chunk URL for the manifest to list.
 ///
 /// They stay in the manifest, so their bytes still feed [BUILD_REVISION] and a
 /// new engine still invalidates the whole cache.
 bool isRuntimeCached(String path) =>
     path.startsWith('canvaskit/') ||
+    path.startsWith('font-fallback/') ||
     path == 'assets/NOTICES' ||
     path == 'assets/AssetManifest.bin.json';
 

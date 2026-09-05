@@ -236,14 +236,24 @@ Display'` that had no bundled font and fell back to Roboto.
     font covers, the engine downloads a Noto font from `fontFallbackBaseUrl`, which defaults to
     `https://fonts.gstatic.com/s/`. [`web/flutter_bootstrap.js`](web/flutter_bootstrap.js) — the
     only reason this repo overrides Flutter's generated bootstrap at all — pins it to the relative
-    path `font-fallback/`. Nothing is bundled there, so such a code point renders as the
-    missing-glyph box: a deliberate trade against disclosing every user's IP address to Google, on
-    a boot path that must work with no signal at all anyway. The reachable case is **emoji** in
-    user-entered text, and whether that trade holds for it is `#673`; `nginx.conf` already routes
-    the prefix with `try_files $uri =404`, so bundling a face under `web/font-fallback/` needs no
-    code change. Both settings are pinned by
+    path `font-fallback/`, a deliberate trade against disclosing every user's IP address to Google
+    on a boot path that must work with no signal at all anyway. Both settings are pinned by
     [`test/fonts_local_fallback_test.dart`](test/fonts_local_fallback_test.dart) and the outcome by
     [`e2e/tests/same-origin-boot.spec.ts`](e2e/tests/same-origin-boot.spec.ts).
+  - **Emoji is served from that prefix; other scripts stay boxes** (`#673`, `D-37`). The engine
+    builds an emoji fallback URL as `font-fallback/notocoloremoji/v32/<hash>.<n>.woff2` — twelve
+    subset chunks of one family, whose hash and count are re-rolled with the engine — so
+    [`nginx.conf`](nginx.conf) maps that whole family **directory** onto one bundled face,
+    [`web/font-fallback/NotoEmoji-Regular.ttf`](web/font-fallback/NotoEmoji-Regular.ttf)
+    (monochrome Noto Emoji, OFL, 865 KB on disk, 589 KB gzipped on the wire), and
+    [`web/service_worker.js`](web/service_worker.js) maps the same prefixes onto the same cached
+    file so it also works offline. One file is enough because the engine only requests the chunk
+    for the **first** uncovered code point it meets, after which CanvasKit resolves the rest
+    against the typeface it loaded. It is deliberately **not** a `pubspec.yaml` family
+    (`loadAssetFonts` would download it on every cold load) and is in the service worker's
+    **runtime** tier, not precache. CJK/Arabic/Hebrew still render as the missing-glyph box —
+    `D-37` explains why that is the decision and not an omission. Guarded by
+    [`test/emoji_glyph_fallback_test.dart`](test/emoji_glyph_fallback_test.dart).
 - **i18n: Flutter `intl`** (`flutter gen-l10n`), EN default + a real (not lorem-ipsum) PT
   translation, per `NFR-I18N`.
 - **Backend through the gateway (`#23`):** the `#21` provider-reachability placeholder is

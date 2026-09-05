@@ -33,13 +33,16 @@
 // (FR-OF-1) — where the fetch would simply fail anyway.
 //
 // Pinning the base URL to a RELATIVE path makes it same-origin by construction,
-// in `flutter run` and in the served container alike. Nothing under it is
-// bundled today, so an uncovered code point renders as the missing-glyph box
-// instead of reaching Google: a deliberate trade of exotic-script coverage for
-// "no third party on the boot path, ever". Whether that is the right trade for
-// emoji specifically — which users do type into notes — is #673; `nginx.conf`
-// already serves this prefix with `try_files $uri =404`, so bundling a face
-// under `web/font-fallback/` needs no code change here.
+// in `flutter run` and in the served container alike: a deliberate trade of
+// exotic-script coverage for "no third party on the boot path, ever".
+//
+// #673 (D-37) bought the reachable half of that coverage back without moving
+// this line — emoji, which users do type into notes, now resolves from
+// `web/font-fallback/NotoEmoji-Regular.ttf`. It needed no change HERE because
+// the engine's emoji URLs are all under one family directory of this prefix;
+// `nginx.conf` and `web/service_worker.js` are what map that directory onto the
+// bundled face. Every other uncovered code point (CJK, Arabic, Hebrew) still
+// renders as the missing-glyph box, deliberately.
 //
 // Being document-relative, the value resolves under the page's base href, which
 // every build in this repo leaves at `/`. nginx's `location ^~ /font-fallback/`

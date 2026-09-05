@@ -31,8 +31,11 @@
  * WHAT IT CACHES, AND WHAT IT DELIBERATELY DOES NOT TOUCH
  * ------------------------------------------------------
  * Only the static app shell `flutter build web` emitted, and only same-origin
- * GETs whose pathname is in this build's manifest. It NEVER calls `respondWith`
- * for anything else: the domain APIs, the PowerSync sync stream, OIDC traffic,
+ * GETs whose pathname is in this build's manifest — plus the web engine's emoji
+ * glyph-fallback URLs, which are answered from ONE manifest entry because no
+ * file of their name exists in the bundle to be listed (#673; see
+ * EMOJI_FALLBACK_PREFIXES). It NEVER calls `respondWith` for anything else: the
+ * domain APIs, the PowerSync sync stream, OIDC traffic,
  * non-GET requests and every cross-origin request are left to the browser
  * untouched, so no response carrying org data is ever written to a cache this
  * file controls (offline DATA is PowerSync's local-first store, EPIC-06 — a
@@ -120,6 +123,24 @@ const SHELL_DOCUMENT = "/index.html";
 // NOT_CHART_ROUTED list with a note saying why.
 const SERVER_ROUTED_PREFIXES = ["/v1/", "/sync-stream"];
 
+// The glyph-fallback URLs the web engine builds for EMOJI, and the one face
+// that answers all of them (#673, D-37, FR-AP-8, FR-OF-1, NFR-CMP, C-2).
+//
+// The engine requests `fontFallbackBaseUrl + font.url`, and every emoji entry
+// in its generated Noto manifest is a Google-Fonts subset chunk of one family:
+// `notocoloremoji/v32/<hash>.<n>.woff2`, twelve of them, whose hash and count
+// are re-rolled with the engine. `client/nginx.conf` maps that whole family
+// directory onto EMOJI_FALLBACK_FACE for the same reasons, and explains them at
+// length.
+//
+// The worker has to do its own mapping rather than inherit nginx's: no FILE
+// with a chunk URL exists in `build/web`, so the generated manifest can never
+// name one, and a cache lookup by the chunk pathname would miss forever. Mapped
+// here, the SECOND time a user meets an emoji — offline included — is served
+// from the face the first one stored.
+const EMOJI_FALLBACK_PREFIXES = ["/font-fallback/notocoloremoji/", "/font-fallback/notoemoji/"];
+const EMOJI_FALLBACK_FACE = "/font-fallback/NotoEmoji-Regular.ttf";
+
 // The message `client/web/sw_register.js` posts. See the handler.
 const BOOT_RESOURCES_MESSAGE = "bkit:boot-resources";
 
@@ -206,6 +227,22 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     if (SERVER_ROUTED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) return;
     event.respondWith(shellDocument(request));
+    return;
+  }
+
+  // An emoji fallback chunk: answered from the one bundled face, whatever the
+  // engine's current hash and chunk count are. `runtimePaths` is consulted
+  // first so this build only claims the URL when the face it would answer with
+  // is actually in this build's manifest — an ungenerated or future bundle
+  // without it falls through to the network instead of serving a miss.
+  if (
+    runtimePaths.has(EMOJI_FALLBACK_FACE) &&
+    EMOJI_FALLBACK_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  ) {
+    // Fetched (and stored) under the FACE's own path, not the chunk URL: one
+    // cache entry serves every chunk URL, and the stored response is the one
+    // nginx would send for the face itself.
+    event.respondWith(cacheFirst(new Request(EMOJI_FALLBACK_FACE), EMOJI_FALLBACK_FACE, true));
     return;
   }
 
