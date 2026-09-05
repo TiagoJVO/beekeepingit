@@ -5,7 +5,14 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  # Tracks the Dart the pinned Flutter SDK ships (3.47.2 -> Dart 3.13.2), and it
+  # has to: `dart format` picks its style from the resolved language version, so
+  # a constraint below the toolchain makes formatting differ between a resolved
+  # tree (task dart:l10n-check, which runs `flutter pub get` first) and an
+  # unresolved one (task dart:format-check, which deliberately does not). Those
+  # two CI gates then demand opposite bytes for lib/l10n/gen and no tree can pass
+  # both. Keeping this in step with mise.toml's flutter pin keeps them agreeing.
+  sdk: ^3.13.0
 
 dependencies:
   flutter:

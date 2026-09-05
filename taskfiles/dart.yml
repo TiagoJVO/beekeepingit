@@ -167,8 +167,17 @@ tasks:
         # committed sqlc convention — no codegen step needed to build/test,
         # but that means CI must catch a source ARB edit that wasn't followed
         # by a regeneration).
+        # gen-l10n's raw output is NOT dart-format-clean, so format it before
+        # comparing — otherwise this check and `format-check` demand opposite
+        # bytes for the same committed files and no tree can satisfy both.
+        # Surfaced by the Flutter 3.47.2 bump (#521): Dart 3.13.2's formatter
+        # wants a blank line between gen-l10n's two imports, and gen-l10n does
+        # not emit one. Formatting here keeps generation the source of truth for
+        # CONTENT while the formatter stays the source of truth for LAYOUT.
+        (cd "$d" && dart format lib/l10n/gen)
+
         git diff --exit-code -- "$d/lib/l10n/gen" || {
-          echo "› [dart] lib/l10n/gen is stale — run 'flutter gen-l10n' in client/ and commit the result." >&2
+          echo "› [dart] lib/l10n/gen is stale — run 'flutter gen-l10n && dart format lib/l10n/gen' in client/ and commit the result." >&2
           exit 1
         }
 
