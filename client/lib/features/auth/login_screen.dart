@@ -7,6 +7,7 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_tokens.dart';
+import '../../theming/brand_widgets.dart';
 
 /// Login entry point: a single "sign in" action that starts the OIDC
 /// Authorization Code + PKCE redirect to the identity provider (auth.md §3.2).
@@ -39,21 +40,11 @@ class LoginScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Brand mark — a honey tile (no bundled logo asset; keeps
-                  // the app offline-first with no runtime image fetch).
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      color: BrandTokens.honey,
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: const Icon(
-                      Icons.hive_rounded,
-                      size: 56,
-                      color: BrandTokens.onHoney,
-                    ),
-                  ),
+                  // The one brand mark (#686) — the same Melargil bee the
+                  // installed app shows in its title bar, from a bundled asset
+                  // (no runtime image fetch, so an offline cold boot paints
+                  // it). See theming/brand_widgets.dart.
+                  const BrandMark(),
                   const SizedBox(height: 20),
                   Text(
                     l10n.appTitle,

@@ -10,8 +10,23 @@ import "context"
 // NewOrgResolver middleware layered on top (auth.md §5.1, walking-skeleton.md
 // §4.2); they are empty on Claims that only passed through NewMiddleware.
 type Claims struct {
-	Sub           string
-	Email         string
+	Sub   string
+	Email string
+	// Name is the token's standard OIDC `name` claim — DISPLAY DATA ONLY,
+	// used to seed the profile row at first sight (FR-ONB-1, #365 follow-up).
+	//
+	// Extraction fails SOFT, deliberately unlike EmailVerified's fail-CLOSED:
+	// an absent claim, or one present as anything other than a JSON string,
+	// leaves this the zero value "", which is inert — the user simply fills
+	// the field in during onboarding. The opposite choice would be actively
+	// harmful: rejecting a token over a mis-mapped display-name scope would
+	// lock every user of that provider out of the product to protect a value
+	// that prefills a text box.
+	//
+	// SECURITY: never an authorization input. The provider lets a user edit
+	// this freely and no claim vouches for it — there is no `name_verified`.
+	// It is not an identifier: it is neither unique nor stable.
+	Name          string
 	EmailVerified bool
 	// PlatformOperator is the verified `platform_operator` boolean claim
 	// (oidc-integration.md §3.2, EPIC-18 #465/#466): true only for a token

@@ -18,9 +18,10 @@
 #     https://www.scaleway.com/en/docs/console/account/how-to/create-api-keys/)
 #
 # Optional dynamic DNS (D-27/Phase 5): set CF_API_TOKEN / CF_ZONE_ID /
-# APP_HOST / AUTH_HOST and this script pushes Traefik's freshly-assigned
-# LoadBalancer IP to Cloudflare on each bring-up. We deliberately do NOT
-# reserve a static Scaleway IP (a held flexible IP bills ~EUR3/mo even while
+# APP_HOST / AUTH_HOST (+ the optional ADMIN_HOST) and this script pushes
+# Traefik's freshly-assigned LoadBalancer IP to Cloudflare on each bring-up.
+# We deliberately do NOT reserve
+# a static Scaleway IP (a held flexible IP bills ~EUR3/mo even while
 # the cluster is torn down); dynamic DNS keeps the standing cost at zero.
 # Skipped if CF_API_TOKEN is unset (then point DNS by hand from the summary
 # printed at the end):
@@ -28,7 +29,11 @@
 #   CF_ZONE_ID    the zone's ID (Cloudflare dashboard -> the zone -> API section)
 #   APP_HOST      e.g. beekeepingit-rc.melargil.pt
 #   AUTH_HOST     e.g. auth.beekeepingit-rc.melargil.pt
-# (STAGING_APP_HOST/STAGING_AUTH_HOST are accepted as legacy aliases.)
+#   ADMIN_HOST    OPTIONAL — the admin SPA's own origin (#449, ADR-0016),
+#                 e.g. admin.beekeepingit-rc.melargil.pt. Unset simply skips
+#                 that A record (#556).
+# (STAGING_APP_HOST/STAGING_AUTH_HOST are accepted as legacy aliases; there
+# has never been a STAGING_ADMIN_HOST, so ADMIN_HOST is the only spelling.)
 #
 # Optional Authentik outbound-email relay credentials (#361, NFR-SEC-1): set
 # AUTHENTIK_EMAIL_USERNAME / AUTHENTIK_EMAIL_PASSWORD and this script creates/
@@ -89,6 +94,9 @@ node_type="${SCW_NODE_TYPE:-DEV1-L}"
 
 app_host="${APP_HOST:-${STAGING_APP_HOST:-}}"
 auth_host="${AUTH_HOST:-${STAGING_AUTH_HOST:-}}"
+# Optional, unlike the two above (#556): `production-gate` has no ADMIN_HOST
+# variable today, and hard-requiring one would break the next prod bring-up.
+admin_host="${ADMIN_HOST:-}"
 
 # scw itself was already checked by scw-common.sh above.
 for bin in kubectl helm flux; do
@@ -171,10 +179,12 @@ install_cluster_prereqs
 if [ -n "${AUTHENTIK_EMAIL_USERNAME:-}" ] && [ -n "${AUTHENTIK_EMAIL_PASSWORD:-}" ]; then
   echo "creating/updating the beekeepingit-authentik-email-credentials Secret in $namespace"
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n "$namespace" create secret generic beekeepingit-authentik-email-credentials \
+  if kubectl -n "$namespace" create secret generic beekeepingit-authentik-email-credentials \
     --from-file=username=<(printf %s "$AUTHENTIK_EMAIL_USERNAME") \
     --from-file=password=<(printf %s "$AUTHENTIK_EMAIL_PASSWORD") \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply -f - | grep -qv "unchanged$"; then
+    authentik_secret_changed=1
+  fi
 else
   echo "AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD not set — skipping the email-relay Secret (Authentik sends no authenticated outbound email until it exists)"
 fi
@@ -201,12 +211,36 @@ fi
 if [ -n "${AUTHENTIK_GOOGLE_CLIENT_ID:-}" ] && [ -n "${AUTHENTIK_GOOGLE_CLIENT_SECRET:-}" ]; then
   echo "creating/updating the beekeepingit-authentik-google-credentials Secret in $namespace"
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n "$namespace" create secret generic beekeepingit-authentik-google-credentials \
+  if kubectl -n "$namespace" create secret generic beekeepingit-authentik-google-credentials \
     --from-file=client-id=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_ID") \
     --from-file=client-secret=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_SECRET") \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply -f - | grep -qv "unchanged$"; then
+    authentik_secret_changed=1
+  fi
 else
   echo "AUTHENTIK_GOOGLE_CLIENT_ID/AUTHENTIK_GOOGLE_CLIENT_SECRET not set — skipping the Google federation Secret (no Continue-with-Google button until it exists, by design)"
+fi
+
+# 4c. Roll Authentik if either credential Secret above changed. Kubernetes does
+# NOT restart pods when a Secret they env-mount changes, so without this the
+# server/worker keep serving with the OLD credentials indefinitely — and because
+# the blueprint entries that consume them are `conditions:`-gated, nothing fails:
+# the deployment stays green and the feature just never appears. Found the hard
+# way on staging, where the Secret, the merged config and a full cluster restart
+# were all in place and "Continue with Google" still did not exist.
+#
+# Restart only on an ACTUAL change: `kubectl apply` reports "configured" when it
+# changed something and "unchanged" when it did not, so a re-run with identical
+# credentials is a no-op rather than a gratuitous auth outage. Deployments may not
+# exist yet on a first bring-up (Flux installs Authentik later) — that is not an
+# error, so this is best-effort.
+if [ "${authentik_secret_changed:-0}" = "1" ]; then
+  if kubectl -n "$namespace" get deployment authentik-server >/dev/null 2>&1; then
+    echo "credentials changed — restarting Authentik so it picks up the new env"
+    kubectl -n "$namespace" rollout restart deployment/authentik-server deployment/authentik-worker || true
+  else
+    echo "credentials changed, but Authentik is not deployed yet — Flux will start it with the new env"
+  fi
 fi
 
 # 5. GitOps bootstrap — apply the gitops repo's clusters/<env>/ (Flux
@@ -226,9 +260,9 @@ cat <<EOF
 
 Cluster '$cluster_name' ($env_name) ready.
 
-- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts were
-  pushed to Cloudflare above. Otherwise point them at Traefik's LoadBalancer
-  IP manually:
+- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts — and
+  the admin host, when ADMIN_HOST is set — were pushed to Cloudflare above.
+  Otherwise point them at Traefik's LoadBalancer IP manually:
 
     kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 

@@ -202,12 +202,12 @@ String? _defaultAttributesSummary(
         values.add(treatmentContextLabel(l10n, context) ?? context);
       }
       final type = defaultAttributes['treatment_type'] as String?;
-      if (type != null) values.add(type);
+      if (type != null) values.add(treatmentTypeLabel(l10n, type));
       final disease = defaultAttributes['disease'] as String?;
-      if (disease != null) values.add(disease);
+      if (disease != null) values.add(diseaseConditionLabel(l10n, disease));
     case activityTypeFeeding:
       final feedType = defaultAttributes['feed_type'] as String?;
-      if (feedType != null) values.add(feedType);
+      if (feedType != null) values.add(feedTypeLabel(l10n, feedType));
     case activityTypeHarvest:
       final lotBatch = defaultAttributes['lot_batch'] as String?;
       if (lotBatch != null && lotBatch.isNotEmpty) values.add(lotBatch);

@@ -16,8 +16,7 @@ import 'activity_list_widgets.dart';
 /// the whole screen's context) and the performing user per row (#44).
 ///
 /// No own AppBar/Scaffold — like ApiariesListScreen, this is the Activities
-/// tab's root content within the app shell (app_router.dart wires it in
-/// place of the placeholder ComingSoonScreen), which supplies the header.
+/// tab's root content within the app shell, which supplies the header.
 class ActivitiesListScreen extends ConsumerWidget {
   const ActivitiesListScreen({super.key});
 

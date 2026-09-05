@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -43,13 +44,26 @@ Widget _buildScreen(OrganizationController controller) {
     overrides: [organizationProvider.overrideWith(() => controller)],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: OrganizationScreen(),
     ),
   );
 }
 
 void main() {
+  testWidgets(
+    'the create form warns that creating an organization is a one-way choice',
+    (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-create-blocks-invite-warning')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('renders the organization creation form', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
     await tester.pumpAndSettle();

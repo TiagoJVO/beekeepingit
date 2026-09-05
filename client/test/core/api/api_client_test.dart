@@ -250,6 +250,65 @@ void main() {
       );
     });
   });
+
+  // #601: optimistic concurrency needs one request to carry a header the rest
+  // do not (`If-Match`), and one response's headers to be readable (`ETag`).
+  // Both are additive — no existing caller changes shape.
+  group('ApiClient — per-request headers and response headers (#601)', () {
+    test('patchJson merges per-request headers without dropping the '
+        'standard ones', () async {
+      http.Request? captured;
+      final client = MockClient((req) async {
+        captured = req;
+        return http.Response('{}', 200, request: req);
+      });
+
+      final api = _buildApiClient(client: client, token: 'tok-abc');
+      await api.patchJson(
+        '/organizations/org-1',
+        {'name': 'x'},
+        headers: {'If-Match': '"v1"'},
+      );
+
+      expect(captured!.headers['If-Match'], '"v1"');
+      expect(captured!.headers['Authorization'], 'Bearer tok-abc');
+      expect(captured!.headers['Content-Type'], contains('application/json'));
+    });
+
+    test('a call that passes no headers is unchanged', () async {
+      http.Request? captured;
+      final client = MockClient((req) async {
+        captured = req;
+        return http.Response('{}', 200, request: req);
+      });
+
+      final api = _buildApiClient(client: client, token: 'tok-abc');
+      await api.patchJson('/profile', {'display_name': 'x'});
+
+      expect(captured!.headers.containsKey('If-Match'), isFalse);
+      expect(captured!.headers['Authorization'], 'Bearer tok-abc');
+    });
+
+    test(
+      'get exposes the response headers alongside the decoded body',
+      () async {
+        final client = MockClient(
+          (req) async => http.Response(
+            '{"id":"org-1"}',
+            200,
+            headers: {'content-type': 'application/json', 'etag': '"v7"'},
+            request: req,
+          ),
+        );
+
+        final api = _buildApiClient(client: client, token: 'tok');
+        final resp = await api.get('/organizations/me');
+
+        expect(resp.body, {'id': 'org-1'});
+        expect(resp.headers['etag'], '"v7"');
+      },
+    );
+  });
 }
 
 /// A fake [http.Client] that records [close] calls instead of tearing down a

@@ -283,6 +283,18 @@ client hides tombstoned rows. Physical purge (and tombstone retention) is a hist
 concern ([history.md](history.md) §7.2, deferred to EPIC-14). This is what makes deletes propagate to every device rather than resurrect
 on the next sync.
 
+**A delete's LWW comparator is captured on the device, at delete time** (#276, FR-OF-1). A
+queued delete op carries no row payload, so it has no `updated_at` of its own to compare — and
+inventing one when the op finally uploads makes it drift later on every retry and every app
+restart, so a delete that sat offline for a day could beat a genuinely newer concurrent edit
+under §4.1's strict comparison. The client therefore stamps the device time **once**, in the
+same statement that deletes the row, and persists it with the queued op: the synced tables the
+client deletes from enable PowerSync's `trackMetadata`, deletes go out as
+`UPDATE <table> SET _deleted = TRUE, _metadata = <device time>` (the only form the PowerSync
+core turns into a delete op that carries metadata), and the connector reads it back off
+`CrudEntry.metadata` as the op's `updated_at`. Client-side files:
+`client/lib/core/sync/lww_delete.dart`, `powersync_schema.dart`, `powersync_connector.dart`.
+
 ---
 
 ## 5. The sync-publication contract (what every owning service must honor)
@@ -496,8 +508,29 @@ the client gates sync on **measured link quality**, not the mere presence of a c
 - `sync_gate.dart`'s `SyncGate` is the probe → exponential-backoff → probe state machine
   (`SyncGateState`: `probing` / `waitingForSignal` / `passed`; default backoff 2s → 2min,
   ×2/attempt — tuning constants, adjustable without an interface change). It depends only on
-  `ConnectivityProbe` and a `Future<void> Function()` connect callback — never on a PowerSync
-  type — so it sits outside the §5 contract as intended.
+  `ConnectivityProbe`, a `Future<void> Function()` connect callback and an optional
+  `Stream<void>` of connectivity-return events — never on a PowerSync type — so it sits outside
+  the §5 contract as intended.
+- **Re-probe on connectivity-return (#240).** A backoff decided under weak signal must not
+  outlive the link that earned it: `connectivity_signal.dart`'s `ConnectivitySignal` (the browser
+  `online` event on web, a never-emitting stub off it) feeds `SyncGate`, which cancels the
+  pending backoff and probes at once. A return that lands _while_ a probe is in flight instead
+  drops that probe's verdict to `initialBackoff` — it measured the old link — rather than letting
+  it impose the grown delay. Without any of this, a write queued offline could sit unflushed for
+  up to the ~2-min max backoff after the device was back online, unless the user tapped "sync
+  now". Three deliberate limits keep the fix from undoing the gate:
+  - it **shortens one wait, it does not reset the schedule** — a marginal link flapping
+    `offline → online` is exactly what the exponential backoff is for, and restarting the
+    schedule per event would pin the gate at 2s and cause the churn this section set out to
+    avoid; every failed probe still grows the next delay;
+  - a mid-probe return still waits `initialBackoff`, so an `online` burst can't spin the probe;
+  - `navigator.onLine` stays a **hint that triggers a probe**, never a substitute for one
+    ("connectivity restored is necessary but not sufficient", above).
+
+  The signal is inert while the gate isn't running: a stopped gate is either auto-sync-off (the
+  user's choice) or `passed`, where the engine owns the connection and `rearm()` is what brings
+  the gate back.
+
 - `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
   connect and every reconnect after a `statusStream` connected→disconnected transition go
   through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's
@@ -507,11 +540,38 @@ the client gates sync on **measured link quality**, not the mere presence of a c
   account screen show "Waiting for better signal" while the gate backs off (EN/PT).
 - **Auto-sync setting (FR-ST-1, #81).** The account/settings screen's Sync section adds a
   device-local "Auto-sync" toggle (`features/settings/sync_settings_repository.dart`, default
-  on) that `powersync_service.dart`'s `applyAutoSyncSetting` honors: disabling it stops the
+  on) that `powersync_service.dart`'s `applySyncPreconditions` honors: disabling it stops the
   gate's probe loop (no further _automatic_ connect/reconnect attempts) without disconnecting an
-  already-connected engine or disturbing manual "sync now" (`SyncGate.requestSync`), which always
-  works regardless. Device-local rather than the server-synced Profile resource — it gates this
+  already-connected engine or disturbing manual "sync now" (`SyncGate.requestSync`), which works
+  regardless of the setting. Device-local rather than the server-synced Profile resource — it gates this
   device's own network use before any network call, and is genuinely per-installation.
+- **Membership precondition (#622, FR-ONB-2/D-3).** Ahead of the quality probe,
+  `applySyncPreconditions` also requires an **active membership** — `hasOrganizationProvider`,
+  i.e. `GET /v1/organizations/me` resolved to an organization — before any connect attempt, and
+  `BeekeepingitConnector.fetchCredentials` returns `null` rather than issuing a
+  `GET /v1/sync/token` for a caller who has none. The sync token is org-scoped, so that request
+  is answered `403` **by design** until the user finishes onboarding; issuing it anyway meant
+  PowerSync's `connect()` plus its own retry loop fired ~8 consecutive 403s (a console error
+  each) at every user sitting on the create-organization step. The `hasOrganizationProvider`
+  listener re-applies the preconditions on the `false → true` edge, so sync starts the moment
+  `POST /v1/organizations` returns 201 — no reload.
+
+  This one is a **precondition, not a quality heuristic**: it is not the gate guessing whether a
+  sync would go well, it is the client declining to send a request that cannot succeed. The
+  server's own membership check on every request remains the authority, and an already-connected
+  engine is never torn down — so "the gate is an optimization, never a correctness mechanism"
+  (above) still holds exactly as written.
+
+  **The one exception to the manual override** (§7.1's "a user-triggered sync now always
+  attempts once, gate or no gate", which stands unchanged for its actual subject — the quality
+  probe): `syncNowProvider` declines too when there is no membership, returning before it reads
+  the sync session. It has to. Its first step is `db.disconnect()`, and reconnecting afterwards
+  needs credentials `fetchCredentials` correctly refuses to mint — so proceeding would leave the
+  engine disconnected. The override exists because the beekeeper on the hill may know things the
+  probe doesn't; a missing membership is not a guess about the link but a fact about the caller,
+  which the server enforces with a `403`. It is also unreachable from the UI: the router keeps a
+  caller with no membership inside onboarding, where there is no account screen and so no "Sync
+  now" button.
 
 ---
 
@@ -559,6 +619,37 @@ of the local slice by `clear()` on logout / membership loss (§3.5). Every **oth
 (`401/403/404/429/…`) is treated as transient and **left queued** for idempotent forward-retry
 (§6.2), so a recoverable auth/route fault is never discarded.
 
+**What the needs-fix row actually says (#426/#443).** The server's `errors[].message` is
+**English-only and can name internal DB columns** ("default_attributes must be a JSON object"),
+so it is **never rendered** — it stays in the dead-letter row and the connector's log for
+diagnostics. The **machine-readable** half of the same problem body is safe, and is what the UI
+reads: `client/lib/features/sync/sync_rejection_messages.dart` maps each `(field, code)` pair
+onto **app-owned EN/PT copy** (a localized field label + the rule it broke). The mapping is an
+**allow-list**: a field or code the client has no copy for — and any pair whose generic copy
+would misdescribe the real constraint — degrades to the generic message, so a service adding a
+new validator can never leak by default. That safety-by-default has a cost, and the
+stock-declaration fields paid it twice: added **after** the table was written, they degraded
+silently to the generic line — no leak, but none of the guidance either, and nothing failed in
+between to say so. So the table is no longer trusted to be complete by inspection: it is held
+against the **shared validation description** (§9). Every `(field, code)`
+[`sync-ops.validation.json`](../../contracts/validation/sync-ops.validation.json) describes must
+have EN **and** PT copy, minus a short list of reasoned exemptions that is itself asserted to be
+non-vacuous — so a field added to the description without copy fails the client's tests rather
+than a beekeeper's rejected write (#600). The guard reaches exactly as far as the description
+does: a check a service classes `serverOnly` is still invisible to it and still needs a
+deliberate look.
+
+The same truthfulness rule shapes the copy itself: an
+activity's per-type attribute keys are internal schema names, so they collapse onto one
+"Details" label whose wording is phrased about the **entries inside** the bag, staying true
+whether one or several are wrong. The row's record name is held to it too — an activity has no
+name, only a wire type enum, which is resolved through `activity_types.dart`'s
+`activityTypeLabel` and dropped entirely for a type this client version doesn't know. The problem-level `code` carries no extra signal here
+(a retained rejection is always `validation.failed`, since the connector only dead-letters the
+`422`/`400` the sync endpoints answer with `problem.ValidationFailed`). The module deliberately
+depends on neither the dead-letter read model nor widgets, so the client-side pre-push
+revalidation (§9) can render locally-detected failures through the same copy.
+
 Accessibility (WCAG 2.2 AA, gloves-friendly) and EN/PT apply as everywhere. Remaining
 polish of the needs-fix screens/interaction design stays **EPIC-06**'s (#7).
 
@@ -580,24 +671,120 @@ authoritative.
   server, with the server as the single source of truth;
 - treat any client/server divergence as a **bug caught by boundary contract tests** (NFR-TST).
 
+**As built (#584, #585).** The middle bullet shipped with #584 and the third with #585; the first
+one could not. See [ADR-0025](../adr/0025-sync-validation-parity-description.md) for the full
+reasoning.
+
+- **The shared description is a real artifact:**
+  [`contracts/validation/sync-ops.validation.json`](../../contracts/validation/) (+ its own
+  README) — one declarative definition of the **mechanical** rules the owning services'
+  `validate*Op` enforce, for every syncable entity type. **Not** expressed in the OpenAPI schema as this
+  section originally proposed: `contracts/README.md` records that Dart client codegen is deferred
+  and no tool is decided, so "codegen'd to both sides" has one side today; and nearly every
+  `required` here is conditional on the op kind, which JSON Schema expresses badly.
+- **The client embeds it verbatim, never re-expresses it.**
+  `scripts/gen-sync-validation.sh` wraps the JSON byte-for-byte into
+  `client/lib/core/validation/gen/sync_validation_rules.g.dart` (committed, like the generated
+  l10n); `sync_validation_rules.dart` parses it and `sync_op_validator.dart` evaluates it. A stale
+  copy fails a client test. The parser **throws** on an unknown check kind, and on a known kind
+  whose numeric parameters are missing, rather than accepting either — so a malformed artifact
+  fails at build time. One field is descriptive-only by design: `entityTypeCheck` records the
+  server's own `entity_type` guard, which the client cannot fail because it dispatches _by_
+  `entity_type` (`contracts/validation/README.md`).
+- **The check itself fails open.** If the description can't be loaded or evaluated at all,
+  `validateSyncOps` reports no errors instead of throwing. D-12 makes this pass an optimization and
+  the server the authority, so the right degraded mode is "skip the optimization", never "stop
+  syncing" — a throw would escape `uploadData`, which PowerSync retries indefinitely, stalling
+  every pending write behind a defect in an artifact that isn't a security control.
+- **Where it runs.** `powersync_connector.dart`'s `uploadData` validates the ops **after** `_toOp`
+  has built them — so what is checked is exactly the bytes that would go on the wire (counter
+  identity already enriched, JSON columns already decoded) — and **before** the token fetch and any
+  HTTP, so the check itself needs no network.
+- **And now at save time too (#597).** The same evaluator runs a **second** time, earlier: when the
+  beekeeper presses Save, with the record still open, so a rejection is a field error in the form
+  instead of a needs-fix card after the next push. The pre-push pass **stays** — a queued op can
+  reach the upload queue by paths no form owns. Both call sites build their op through one shared
+  type, `SyncOpDraft` (`client/lib/core/sync/sync_op_draft.dart`), so the envelope cannot differ (an
+  edit's _payload_ still can — PowerSync queues a column diff where the form drafts the whole row —
+  but only ever in the direction where the save-time pass sees **more**, never less);
+  each repository owns a `draftForSave` next to the SQL it mirrors, so the column-to-value mapping
+  lives in one file and is pinned to that SQL by a test. The form-facing wrapper
+  (`client/lib/features/sync/save_time_validation.dart`) renders nothing itself — it hands back the
+  localized line for a column, reusing #443's `(field, code)` → EN/PT mapping unchanged, so the
+  sentence in the form and the one on the needs-fix card are the same sentence. Only the columns a
+  form declares it **binds** can block a save (that allow-list is itself pinned to the draft's
+  columns by a test): the wire envelope (`op`/`id`/`updated_at`) is never
+  reported, and a column with no field of its own is left to the pre-push pass and the server — the
+  property that keeps a defect here from making a form unsaveable, on top of the fail-open evaluator
+  itself. What this buys in practice is the class of failure the widgets could not see: every string
+  cap is measured in **UTF-8 bytes** server-side while a `maxLength` counts characters, so an
+  accented Portuguese name inside the field's allowance was silently over the server's.
+  Covered today: the **apiary**, **todo** and **journey** forms (and the journey quick-create
+  sheet). Not yet: the activity form, the stock declaration and the apiary counters — see the
+  open-items table below for why.
+- **What a failure does.** It lands in the same place a server rejection does (§8): every op of the
+  atomic push is retained in the local `sync_rejected_ops` dead-letter, surfaced through
+  `rejectedChanges` into the needs-fix list, and the CRUD transaction is `complete()`d so the FIFO
+  queue can't wedge behind an op that will never succeed as-is. The problem code is
+  `validation.failed.local`, distinct from the server's `validation.failed`, so the UI can say the
+  change **wasn't sent** rather than that it was refused (EN/PT), and a predicted rejection stays
+  distinguishable from a real one.
+- **Deliberately partial, and asymmetric on purpose.** A rule the client fails to mirror costs a
+  round-trip; a rule it mirrors _wrongly_ costs the beekeeper a valid edit, with no server to
+  overrule it. So a rule is mirrored only if mirroring it cannot cost a valid edit. The
+  description's `serverOnly` array names every exclusion with its reason — ownership lookups, the
+  per-activity-type attribute schema, the **extensible controlled vocabularies** (D-20: a newer
+  value can reach an older client by down-sync and be re-uploaded, and a frozen client copy would
+  reject it permanently), and apiaries' "a patch must change at least one field". The `put`/`patch`
+  gating (#378) is mirrored exactly: `required` carries the op kinds it applies to.
+- **What binds the two sides today.** `services/shared/syncvalidation` (+ `…/paritytest`) lets each
+  owning service assert the description against **its own** constants and wire structs in an
+  ordinary package test (`services/*/api/sync_validation_parity_test.go`) — caps, bounds, allowed
+  op kinds, `put`/`patch` required gating, and that no described field has fallen off the struct.
+  Changing a rule in Go without updating the description fails `go test`. The services' validators
+  are **not** driven by the description: the server stays the authority and is checked against it.
+- **What binds the two INTERPRETATIONS (#585).** The tests above compare declarations to constants;
+  they never call a validator, so they cannot see a described rule a service quietly stopped
+  applying, a drifted `code`/`message`/`ops[i].data.x` string, or the two evaluators reading one
+  declared rule differently. A second shared artifact closes all three:
+  [`contracts/validation/sync-ops.corpus.json`](../../contracts/validation/) — concrete wire ops,
+  valid and invalid, `put` and `patch`, replayed through **both real evaluators** (each service's
+  own `validate*Op` and the client's `validateSyncOps`) and asserted to reach the same verdict with
+  the same `(field, code, message)`. One corpus, two consumers, so a hand-maintained second copy
+  cannot drift. Each case declares what **both** sides must report and, separately, what **only**
+  the server reports (ownership, the vocabularies, the attribute schema, `breakdown`, the
+  patch-changes-any rule) with the reason — so the deliberate asymmetries read as decisions rather
+  than as undetected divergence. Guarded in turn by coverage tests in
+  `services/shared/syncvalidation`: every described rule must have a case, every entity must have a
+  case both sides **accept**, and every message must match the description's.
+- **CI has to fan the parity suites out explicitly.** Those tests live inside the four services and
+  the client, and `build-publish.yml` picks a component up only when a changed path is prefixed by
+  that component's own directory — so a change to `contracts/validation/` alone used to land with
+  none of them run. `ci.yml`'s `parity` steps run the four service suites and the client's
+  validation tests whenever the description, the corpus, `services/shared/syncvalidation/`, any
+  service's sync validators or the client's validation layer change.
+- **Still open:** the three write paths #597 did not reach — the activity form, the stock
+  declaration and the apiary counters (see the open-items table).
+
 ---
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item                                                                      | Status                                                                                                                                                                                                         | Where                                                                                                                                |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                                                                                       | owning service apply step; behind the seam (§6)                                                                                      |
-| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change                                                                               | §6.3; EPIC-06                                                                                                                        |
-| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                                                                                       | owning service                                                                                                                       |
-| Notify-and-fix screens                                                    | **First slice built (#256/#260)** — connector retention (dead-letter `sync_rejected_ops`) + `rejectedChanges` seam + needs-fix list/toast (§8 "As built"); screen polish still EPIC-06                         | `client/lib/core/sync/powersync_connector.dart`, `client/lib/features/sync/` · EPIC-06 (#7)                                          |
-| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81 (§7.1 "As built") | `client/lib/core/sync/{connectivity_probe,sync_gate}.dart` (#55), `client/lib/features/settings/sync_settings_repository.dart` (#81) |
-| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                                                                                                 | EPIC-06                                                                                                                              |
-| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                                                                                     | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                                                           |
-| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity                                                                     | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)                                              |
-| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                                                                                     | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                                                                |
-| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                                                                                           | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                                                               |
-| Local-data purge on logout & membership loss                              | **Resolved** — `LocalStoreEngine.clear()` wired into `AuthController.logout()` and a background membership-loss watcher (§3.5)                                                                                 | `client/lib/core/auth/auth_controller.dart`, `client/lib/core/sync/local_data_purge.dart` (#125)                                     |
-| Local-data purge on active-org switch (multi-org, C-1)                    | **Deferred** — v1 is single-active-org per device; no switch UI exists yet to trigger it (§3.5)                                                                                                                | future, when multi-org lands                                                                                                         |
+| Item                                                                      | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Where                                                                                                                                                                                       |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owning service apply step; behind the seam (§6)                                                                                                                                             |
+| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | §6.3; EPIC-06                                                                                                                                                                               |
+| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owning service                                                                                                                                                                              |
+| Notify-and-fix screens                                                    | **First slice built (#256/#260)** — connector retention (dead-letter `sync_rejected_ops`) + `rejectedChanges` seam + needs-fix list/toast (§8 "As built"); screen polish still EPIC-06                                                                                                                                                                                                                                                                                                                                                                                                                                     | `client/lib/core/sync/powersync_connector.dart`, `client/lib/features/sync/` · EPIC-06 (#7)                                                                                                 |
+| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81, and #240 made a pending backoff yield to connectivity-return (§7.1 "As built")                                                                                                                                                                                                                                                                                                                                               | `client/lib/core/sync/{connectivity_probe,connectivity_signal,sync_gate}.dart` (#55, #240), `client/lib/features/settings/sync_settings_repository.dart` (#81)                              |
+| Validation-parity mechanism                                               | **Built (#584)** — shared rule description + verbatim client embed + pre-push check routed into the needs-fix flow (§9 "As built", [ADR-0025](../adr/0025-sync-validation-parity-description.md)); per-service constants bound to it by package tests, interpretations bound by **#585**'s corpus                                                                                                                                                                                                                                                                                                                          | `contracts/validation/`, `client/lib/core/validation/`, `client/lib/core/sync/powersync_connector.dart`, `services/shared/syncvalidation/`, `services/*/api/sync_validation_parity_test.go` |
+| Save-time (in-form) validation parity                                     | **First slice built (#597)** — shared `SyncOpDraft` seam + per-repository `draftForSave` + form wiring for **apiary / todo / journey** (and journey quick-create). **Not covered:** the activity form (its own attribute-mirror validator already runs there; the description's remaining activity rules are unreachable from its controls), the **stock declaration** (no form — the payload is derived from the organization's registration number and the current hive counts, so there is no field to put an error against), and the **apiary counters** editor (digits-only + clamped, so no described rule can fail) | `client/lib/core/sync/sync_op_draft.dart`, `client/lib/features/sync/save_time_validation.dart`, the three repositories' `draftForSave`                                                     |
+| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                                                                                                                  |
+| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)                                                                                                     |
+| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                                                                                                                       |
+| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                                                                                                                      |
+| Local-data purge on logout & membership loss                              | **Resolved** — `LocalStoreEngine.clear()` wired into `AuthController.logout()` and a background membership-loss watcher (§3.5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `client/lib/core/auth/auth_controller.dart`, `client/lib/core/sync/local_data_purge.dart` (#125)                                                                                            |
+| Local-data purge on active-org switch (multi-org, C-1)                    | **Deferred** — v1 is single-active-org per device; no switch UI exists yet to trigger it (§3.5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | future, when multi-org lands                                                                                                                                                                |
 
 ---
 

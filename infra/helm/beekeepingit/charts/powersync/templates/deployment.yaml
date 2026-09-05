@@ -16,8 +16,12 @@ spec:
   template:
     metadata:
       labels:
+        # Carried through to the POD template on purpose (#246) — see
+        # templates/_helpers.tpl. Supplies app.kubernetes.io/instance, so it
+        # replaces the explicit line this block used to carry; the immutable
+        # spec.selector above still matches.
+        {{- include "beekeepingit.labels" . | nindent 8 }}
         app.kubernetes.io/name: powersync
-        app.kubernetes.io/instance: {{ .Release.Name }}
       annotations:
         # Force a rollout when the config content changes (ConfigMap updates
         # don't otherwise trigger a re-read of mounted files).

@@ -1067,7 +1067,11 @@ identifier` is stated explicitly because it is a security decision, not a defaul
   "Continue with Google" works only for a user who has connected Google there first; everyone else
   lands on the normal login form. That is the deliberate, issue-scoped posture — not an oversight —
   and it is what keeps invitation-only intact without inventing an unverified-email link.
-- **`email_verified` and the #361 gate.** The source's `authentication_flow` is upstream's
+- **`email_verified` and the #361 gate.** _(The flow's **provenance** is **superseded by §8.16** —
+  #594 replaced this `!Find` at upstream's slug with an in-blueprint copy the file owns, because the
+  `!Find` raced authentik's own default blueprints and landed **null**, silently. Everything the
+  paragraph says about the flow's **shape** — user_login at order 0, no `user_write` — still holds,
+  and is now enforced rather than inherited.)_ The source's `authentication_flow` is upstream's
   `default-source-authentication`, **unchanged**. It is not extended with §8.10's login-time email
   stage, and the reason is structural rather than an omission: its `user_login` stage sits at
   **order 0**, and `unique_together (target, stage, order)` means a blueprint cannot move an
@@ -1141,8 +1145,13 @@ true` — so the invariant survives without extending this flow.)_ That flow als
 - **Sign-out is unaffected (verified, not assumed).** Logout is a front-channel `end_session` GET
   with `id_token_hint` (§8.5), and federation changes neither the token nor the session model —
   the Authentik SSO session a federated login creates is the same session object a password login
-  creates (`default-source-authentication`'s `user_login` stage is the _same stage object_ the
-  default flow uses). The local PowerSync invalidation is client-side and untouched. The §7
+  creates — a `UserLoginStage` with the default `session_duration` either way. _(The parenthetical
+  this line originally carried — "the same stage object the default flow uses" — was **wrong even
+  in #363**: upstream's `default-source-authentication` binds its own
+  `default-source-authentication-login` stage, not the default flow's `default-authentication-login`.
+  Since §8.16 the stage is `beekeepingit-source-authentication-login`, ours, with the same defaults.
+  The session claim is unaffected — it never depended on the stage row's identity.)_ The local
+  PowerSync invalidation is client-side and untouched. The §7
   "Logout" row is unchanged. **Not** verified end-to-end through a real Google round-trip — see
   the honesty note below.
 - **Testing (NFR-TST-1) — three layers, because no single one can cover this.** A live e2e through
@@ -1181,6 +1190,8 @@ true` — so the invariant survives without extending this flow.)_ That flow als
   looks — `get_action()` never touches the `User` row, so it proves the flow-manager path is
   non-mutating, not that a full federated login leaves `upn` alone; the guarantee there rests on
   `default-source-authentication` having no `user_write` stage, which the probe does not enforce.
+  _(**Closed by §8.16**: the flow is now the blueprint's own, and both the offline guard and the
+  probe assert that its only stage is a `user_login`.)_
 
 ## 8.14 As built (#364) — subject-keyed account linking, with a known-email history
 
@@ -1241,8 +1252,8 @@ issuance. Everything is config-as-code in the blueprint
   `beekeepingit-mark-email-verified` policy — the same expression, gated on the same restored
   flow-token evidence, that stamps `attributes.email_verified`. So an entry exists **only** for an
   address whose inbox control was actually proven. Nothing an upstream asserts can add one; the
-  federated path never writes to the user at all (`default-source-authentication` still has no
-  `user_write` stage, §8.13). The two dev/CI seed users that are seeded verified without running the
+  federated path never writes to the user at all (the source-authentication flow still has no
+  `user_write` stage — §8.13, and §8.16 for where that flow now comes from). The two dev/CI seed users that are seeded verified without running the
   stage have their history seeded too — the same documented escape hatch, one level down.
 - **What the history actually buys, precisely.** The **subject** covers "my Google address changed
   after I linked" (the connection carries it; the email is never consulted). The **history** covers
@@ -1251,6 +1262,14 @@ issuance. Everything is config-as-code in the blueprint
   whose upstream address changed **before they ever linked**, to an address this deployment has
   never seen verified. There is nothing tying those two identities together, and guessing is the
   takeover shape. Such a user links through Connected services (§8.13) exactly as before.
+- **Changing an email address never unlinks Google — in either direction.** Once a
+  `UserSourceConnection` exists, `SourceMatcher` returns `Action.AUTH` on `(source, identifier)`
+  **before any property is consulted at all**, so no address is read on that sign-in: not the
+  upstream's, not the Authentik account's `email`, and not `identity.users.email` — which the IdP
+  never sees and which authorizes nothing anyway (§8.7, #170). Editing any of them leaves the link
+  intact; only deleting the connection from the provider's **Connected services** page unlinks it.
+  The address matters **exactly once**, on the **first, unlinked** sign-in, where it is what finds
+  the account (above) or enrolls a new one (§8.15).
 - **Every refusal is the same refusal — `Action.DENY`.** Ambiguous address, unverified upstream,
   unverified local account, superuser: all identical from outside, and each renders Authentik's own
   `AccessDeniedResponse` instead of #363's raw 400. _(Amended by §8.15: an **unknown** verified
@@ -1286,8 +1305,8 @@ issuance. Everything is config-as-code in the blueprint
     so there is no detection signal — the one cheap control that would let a real owner notice a
     takeover in progress. Authentik already raises a `SOURCE_LINKED` **Event** when
     `PostSourceStage` persists a new connection, so the work is binding a notification rule and
-    transport to it; §8.10's SMTP path already exists. Carried in
-    [`FOLLOWUPS.md`](../../FOLLOWUPS.md). It should land **before** federation is enabled on an
+    transport to it; §8.10's SMTP path already exists. Tracked in
+    [#563](https://github.com/TiagoJVO/beekeepingit/issues/563). It should land **before** federation is enabled on an
     environment holding real user data — which today none does (D-26; and Google federation is
     inert until its credentials Secret exists at all, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).
 - **The guard evolved rather than weakened.**
@@ -1479,6 +1498,259 @@ cannot express").
   environment, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)) now covers a real
   registration: a Google account matching no local account reaches onboarding with a **new**
   account, rather than #363's refusal.
+
+## 8.16 As built (#594) — the source-authentication flow is ours, not a lookup
+
+§8.13 wired both federation sources' `authentication_flow` with
+`!Find [authentik_flows.flow, [slug, default-source-authentication]]` — a lookup of a flow
+**authentik's own bundled blueprints** create. That is a cross-file dependency with no ordering
+guarantee and a **silent** failure mode, and it red-lit `helm-e2e` on unrelated PRs. This replaces
+the lookup with a flow the blueprint **owns** (NFR-TST-1, NFR-SEC-1). No Go service, no client, no
+token and no requirement changed — only
+[`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)
+and its two guards.
+
+- **The defect, precisely — and why nothing reported it.** authentik's defaults are ordinary
+  blueprint **files** (`/blueprints/default/flow-default-source-authentication.yaml`), discovered by
+  the same `blueprints_discovery` pass as our ConfigMap-mounted one, and each is applied by a
+  **separate async actor** (`apply_blueprint.send_with_options`, `blueprints/v1/tasks.py`). Nothing
+  orders theirs before ours. On the local cluster's own first boot the seventeen `default/*.yaml`
+  files carry `last_applied` timestamps that are **interleaved and spread over ~2 minutes**
+  (08:33:26 → 08:35:20), which is what a queue of independent actors looks like. When ours won that
+  race, `Find.resolve` (`blueprints/v1/common.py`) returned **`None` with no exception and no log
+  line**, the entry still validated because `authentication_flow` is an **optional** FK, and the
+  source was created with no authentication flow. It stayed that way for the cluster's life —
+  authentik skips a re-apply while the file hash is unchanged. The only symptom appeared two steps
+  later: `handle_auth` → `_prepare_flow` 400s with "Configured flow does not exist.".
+- **The fix is ownership, not ordering.** The blueprint now defines
+  `beekeepingit-source-authentication` itself — a faithful copy of upstream's flow: designation
+  `authentication`, `require_unauthenticated`, an `ak_is_sso_flow` policy binding on the flow, and
+  exactly one `user_login` stage (`beekeepingit-source-authentication-login`) at order 0. Both
+  sources reference it with `!KeyOf`. The **login stage is owned too**, for the same reason the flow
+  is: an `!Find` at upstream's stage would have put the same race straight back into the fix.
+- **`!KeyOf` is the loud spelling, and that is the point.** `KeyOf.resolve` **raises**
+  `EntryInvalidError` when the referenced entry is missing or failed to apply, where `Find.resolve`
+  returns `None`. `apply_blueprint` records that as `BlueprintInstanceStatus.ERROR` — either via the
+  `except (…, EntryInvalidError)` arm or via `validate()` returning false — and, because
+  `last_applied_hash` is written **only** on success, the file is retried on the next discovery
+  pass. A genuinely missing flow is therefore a reported failure that heals, never a silently
+  half-wired source.
+- **Owning an authentication flow put the DEFAULT one in play — so the brand now pins it.**
+  `ToDefaultFlow.get_flow` (`flows/views/executor.py`) is what `/flows/-/default/authentication/`
+  resolves — where the OIDC authorize endpoint sends every unauthenticated sign-in. It returns
+  `brand.flow_authentication` when set and otherwise falls back to `flow_by_policy`, which scans
+  every `designation: authentication` flow **ordered by slug** and takes the first whose policies
+  pass. `beekeepingit-source-authentication` sorts **before** `default-authentication-flow`, and
+  upstream's own `default-brand.yaml` sets the brand field with an `!Find` under `state: created` —
+  i.e. it can be null for exactly the same reason this section exists. The SSO gate denies a plain
+  browser so the fallback would still land correctly, but that would make the gate load-bearing for
+  the whole login page. The brand entry now sets `flow_authentication: !KeyOf
+flow-default-authentication` (the existing "Sign in" title entry, given an id and moved above the
+  brand), so the fallback never runs. `Importer.apply()` is atomic, so a missing
+  `default-authentication-flow` cannot leave a null committed: the file's other, required `!Find`s
+  on that slug abort the whole apply.
+- **Two security properties became enforceable.** §8.13 rested "Google can never overwrite the local
+  `email`, `attributes.upn` or `attributes.email_verified`" on the flow having no `user_write`
+  stage, and admitted nothing checked it. Owning the flow makes it checkable, and both layers now
+  do. [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+  asserts offline that every source sets `authentication_flow: !KeyOf flow-source-authentication`;
+  that the flow keeps its slug, `designation: authentication` and `require_unauthenticated`; that it,
+  its login stage and its SSO policy each exist exactly once; that its gate is bound exactly once and
+  its expression is **exactly** `return ak_is_sso_flow` (a substring test passed
+  `return ak_is_sso_flow or True`); that **every** stage binding on it is the login stage, at order
+  0; that the brand pins `flow_authentication`; and — file-wide — that nothing reaches a
+  `beekeepingit-source-*` object by `!Find`, which was how a `user_write` binding slipped past the
+  first version of the stage-list assertion.
+  [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py) asserts
+  the same properties **live**, on the deployed objects, replacing the old "`authentication_flow` is
+  set" check that could not tell which flow it was, and adds `attributes.email_verified` to the
+  fields a completed federated login must leave untouched.
+- **How it was proven, not assumed.** Against the local k3d cluster, with authentik's
+  `default-source-authentication` **renamed away in the database** — the race, deterministically
+  forced — three things were observed. (1) The pre-#594 spelling reported `valid`, `applied`, and
+  left `authentication_flow` **null**: the defect, reproduced on demand rather than waited for. (2)
+  The fixed blueprint, applied under the identical condition, produced
+  `authentication_flow = beekeepingit-source-authentication` with one `UserLoginStage` at order 0 and
+  the SSO binding present — and the **whole federation probe passed**, including the sign-in driven
+  end to end through the real `FlowExecutorView` and the persisted `UserSourceConnection`. (3)
+  Pointing `!KeyOf` at an entry that is not in the file raised
+  `EntryInvalidError: KeyOf: failed to find entry with id …`, which the apply path records as
+  `error` and does not store a hash for. The offline guard was mutation-tested: twelve drifts —
+  reverting to `!Find`, binding a `user_write` onto the flow by `!KeyOf` **and** by `!Find`,
+  weakening either SSO expression to `or True`, flipping the designation, dropping
+  `require_unauthenticated`, renaming the slug, a second gate binding, deleting the flow entry,
+  deleting the login stage, un-pinning the brand — each go red.
+- **What this deliberately does NOT fix, stated plainly.** `!Find` against an **optional** FK is a
+  defect _class_, and three more instances survive in the same file, all on the OAuth2 providers:
+  `signing_key` (nullable; a null means no RS256 key and an HS256 fallback — worse than a 400),
+  `invalidation_flow` and `authorization_flow` (both `null=True` at 2026.5.4, both resolved against
+  objects authentik's own bundled blueprints create). They are untouched here because each has a
+  different blast radius and needs its own verification, not because they are safe; the
+  self-signed certificate in particular comes from `authentik/crypto/apps.py` at boot rather than
+  from a blueprint, so it is a different race with a different fix. Worth an issue of its own.
+  → **Closed by #599, [§8.17](#817-as-built-599--the-providers-cross-file-references-are-pinned-not-looked-up)**, which also
+  narrows the claim above: only `signing_key` was in fact silently null. The
+  `null=True` checked here is the **model** field, and the blueprint importer validates through the
+  **API serializer**, where the two flows are `required=True, allow_null=False` — see §8.17. The
+  `!Find`s at the two `user_login` stage bindings (`flow-enrollment`, `flow-source-enrollment`) are
+  the same _ordering_ dependency but on **required** FKs, so they fail loudly and self-heal; they
+  were left alone to keep this change scoped to the silent one. There is also still no browser-level
+  test that a direct `/if/flow/beekeepingit-source-authentication/` is denied — the gate is covered
+  statically and by the probe, and the existing password-login specs would fail loudly if the new
+  flow ever hijacked the default one.
+
+## 8.17 As built (#599) — the providers' cross-file references are pinned, not looked up
+
+§8.16 closed one instance of a defect class and listed three survivors, all on the OAuth2
+providers: `signing_key`, `authorization_flow`, `invalidation_flow`, each reached with
+`!Find` at an object **authentik itself** creates. This closes them (NFR-SEC-1, NFR-TST-1,
+D-7). Only
+[`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)
+and its two guards changed — no Go service, no client, no token, no requirement.
+
+- **One of the three was genuinely silent, and §8.16 over-counted — corrected here.** All three
+  FKs are `null=True` on the **model** (`core/models.py` 645/654, `providers/oauth2/models.py` 308),
+  which is what #594/#599 checked. But the blueprint importer validates through the **API
+  serializer**, and on `OAuth2ProviderSerializer` at 2026.5.4 that is where they part company —
+  measured on the deployed serializer, not read off the source:
+
+  | field                | `required` | `allow_null` | a null `!Find` therefore…                  |
+  | -------------------- | ---------- | ------------ | ------------------------------------------ |
+  | `signing_key`        | `False`    | `True`       | **validates** — silent, permanent null     |
+  | `authorization_flow` | `True`     | `False`      | is rejected: `This field may not be null.` |
+  | `invalidation_flow`  | `True`     | `False`      | is rejected: `This field may not be null.` |
+
+  So `signing_key` was the real instance of §8.16's class, and the other two were already loud —
+  by **upstream's serializer choice**, not by anything in this blueprint. They are pinned anyway:
+  `signing_key` proves upstream is willing to leave such a field nullable, and if either flow were
+  ever relaxed the `!Find` spelling would go silent with nothing here noticing.
+
+- **The blast radius of the one that was silent.** `OAuth2Provider.jwt_key` returns
+  `(client_secret, HS256)` when `signing_key` is null, and `JWKSView.get_keys` yields nothing, so
+  the endpoint serves `{}`. A provider in that state looks configured in the admin UI and issues
+  tokens happily — but every relying party that verifies signatures against the JWKS (the shared Go
+  middleware §4, PowerSync, the admin app) is broken, permanently, with a `BlueprintInstance` row
+  reporting `successful`. Reproduced exactly that way on the local cluster (below).
+
+- **The fix is a PIN, not ownership — because these three cannot be owned.** #594 could copy the
+  flow it needed. Here:
+  - the certificate is created by `authentik/crypto/apps.py` at **boot** (`self_signed`, a
+    `reconcile_tenant` hook), never by a blueprint. Owning it would mean committing a **private
+    key** into a file that renders into a namespace-readable ConfigMap (NFR-SEC-1 forbids it —
+    the same reason the federation credentials arrive via `!Env`), and generating one per Helm
+    render would rotate the JWKS on every upgrade, invalidating every live token;
+  - a second `designation: invalidation` flow would **re-arm §8.16's own second-order trap**:
+    `ToDefaultFlow.get_flow` falls back to scanning that designation **ordered by slug** when the
+    brand field is null, upstream's `default-brand.yaml` sets `flow_invalidation` with its own racy
+    `!Find` under `state: created`, and any `beekeepingit-*` slug sorts ahead of
+    `default-invalidation-flow`. Pinning adds **no flow**, so no designation's slug ordering
+    changes and no new brand pin is needed — checked deliberately, because that is exactly the
+    trap #594 hit;
+  - copying the authorization flow would fork upstream's consent behaviour for no gain.
+
+  The blueprint therefore carries three **identifiers-only** entries —
+  `flow-default-provider-authorization`, `flow-default-provider-invalidation`,
+  `cert-authentik-self-signed` — that declare nothing, and both providers reference them with
+  `!KeyOf`. Same shape as `flow-default-authentication`, which #594 introduced for the brand pin.
+
+- **Why an entry with no `attrs` is the loud spelling.** `Importer._validate_single` attaches the
+  serializer to an **existing** row with `partial=True` — with no attrs, a no-op update — and
+  otherwise validates a **create** in full. With no attrs a create can never validate:
+  `FlowSerializer` requires name/title/designation, `CertificateKeyPairSerializer` requires
+  `certificate_data`. A missing target is therefore `EntryInvalidError` →
+  `BlueprintInstanceStatus.ERROR` → **no `last_applied_hash`** → retried on the next discovery
+  pass, where `!Find` wrote a null once and never looked again. `Importer.apply()` is atomic, so
+  nothing half-wired is committed in between. **The absence of `attrs` is load-bearing**, and the
+  guard asserts it (along with the absence of `state:` — `absent` would _delete_ authentik's
+  certificate, and `signing_key` is `on_delete=SET_NULL`); on the certificate the empty entry is also
+  what keeps a private key out of the ConfigMap. That makes the two serializers' **required** fields
+  a version-bump dependency in their own right: if either started defaulting them, a pin would invent
+  the object rather than raise. Recorded on the watch-list in
+  [oidc-integration.md §8](oidc-integration.md) next to the nullability table.
+
+- **What "retried" costs, and why it is not a new bring-up risk.** `blueprints_discovery` is
+  scheduled hourly (`ScheduleSpec(crontab=f"{fqdn_rand('blueprints_v1_discover')} * * * *")`) with
+  `send_on_startup=True`, and a watchdog `Observer` watches the blueprint directory — so an ERRORed
+  file is re-applied on the next hour, on the next worker start, or the moment the ConfigMap content
+  changes. It does mean a file that references a not-yet-created object does not apply at all until
+  it exists. That is **not** new: both flows were already `required=True`, so a lost race against
+  authentik's bundled blueprints already failed the whole file (verified below, on the pre-fix
+  spelling). The only behaviour this change alters is the certificate's — from "apply, silently
+  broken, forever" to "fail, retry, correct". And the certificate is the least racy of the three: it
+  comes from a `reconcile_tenant` hook that runs in-process at app-ready, ahead of the startup
+  discovery task the worker picks up.
+
+- **A second-order benefit, now structural.** Both providers reference **one** pin entry for the
+  signing key. [oidc-integration.md §8](oidc-integration.md) records that the shared key is
+  load-bearing — the admin app overrides `iss` to the beekeepingit issuer, so its tokens only
+  verify against the beekeepingit JWKS — and that was previously two independent `!Find`s happening
+  to agree. The probe now asserts both providers advertise the **same `kid`**.
+
+- **How it was proven, on the cluster, with the race forced.** Against the local k3d cluster, by
+  renaming the target away in the database and nulling the field — i.e. the state a cluster reaches
+  when our file wins the apply race — driven through byte-for-byte the handling `apply_blueprint`
+  performs (`blueprints/v1/tasks.py` 204–238), on the **rendered** ConfigMap content of both the
+  pre-fix and post-fix blueprint:
+  1. **Defect reproduced.** Certificate hidden, pre-fix file applied: `valid=True`,
+     `applied=True`, status `successful`, `last_applied_hash` **stored** (so authentik would never
+     re-apply it) — and `signing_key` null on both providers, `jwt_key` → `HS256`, and the live
+     `JWKSView` for `/application/o/beekeepingit/` returning **`{}`**.
+  2. **Fix verified in that identical state.** The post-fix file records
+     `BlueprintInstanceStatus.ERROR` with **no** `last_applied_hash`, on
+     `Serializer errors {'certificate_data': ['This field is required.']}` — the pin refusing to
+     invent a certificate — and commits nothing.
+  3. **Both flows checked separately**, with them hidden too: the pre-fix spelling was already loud
+     there (the serializer's `may not be null`), and the post-fix one is loud on the **missing
+     object itself**.
+  4. **The retry an ERROR buys.** With the targets back, the post-fix file applies cleanly, and all
+     six references resolve: both providers on the boot-created certificate, RS256, one RS256 `sig`
+     key in each JWKS, **same `kid`**.
+  5. **Loudness proven for each pin**, by pointing each `!KeyOf` at an entry id that is not in the
+     file: `EntryInvalidError`, ERROR recorded, no hash, nothing committed — three for three.
+  6. **The full federation probe passes** — 92 assertions, `PROBE OK` (79 before this change).
+- **Both guard layers extended, and mutation-tested rather than assumed.**
+  [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+  now requires every OAuth2 provider entry to reach all three by `!KeyOf` at the pins **and to
+  declare each of the three exactly once** (PyYAML takes the last of a duplicate key with no error,
+  so `signing_key: !KeyOf …` followed by `signing_key: null` would otherwise pass while shipping the
+  null); requires each pin to exist exactly once, identify the right object **inside its
+  `identifiers:` block**, and carry no `attrs` and no `state:` (`absent` would _delete_ authentik's
+  certificate, and `signing_key` is `on_delete=SET_NULL`); requires the pins to sit **above** the
+  providers, since `!KeyOf` resolves backwards only; fails on any `!Find` reaching a pinned object;
+  and fails on any `certificate_data`/`key_data` literal. The two `!Find` bans and the literal ban
+  were widened after review: the former now match the **joined entry body** (this file already wraps
+  long `!Find [` calls across lines, which a line-scoped rule read as clean) and the latter tolerates
+  a quoted or flow-mapping key. A second security pass added two STRUCTURAL bans, both of which
+  had let an entry evade the guard entirely rather than fail one assertion: an entry whose first key
+  is not `model:` (YAML mapping keys are unordered, so `- id: … / model: …` is a valid entry
+  authentik applies normally, and this guard — which splits on `^  - model:` — folded it into the
+  previous entry and skipped it), and a mixed-case model name (`apps.get_model()` lowercases it, so
+  `authentik_providers_oauth2.OAuth2Provider` applies normally while matching none of the
+  `model ~ /^authentik_…$/` tests). Both `!Find` bans are now case-insensitive for the same reason,
+  and the certificate pin — identified by a `name`, not a slug — must match up to its closing quote,
+  since a bare boundary accepted `authentik Self-signed Certificate 2`. **45 drifts, 45 caught** —
+  #599's 33 (each field reverted to `!Find` on either provider, in both the one-line and wrapped
+  spellings; each pin deleted, duplicated, repointed or given attrs, including a private-key literal
+  and a quoted one; `signing_key` dropped, mistyped, pointed at the wrong pin, shadowed by the longer
+  key `jwt_signing_key:` — what `keyof()`'s new **left** boundary rejects — and overridden by a
+  duplicate `signing_key: null`; `state: absent` on a pin; the pins moved below the providers; a
+  provider and a source hidden behind an `id:`-first entry; a Django-cased model with a Django-cased
+  `!Find`; the certificate pin repointed at a longer name) **plus #594's original 12 re-run**,
+  because `keyof()` and the entry split both changed here and had to be shown not to weaken any
+  assertion they already carried.
+  [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py) asserts
+  the same properties **live** on both deployed providers — the certificate's identity, `RS256`
+  (not the HS256 fallback), both flow slugs, exactly one RS256 `sig` key per JWKS, and the shared
+  `kid` — and those assertions were themselves verified non-vacuous: with `signing_key` nulled on
+  the cluster, **7 of them fail**; restored, they pass.
+- **A wrinkle worth knowing on a version bump.** When an entry that contains a `!KeyOf` tag fails
+  validation, the `EntryInvalidError` that surfaces names the **first** `!KeyOf` in that entry, not
+  the one that failed: `_apply_models` logs the failing entry, structlog renders it, and
+  `YAMLTag.__repr__` resolves the tag against an **empty** `Blueprint()` — which raises. Observed
+  three times here (renaming any one pin id produced the same
+  `KeyOf: failed to find entry with 'id' of 'flow-default-provider-authorization'`). It costs
+  nothing operationally — the file is still recorded ERROR and retried — but read such a message as
+  "an entry failed", not as "that specific reference is missing".
 
 ## 9. Acceptance-criteria traceability (#109)
 

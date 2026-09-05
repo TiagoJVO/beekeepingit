@@ -24,7 +24,7 @@ const (
 	UserID     = "a0000000-0000-7000-8000-000000000001"
 	UserName   = "Dev Beekeeper"
 	UserEmail  = "dev@beekeepingit.local"
-	UserLocale = "en"
+	UserLocale = "en-GB"
 
 	// The tenant the user is an active member of (organizations schema).
 	OrganizationID   = "b0000000-0000-7000-8000-000000000001"
