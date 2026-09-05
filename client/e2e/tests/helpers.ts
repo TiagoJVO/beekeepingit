@@ -98,13 +98,17 @@ export async function gotoAppRoot(page: Page) {
 // The 5xx tolerance is kept, and is not optional: on a freshly-booted k3d
 // cluster the gateway really does answer Traefik's own 502 page for a short
 // window, and we must not measure THAT origin's headers.
+//
+// Returns the document's own response, so a caller that needs a header off the
+// PWA container itself (map-tiles-csp.spec.ts reads the CSP it must enforce)
+// does not have to re-navigate to get one. Existing callers ignore it.
 export async function gotoSameOriginDocument(page: Page) {
   const deadline = Date.now() + 60_000;
   let lastStatus: number | null = null;
   for (;;) {
     const resp = await page.goto("/", { waitUntil: "domcontentloaded" }).catch(() => null);
     lastStatus = resp?.status() ?? lastStatus;
-    if (resp != null && resp.status() < 500) return;
+    if (resp != null && resp.status() < 500) return resp;
     if (Date.now() > deadline) {
       throw new Error(
         `the app origin never answered below 5xx (last HTTP status ${
