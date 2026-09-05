@@ -137,8 +137,34 @@ Because it asserts an _absence_, it also asserts two presences first — the fon
 manifest and the bundled Roboto were both actually fetched — so a boot that died
 before loading fonts fails loudly instead of passing with an empty list.
 
+**`tests/map-tiles-csp.spec.ts`** (#671, NFR-SEC-1/FR-AP-3/D-16) logs nobody in
+either, and it is the only spec that makes the CSP **enforcing**. `flutter_map`
+fetches tiles through `package:http` — an `XMLHttpRequest` on web — so a tile is
+governed by `connect-src`, not `img-src`, and `connect-src` named neither tile
+host until #671. Report-Only hid that completely: nothing blocks, so the map
+kept working and would have gone blank in three screens at once the day #462
+flips the header name. So this spec reads the policy the PWA container
+**actually ships**, re-serves a document from the app's own origin carrying that
+exact string under the enforcing header name, and makes the browser decide —
+the deployed policy, enforced, against the image built from the commit under
+test.
+
+It deliberately does not drive the Flutter map: every map view is behind an OIDC
+login, six widget tests already cover the rendering, and the property in
+question is whether the browser permits the request `flutter_map` makes, which
+this spec issues directly. Every third-party URL is `page.route`-stubbed, so
+nothing reaches Esri or the OSM Foundation from a runner — and that interception
+is also the mechanism, because a CSP-blocked request never reaches the network
+layer at all. Two guards keep it from passing vacuously: it first proves the
+deployed `main.dart.js` really references both tile origins, and it ends on a
+negative control (`fonts.gstatic.com` must be refused with a `connect-src`
+violation), without which a policy that failed to apply would satisfy every
+other assertion. `client/test/map_tile_csp_test.dart` is the seconds-long half —
+it holds `connect-src` against the constants the three map screens pass to
+`TileLayer`, in both directions, so the two cannot drift apart.
+
 **`tests/offline-boot.spec.ts`** (#619, FR-OF-1/FR-PL-1/NFR-PER-1/D-10) is the
-third login-free spec, and the only one that runs **with** service workers:
+fourth login-free spec, and the only one that runs **with** service workers:
 `playwright.config.ts` blocks them suite-wide and this file opts back in with
 `test.use({ serviceWorkers: "allow" })`. It boots the app online, then takes the
 browser genuinely offline, reloads, and asserts the **shell renders** — the

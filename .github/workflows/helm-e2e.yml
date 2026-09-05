@@ -66,6 +66,12 @@ jobs:
     # `.frag` shader (the `.ttf` was already probed; #688 flipped its role, it
     # did not add it). That includes the 4.4 MB app and the 5.8 MB engine, but
     # compressed, so ~4.2 MB. Budgeted at 180s in the spec itself.
+    # Held at 60 once more for #671's map-tile CSP spec: it logs nobody in
+    # either, and its one test is a boot, one same-origin read of `main.dart.js`
+    # (~1.4 MB at this file's gzip_comp_level 2 — see the measured table in
+    # client/nginx.conf) and three stubbed probe fetches against a document
+    # Playwright fulfills itself, so no third-party request leaves the runner.
+    # Budgeted at 180s in the spec itself, like the compression one.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
