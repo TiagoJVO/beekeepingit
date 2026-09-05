@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
@@ -149,7 +150,7 @@ Widget _buildScreen(
     ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: AccountScreen(),
     ),
   );
@@ -167,13 +168,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
-    expect(find.byKey(const Key('account-email-field')), findsOneWidget);
-    // Name + email now appear twice: once in the read-only avatar header
-    // (the prototype's account card) and once in the editable field below.
+    // The address is IdP-owned: the avatar header shows it, the form does
+    // not offer it. PATCH would refuse it with 422 read_only.
+    expect(find.byKey(const Key('account-email-field')), findsNothing);
+    // The name still appears twice: once in the read-only avatar header (the
+    // prototype's account card) and once in the editable field below. The
+    // email appears ONCE — the header only — now that the field is gone.
     expect(find.text('Ana'), findsNWidgets(2));
-    expect(find.text('ana@example.com'), findsNWidgets(2));
+    expect(find.text('ana@example.com'), findsOneWidget);
     // Presence/wiring only — not tapped: it opens a real browser tab via a
-    // web-only platform call (see account_platform.dart), matching how
+    // web-only platform call (see core/platform/external_link_platform.dart), matching how
     // widget_test.dart never taps 'login-button' for the same reason.
     expect(
       find.byKey(const Key('account-change-password-button')),
@@ -192,17 +196,15 @@ void main() {
     expect(find.textContaining('illing'), findsNothing);
   });
 
-  testWidgets('validates empty name and email client-side', (tester) async {
+  testWidgets('validates the empty name client-side', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byKey(const Key('account-name-field')), '');
-    await tester.enterText(find.byKey(const Key('account-email-field')), '');
     await tester.tap(find.byKey(const Key('account-save-button')));
     await tester.pumpAndSettle();
 
     expect(find.text('Enter your name.'), findsOneWidget);
-    expect(find.text('Enter your email.'), findsOneWidget);
   });
 
   testWidgets('submits updated profile fields and shows success', (
@@ -221,6 +223,33 @@ void main() {
     expect(find.text('Profile saved.'), findsOneWidget);
   });
 
+  testWidgets('a profile written before #656 (locale "pt") opens the picker on '
+      'Português and saves the supported tag (D-34)', (tester) async {
+    String? submitted;
+    final controller = _FakeProfileController(
+      // The value every pre-#656 profile actually holds. The dropdown's
+      // items are `en-GB`/`pt-PT` now, so an un-migrated `pt` reaching the
+      // field unchanged is a Flutter assertion failure, not a soft
+      // fallback — this test is what stops that regressing.
+      _profile(locale: 'pt'),
+      onSubmit: ({name, email, locale}) async {
+        submitted = locale;
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    // Shown as the language it always was, not reset to English.
+    expect(find.text('Português'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('account-save-button')));
+    await tester.pumpAndSettle();
+
+    // ...and the next save writes the canonical tag back, so the legacy
+    // value does not survive the round trip.
+    expect(submitted, 'pt-PT');
+  });
+
   testWidgets('surfaces a mocked 422 field error from the server', (
     tester,
   ) async {
@@ -233,9 +262,9 @@ void main() {
           detail: 'one or more fields are invalid',
           fieldErrors: [
             ApiFieldError(
-              field: 'email',
+              field: 'name',
               code: 'invalid',
-              message: 'email must be a valid email address',
+              message: 'name must not be empty',
             ),
           ],
         );
@@ -247,7 +276,7 @@ void main() {
     await tester.tap(find.byKey(const Key('account-save-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('email must be a valid email address'), findsOneWidget);
+    expect(find.text('name must not be empty'), findsOneWidget);
   });
 
   testWidgets('org admins see the manage-members action (#172, #197)', (
@@ -279,6 +308,30 @@ void main() {
     },
   );
 
+  testWidgets(
+    'every member sees BOTH the organization-details and stock-declarations '
+    'actions, admin or not (#296/#298, FR-AP-9/FR-AP-10)',
+    (tester) async {
+      // Deliberately NOT gated behind isOrgAdminProvider, unlike manage-members
+      // above: a non-admin can READ their organization's details and record
+      // declarations. Only EDITING the organization's details is admin-only,
+      // which the organization-details screen enforces on the fields themselves
+      // (and the server enforces regardless of either).
+      await tester.pumpWidget(
+        _buildScreen(_FakeProfileController(_profile()), orgRole: 'user'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('account-organization-details-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('account-stock-declarations-button')),
+        findsOneWidget,
+      );
+    },
+  );
   testWidgets('shows a sign-out action (#197)', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();

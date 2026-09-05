@@ -99,11 +99,13 @@ func getUserBySub(q *sqlcgen.Queries) http.HandlerFunc {
 // support tool (organizations' GET /organizations/platform/memberships):
 // organizations knows the memberships, identity owns the email -> user_id
 // mapping (service-decomposition.md §4 rule 3). email is matched
-// case-insensitively against the mutable PATCH /v1/profile field (D-7: this
-// is app-owned profile data, not an IdP credential), so it can return a
-// false negative/ambiguous match if a caller's profile email is stale or
-// shared -- acceptable for a support lookup tool, never used for anything
-// authorization-sensitive. Never exposed through the gateway (same trust
+// case-insensitively against identity's own cached copy of the address (D-7:
+// app-owned profile data, not an IdP credential). Since the #365 follow-up
+// that copy is seeded from the verified token rather than typed by the user,
+// which makes it more accurate but no more authoritative: it is written once
+// at first sight and never re-checked, so it can still be stale or shared,
+// and it remains acceptable for a support lookup tool and never usable for
+// anything authorization-sensitive. Never exposed through the gateway (same trust
 // boundary as /users/by-sub and organizations' own
 // /internal/memberships/active, #280).
 func getUserByEmail(q *sqlcgen.Queries) http.HandlerFunc {

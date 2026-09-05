@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + app-shell precache + service-worker routes + web image hardening + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -17,6 +17,10 @@ tasks:
       - task: admin-audience-mapping
       - task: platform-operator-mapping
       - task: federation-source-posture
+      - task: app-shell-precache
+      - task: service-worker-routes
+      - task: web-image-hardening
+      - task: repo-map
 
   format:
     desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
@@ -79,3 +83,25 @@ tasks:
     desc: "Verify federation sources stay subject-matched + !Env-credentialed, enrollment-open only via the guarded flow (#363/#365, NFR-SEC-1)"
     cmds:
       - ./scripts/check-federation-source-posture.sh
+
+  app-shell-precache:
+    # The description deliberately avoids naming the build command verbatim:
+    # the check greps for that string in this very file (see the script).
+    desc: "Verify every web-bundle build site also generates the service worker's precache manifest (#619, FR-OF-1)"
+    cmds:
+      - ./scripts/check-app-shell-precache-wired.sh
+
+  service-worker-routes:
+    desc: "Verify the app-shell worker's SERVER_ROUTED_PREFIXES covers every app-host gateway route (#683, FR-OF-1)"
+    cmds:
+      - ./scripts/check-service-worker-routes.sh
+
+  web-image-hardening:
+    desc: "Verify client/ and admin/ share one nginx base and keep the unused module tree (and its libuuid CVEs) out (#716, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-web-image-hardening.sh
+
+  repo-map:
+    desc: "Verify every top-level directory has its CLAUDE.md map row + README.md tree line (definition-of-done)"
+    cmds:
+      - ./scripts/check-repo-map.sh

@@ -39,6 +39,14 @@ const (
 // a migration. Exported so the client-mirroring doc comments above and any
 // future admin/reporting code can reference the canonical Go set directly in
 // tests.
+//
+// These strings are STORED/WIRE VALUES, not display text (#625, NFR-I18N-1).
+// They read as Portuguese for historical reasons, but each is a stable
+// identifier: renaming one to translate it would be a contract change AND a
+// data migration for every row already carrying it. Clients localise at
+// render time instead (see client/lib/features/activities/activity_types.dart
+// and its .arb entries), so appending a value here also owes a display label
+// on the client side.
 var (
 	// FeedTypes is the known feed-type vocabulary (Alimentação, prototype.md).
 	FeedTypes = []string{"Xarope 1:1", "Xarope 2:1", "Candi", "Pólen"}

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/validation/sync_op_validator.dart';
 import 'package:beekeepingit_client/features/sync/sync_needs_fix_screen.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -37,21 +39,300 @@ void main() {
       expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
       expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
       // The server's raw field-level message is NOT surfaced — a localized,
-      // non-technical message is shown instead (#426).
+      // non-technical message is shown instead (#426), now mapped from the
+      // rejection's (field, code) pair rather than blanket-generic (#443).
       expect(find.text('value must be >= 0'), findsNothing);
+      expect(find.text('Count: this must be 0 or more.'), findsNWidgets(2));
+    },
+  );
+
+  group('rejection-code → localized field guidance (#443)', () {
+    testWidgets(
+      'maps a known (field, code) pair to specific localized guidance instead '
+      'of the blanket generic message',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.hive_count","code":"out_of_range","message":"hive_count must be >= 0"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Number of hives: this must be 0 or more.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('hive_count'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('renders one line per mapped field problem', (tester) async {
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'todo',
+          errorDetail:
+              '{"detail":"one or more ops are invalid","errors":['
+              '{"field":"data.title","code":"required","message":"title is required"},'
+              '{"field":"data.due_date","code":"invalid","message":"due_date must be a YYYY-MM-DD date"}'
+              ']}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Title: this is required.'), findsOneWidget);
+      expect(find.text("Due date: this value isn't valid."), findsOneWidget);
+      expect(find.textContaining('due_date'), findsNothing);
+    });
+
+    testWidgets(
+      'a rejected stock declaration names the field at fault instead of the '
+      'generic line (#600)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'stock_declaration',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":['
+                '{"field":"data.declared_on","code":"required","message":"declared_on is required"},'
+                '{"field":"data.total_hive_count","code":"out_of_range","message":"total_hive_count must be >= 0"}'
+                ']}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Declaration date: this is required.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Total hives: this must be 0 or more.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('declared_on'), findsNothing);
+        expect(find.textContaining('total_hive_count'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      "an apiary's registration number reaches the screen localized too — the "
+      'same column, validated on an apiary op (#600)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.registration_number","code":"too_long","message":"registration_number must be at most 50 characters"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Registration number: this text is too long.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('registration_number'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'falls back to the generic message when the server reports a field the '
+      'app has no copy for (a new validator can never leak by default)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.internal_column","code":"invalid","message":"internal_column must be a widget"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('internal_column'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('a malformed error_detail still renders the row with the generic '
+        'message rather than throwing or losing the edit', (tester) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', entityType: 'apiary', errorDetail: 'not json at all'),
+        // Well-formed JSON, but an errors[] entry missing its `code`: the
+        // entry is skipped rather than defaulted, so it can't masquerade
+        // as a real issue — and it can't take the whole row down with it.
+        _row(
+          id: 'r2',
+          entityType: 'apiary',
+          errorDetail:
+              '{"detail":"x","errors":[{"field":"data.name","message":"name is required"}]}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
       expect(
         find.text('This change was rejected and needs your attention.'),
-        findsWidgets,
+        findsNWidgets(2),
+      );
+      expect(find.textContaining('name is required'), findsNothing);
+    });
+
+    testWidgets(
+      'falls back to the generic message when the op carries no field detail '
+      '(a collateral op of an atomic push, rolled back for a sibling)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  testWidgets(
+    'does not leak a raw snake_case DB column name from the server detail — '
+    'shows localized copy instead (#426, now specific per #443)',
+    (tester) async {
+      // Reproduces the field-tested leak, with the code the journeys
+      // validator actually emits for it (validateDefaultAttributes,
+      // services/journeys/api/types.go): a rejected journey whose server
+      // detail named the `default_attributes` DB column verbatim.
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'journey',
+          errorDetail:
+              '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid","message":"default_attributes must be a JSON object"}]}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      // The internal column name must never reach the UI.
+      expect(find.textContaining('default_attributes'), findsNothing);
+      expect(
+        find.text("Defaults for activities: this value isn't valid."),
+        findsOneWidget,
       );
     },
   );
 
+  group('client-predicted rejections (#584, FR-OF-2/D-12)', () {
+    testWidgets(
+      'get the SAME per-field guidance a server rejection gets — the connector '
+      'synthesizes the identical (field, code) pairs, so #443\'s mapping '
+      'applies with no special case',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'todo',
+            errorCode: localValidationFailedCode,
+            errorDetail:
+                '{"detail":"client-side validation parity check rejected this push",'
+                '"errors":[{"field":"data.title","code":"required","message":"title is required"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Title: this is required.'), findsOneWidget);
+        // Still no raw validation text (#426 holds for both origins).
+        expect(find.textContaining('title is required'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'fall back to "wasn\'t sent yet", NOT "was rejected", when nothing maps — '
+      'the server never saw the change, so refusing wording would be wrong',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            errorCode: localValidationFailedCode,
+            errorDetail:
+                '{"detail":"client-side validation parity check rejected this push","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+        expect(
+          find.text("This change wasn't sent yet — please correct it."),
+          findsOneWidget,
+        );
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'a SERVER rejection with nothing mapped keeps the original wording — the '
+      '#584 fallback must not swallow the case it sits beside',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text("This change wasn't sent yet — please correct it."),
+          findsNothing,
+        );
+      },
+    );
+  });
+
   testWidgets(
-    'does not leak a raw snake_case DB column name from the server detail — '
-    'shows the localized generic message instead (#426)',
+    'a code the app has no copy for still degrades to the localized generic '
+    'message, so a new server validator cannot leak (#426/#443)',
     (tester) async {
-      // Reproduces the field-tested leak: a rejected journey whose server
-      // detail named the `default_attributes` DB column verbatim.
       final store = _FakeRejectedStore([
         _row(
           id: 'r1',
@@ -63,8 +344,6 @@ void main() {
       await tester.pumpWidget(_harness(store));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
-      // The internal column name must never reach the UI.
       expect(find.textContaining('default_attributes'), findsNothing);
       expect(
         find.text('This change was rejected and needs your attention.'),
@@ -137,6 +416,7 @@ void main() {
     for (final MapEntry(key: entityType, value: expectedLabel) in const {
       'apiary': 'Apiary change',
       'apiary_counter': 'Hive count change',
+      'stock_declaration': 'Stock declaration change',
       'activity': 'Activity change',
       'journey': 'Journey change',
       'journey_plan_item': 'Journey plan change',
@@ -186,6 +466,46 @@ void main() {
       },
     );
 
+    testWidgets("localizes an activity's wire type rather than printing it raw "
+        '(#443 — the row used to read "Activity change · harvest")', (
+      tester,
+    ) async {
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'activity',
+          payload: '{"data":{"type":"harvest"}}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Activity change · Honey harvest'), findsOneWidget);
+      // The raw wire enum must not be what's rendered. ("Honey harvest"
+      // legitimately contains "harvest", so assert on the exact raw title
+      // the old behavior produced rather than on a substring.)
+      expect(find.text('Activity change · harvest'), findsNothing);
+    });
+
+    testWidgets(
+      'falls back to the plain entity label for an activity type this client '
+      "version doesn't know, rather than showing the raw identifier",
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'activity',
+            payload: '{"data":{"type":"some_new_type"}}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Activity change'), findsOneWidget);
+        expect(find.textContaining('some_new_type'), findsNothing);
+      },
+    );
+
     testWidgets(
       'falls back to the plain entity label when the payload carries no '
       'name/title/type field',
@@ -197,6 +517,37 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Journey change'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a stock declaration keeps the plain entity label — none of its payload '
+      'fields is an already-human name, so none may reach the title (#600, '
+      "the stock-declaration counterpart of #443's raw-activity-type leak)",
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'stock_declaration',
+            payload:
+                '{"data":{"declared_on":"2026-09-14","total_hive_count":12,'
+                '"registration_number":"PT-12345","notes":"annual"}}',
+            // The helper's default detail is an apiary_counter's field, which
+            // validateDeclarationOp could never emit — use a real declaration
+            // rejection so the whole fixture is one the server could produce.
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.declared_on","code":"invalid","message":"declared_on must be a date in YYYY-MM-DD form"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Stock declaration change'), findsOneWidget);
+        // Neither the ISO wire date (unlocalized in EN *and* PT) nor the
+        // registration number may be appended to the row title.
+        expect(find.textContaining('2026-09-14'), findsNothing);
+        expect(find.textContaining('PT-12345'), findsNothing);
+        expect(find.textContaining('·'), findsNothing);
       },
     );
   });
@@ -359,7 +710,7 @@ Widget _harness(_FakeRejectedStore store) {
     ],
     child: MaterialApp.router(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       routerConfig: router,
     ),
   );
@@ -371,13 +722,14 @@ Map<String, Object?> _row({
   String fixApiaryId = 'apiary-1',
   String? payload,
   String? errorDetail,
+  String errorCode = 'validation.failed',
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
   'payload': payload ?? '{}',
-  'error_code': 'validation.failed',
+  'error_code': errorCode,
   'error_detail':
       errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

@@ -120,11 +120,15 @@ components:
         entity_type:
           type: string
           description: >-
-            Owning entity — `apiary`, or `apiary_counter` (#256: a typed per-apiary
-            counter row; its `data` carries `apiary_id`, `counter_type` from the owning
-            service's known set, and a non-negative `value`; `delete` is not valid for
-            it). Deliberately not an enum: owning services validate their own types, and
-            new syncable entities are additive (api-contracts.md §8).
+            Owning entity — today `apiary`, `apiary_counter` (#256), `activity` (#39),
+            `journey` and `journey_plan_item` (#45), or `todo` (#50); the sync coordinator
+            routes each to its owning service. Deliberately not an enum: owning services
+            validate their own types, and new syncable entities are additive
+            (api-contracts.md §8). The per-entity `data` rules each service enforces — and
+            which op kinds it accepts (an `apiary_counter` has no `delete`, a
+            `journey_plan_item` no `patch`) — are described in
+            `contracts/validation/sync-ops.validation.json`, which the offline client also
+            checks queued ops against before pushing (sync.md §9, D-12).
         id:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
         data:

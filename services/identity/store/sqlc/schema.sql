@@ -15,7 +15,8 @@ CREATE TABLE identity.users (
     oidc_sub     TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL DEFAULT '',
     email        TEXT NOT NULL DEFAULT '',
-    locale       TEXT NOT NULL DEFAULT 'en',
+    locale       TEXT NOT NULL DEFAULT 'en-GB'
+                 CONSTRAINT users_locale_supported CHECK (locale IN ('en-GB', 'pt-PT')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );

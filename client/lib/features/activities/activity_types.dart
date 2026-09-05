@@ -40,12 +40,19 @@ String? activityTypeLabel(AppLocalizations l10n, String type) {
 
 /// Controlled candidate vocabularies (FR-AC-1 AC: "extensible, not a closed
 /// enum") — the client mirror of services/activities/api/types.go's
-/// FeedTypes/TreatmentTypes. These are already human-readable PT product/
-/// treatment names used directly as the stored attribute value (not
-/// translated concepts, unlike the activity-type/treatment-context labels
-/// above), so no `.arb` entry is needed per value — extending a vocabulary
-/// is a code-only append here AND in the Go set, kept in lockstep by the
-/// mirrored unit tests (activity_types_test.dart, types_test.go).
+/// FeedTypes/TreatmentTypes.
+///
+/// These strings are STORED/WIRE VALUES, not display text (#625): the
+/// service validates against exactly this set and rows on staging already
+/// carry them, so a value here is a stable identifier that happens to read
+/// as Portuguese for historical reasons. Never rename one to translate it —
+/// that would be a contract + data change. Localization happens at RENDER
+/// time instead, via [feedTypeLabel] / [treatmentTypeLabel] /
+/// [diseaseConditionLabel] and their `.arb` entries (NFR-I18N-1).
+///
+/// Extending a vocabulary is a code-only append here AND in the Go set,
+/// kept in lockstep by the mirrored unit tests (activity_types_test.dart,
+/// types_test.go) — plus a display label per new value.
 const feedTypes = ['Xarope 1:1', 'Xarope 2:1', 'Candi', 'Pólen'];
 const treatmentTypes = ['Apivar/amitraz', 'Ácido oxálico', 'Timol', 'Outro'];
 
@@ -93,3 +100,54 @@ String? treatmentContextLabel(AppLocalizations l10n, String context) {
     _ => null,
   };
 }
+
+/// The localized display label for a stored [feedTypes] value (#625,
+/// NFR-I18N-1, FR-AC-1).
+///
+/// Unlike [activityTypeLabel]/[treatmentContextLabel] — whose stored tokens
+/// (`harvest`, `general_preventive`) are internals no user should ever see,
+/// so an unknown one degrades to `null` — a vocabulary value IS already
+/// human-readable. An unmapped one therefore falls back to the raw stored
+/// string (a value captured while the attribute was still free text, or
+/// replicated down from a newer server with a wider vocabulary): showing
+/// what is stored beats a blank cell or a lookup key.
+String feedTypeLabel(AppLocalizations l10n, String value) => switch (value) {
+  'Xarope 1:1' => l10n.feedTypeSyrup11Label,
+  'Xarope 2:1' => l10n.feedTypeSyrup21Label,
+  'Candi' => l10n.feedTypeCandiLabel,
+  'Pólen' => l10n.feedTypePollenLabel,
+  _ => value,
+};
+
+/// The localized display label for a stored [treatmentTypes] value (#625,
+/// NFR-I18N-1, FR-AC-1) — same stored-value-as-key contract and raw-value
+/// fallback as [feedTypeLabel].
+String treatmentTypeLabel(AppLocalizations l10n, String value) =>
+    switch (value) {
+      'Apivar/amitraz' => l10n.treatmentTypeApivarAmitrazLabel,
+      'Ácido oxálico' => l10n.treatmentTypeOxalicAcidLabel,
+      'Timol' => l10n.treatmentTypeThymolLabel,
+      'Outro' => l10n.treatmentTypeOtherLabel,
+      _ => value,
+    };
+
+/// The localized display label for a stored [diseaseConditions] value (#625,
+/// NFR-I18N-1, FR-AC-1, D-19) — same stored-value-as-key contract and
+/// raw-value fallback as [feedTypeLabel].
+///
+/// The Latin names (`Aethina tumida`, `Tropilaelaps spp.`) stay Latin in both
+/// languages; only the parenthetical gloss on the small hive beetle is
+/// translated.
+String diseaseConditionLabel(AppLocalizations l10n, String value) =>
+    switch (value) {
+      'Varroose' => l10n.diseaseConditionVarroosisLabel,
+      'Loque americana' => l10n.diseaseConditionAmericanFoulbroodLabel,
+      'Loque europeia' => l10n.diseaseConditionEuropeanFoulbroodLabel,
+      'Nosemose' => l10n.diseaseConditionNosemosisLabel,
+      'Acariose' => l10n.diseaseConditionAcarapisosisLabel,
+      'Aethina tumida (pequeno besouro da colmeia)' =>
+        l10n.diseaseConditionSmallHiveBeetleLabel,
+      'Tropilaelaps spp.' => l10n.diseaseConditionTropilaelapsLabel,
+      'Outro' => l10n.diseaseConditionOtherLabel,
+      _ => value,
+    };

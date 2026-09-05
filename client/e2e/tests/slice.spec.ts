@@ -57,16 +57,17 @@ const apiaryDetailHiveCount = (page: Page) => page.getByText(/\d+ hives|No hives
 async function login(page: Page) {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
 
-  // Back on the PWA. After login the app now lands on the Tasks (Tarefas) tab
-  // (D-29, #427), not the apiaries list. The OIDC callback is a full page load
-  // that re-bootstraps Flutter + the token exchange, so allow generously for a
-  // cold stack rather than the default 30s navigation budget.
-  await page.waitForURL(/\/todos/, { timeout: 60_000 });
+  // Back on the PWA. After login the app now lands on the Home (Início) tab
+  // (D-35, #658, amending D-29's Tasks landing), not the apiaries list. The
+  // OIDC callback is a full page load that re-bootstraps Flutter + the token
+  // exchange, so allow generously for a cold stack rather than the default 30s
+  // navigation budget.
+  await page.waitForURL(/\/home/, { timeout: 60_000 });
   await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 30_000 });
 }
 
-// After login the app lands on the Tasks tab (D-29, #427). Flows that operate
+// After login the app lands on the Home tab (D-35, #658). Flows that operate
 // on the apiaries list switch to the Apiaries tab first. The bottom nav is a
 // Material 3 NavigationBar, whose destinations Flutter web exposes as
 // role="tab" (SemanticsRole.tab, navigation_bar.dart) with the tab label as the
@@ -208,7 +209,7 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // its `expanded` semantics flag and icon change — so a single locator
   // works for the tap.
   //
-  // The app landed on the Tasks tab (D-29, #427); this create → edit → sync
+  // The app landed on the Home tab (D-35, #658); this create → edit → sync
   // flow is apiaries-centric, so switch to the Apiaries tab first.
   await goToApiariesTab(page);
   await page.getByRole("button", { name: "Actions" }).click();
@@ -278,39 +279,28 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
 
-  // Return to the list first (shell Back is labeled "Back"), then nudge sync
-  // from there. In-app navigation (History API), NOT a page reload: this keeps
-  // the same in-memory session and PowerSync connection, so the assertions below
-  // isolate reconnect-sync from session restore. Reload-based session
-  // persistence is exercised on its own by the dedicated reload test below
-  // (#236) — no need to couple the two here.
+  // Return to the list (shell Back is labeled "Back"). In-app navigation
+  // (History API), NOT a page reload: this keeps the same in-memory session and
+  // PowerSync connection, so the assertions below isolate reconnect-sync from
+  // session restore. Reload-based session persistence is exercised on its own
+  // by the dedicated reload test below (#236) — no need to couple the two here.
   await page.getByRole("button", { name: "Back" }).click();
   await enableSemantics(page);
 
-  // Nudge the sync via the app's "Sync now" override before asserting. This is
-  // the intended user action for exactly this situation, not a test cheat: the
-  // connection-quality gate (#55, FR-OF-3) re-probes on an exponential backoff
-  // and — confirmed via trace — does NOT re-probe promptly on connectivity-
-  // return (no online-event listener interrupts the pending backoff; rearm() is
-  // a no-op while it's mid-wait), so a queued write can sit unflushed for up to
-  // the ~2-min max backoff. The app ships a manual "Sync now" (SyncGate.
-  // requestSync, which bypasses the gate) precisely for "reconnected but the
-  // gate hasn't re-probed yet". Exercising it makes the reconnect-sync assertion
-  // deterministic instead of racing the backoff. (Follow-up flagged for the
-  // gate's slow re-probe-on-reconnect — a real FR-OF-3 responsiveness gap, not
-  // just CI slowness; see the PR notes. Once the gate re-probes on reconnect,
-  // this nudge can be dropped.) Sync now lives on the Account screen (#197/#172
-  // IA); open it from the list's shell header account button, then return to the
-  // list with a single in-app Back (History API — keeps the session).
-  await page.getByRole("button", { name: "Account settings" }).click();
-  await enableSemantics(page);
-  await page.getByRole("button", { name: "Sync now" }).click();
-  await page.goBack();
-  await enableSemantics(page);
+  // NOTHING nudges the sync from here on: reconnect alone must flush the queue.
+  // This used to tap the app's "Sync now" override first, because the
+  // connection-quality gate (#55, FR-OF-3) only re-probed on its exponential
+  // backoff and never on connectivity-return, so a queued write could sit
+  // unflushed for up to the ~2-min max backoff. #240 made the gate listen for
+  // the browser's `online` event and cut a pending backoff short, which is
+  // exactly the user-visible behavior this test should be proving — so the
+  // nudge is gone and the poll below is now a real assertion about
+  // reconnect-driven sync rather than about the manual override (which has its
+  // own coverage in the unit tests).
 
   // Assert server-side: the edit reached the apiaries service. Runs a fetch
   // inside the page; works from any screen. Generous in case the flush takes a
-  // moment to land server-side after the nudge.
+  // moment to land server-side after the reconnect.
   await expect
     .poll(async () => (await serverApiary(page, capturedToken, apiaryName))?.hive_count ?? null, {
       timeout: 60_000,
@@ -327,7 +317,7 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   createdApiaryId = serverRow?.id ?? null;
 
   // ── Local state converged on the list (#23 AC) ────────────────────────
-  // Back on the list (from the goBack above), the row read from local SQLite
+  // Back on the list (from the Back above), the row read from local SQLite
   // shows the synced value.
   await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
 
@@ -349,7 +339,7 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   try {
     const p2 = await fresh.newPage();
     await login(p2);
-    // The fresh client also lands on the Tasks tab (D-29, #427); switch to the
+    // The fresh client also lands on the Home tab (D-35, #658); switch to the
     // Apiaries tab before asserting the downloaded apiary row.
     await goToApiariesTab(p2);
     await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 60_000 });
@@ -381,9 +371,9 @@ test("reload keeps the session and converges (#236: offline_access → refresh t
   await login(page);
   await page.reload();
   await enableSemantics(page);
-  // Should still be authenticated — the reload restores the D-29/#427 landing
-  // (the Tasks tab), not bounce to /login.
-  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible();
+  // Should still be authenticated — the reload restores the D-35/#658 landing
+  // (the Home tab), not bounce to /login.
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 });
 
 // Blocked on a real, separate walking-skeleton bug — NOT an e2e-harness issue,
