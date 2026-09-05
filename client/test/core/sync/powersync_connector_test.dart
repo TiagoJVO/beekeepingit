@@ -575,26 +575,51 @@ void main() {
 
     test('a delete (no payload) gets a device timestamp, captured once and '
         'reused on every subsequent retry of the same queued op — not '
-        'recomputed fresh each time', () async {
+        'recomputed fresh each time', () {
       final cache = <String, String>{};
 
       final firstAttempt = lwwTimestampFor('row-1', null, cache);
-      // A real retry is separated in time (the SDK's forward-retry
-      // backoff); without the fix each call recomputes DateTime.now(),
-      // so this delay would otherwise make the values differ.
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final retryAttempt = lwwTimestampFor('row-1', null, cache);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
 
       expect(
-        retryAttempt,
+        cache['row-1'],
         firstAttempt,
+        reason: 'the first attempt is what gets captured, once, in the cache',
+      );
+
+      final retryAttempt = lwwTimestampFor('row-1', null, cache);
+      final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
+
+      // Necessary but, on their own, no longer sufficient: with the real
+      // sleeps gone (see below) three calls land in the same instant, so a
+      // recomputing implementation could satisfy these too. The seeded block
+      // below is what actually discriminates.
+      expect(retryAttempt, firstAttempt);
+      expect(secondRetryAttempt, firstAttempt);
+
+      // #705: a real retry is separated in time (the SDK's forward-retry
+      // backoff), and this used to be simulated with two real
+      // `Future.delayed(5ms)` sleeps — so a `DateTime.now()`-recomputing
+      // implementation was only caught when at least a millisecond had
+      // actually passed. `fake_async` cannot help here, because the fallback
+      // reads `DateTime.now()` directly and fake time does not intercept it.
+      // Seeding the cache with a value no `now()` could ever return replaces
+      // the sleeps with an **unconditional** guard on the same property, and
+      // costs no wall clock at all.
+      const capturedAtDeleteTime = '2020-01-01T00:00:00.000Z';
+      final seeded = <String, String>{'row-1': capturedAtDeleteTime};
+
+      expect(
+        lwwTimestampFor('row-1', null, seeded),
+        capturedAtDeleteTime,
         reason:
             'a retry must reuse the original delete time, not a fresh '
             'now() that could spuriously win a later LWW conflict',
       );
-      expect(secondRetryAttempt, firstAttempt);
+      expect(
+        lwwTimestampFor('row-1', null, seeded),
+        capturedAtDeleteTime,
+        reason: 'and on every retry after that one',
+      );
     });
 
     test('two different deleted rows get independent timestamps', () {
@@ -675,15 +700,26 @@ void main() {
     });
 
     test('a delete queued by a PRE-#276 app version (no metadata) still '
-        'falls back to the in-memory once-per-op cache', () async {
+        'falls back to the in-memory once-per-op cache', () {
       final cache = <String, String>{};
 
       final first = lwwTimestampFor('row-1', null, cache, metadata: null);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
       final retry = lwwTimestampFor('row-1', null, cache, metadata: null);
 
       expect(retry, first);
       expect(cache, hasLength(1));
+      expect(cache['row-1'], first);
+
+      // Pinned unconditionally rather than through a real-clock sleep — see
+      // the sibling test above (#705) for why the sleep was the weaker guard.
+      const capturedAtDeleteTime = '2020-01-01T00:00:00.000Z';
+
+      expect(
+        lwwTimestampFor('row-1', null, <String, String>{
+          'row-1': capturedAtDeleteTime,
+        }, metadata: null),
+        capturedAtDeleteTime,
+      );
     });
 
     test('an unparseable metadata string is ignored rather than sent as the '
