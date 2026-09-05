@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + app-shell precache + service-worker routes + repo map"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + app-shell precache + service-worker routes + web image hardening + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -19,6 +19,7 @@ tasks:
       - task: federation-source-posture
       - task: app-shell-precache
       - task: service-worker-routes
+      - task: web-image-hardening
       - task: repo-map
 
   format:
@@ -94,6 +95,11 @@ tasks:
     desc: "Verify the app-shell worker's SERVER_ROUTED_PREFIXES covers every app-host gateway route (#683, FR-OF-1)"
     cmds:
       - ./scripts/check-service-worker-routes.sh
+
+  web-image-hardening:
+    desc: "Verify client/ and admin/ share one nginx base and keep the unused module tree (and its libuuid CVEs) out (#716, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-web-image-hardening.sh
 
   repo-map:
     desc: "Verify every top-level directory has its CLAUDE.md map row + README.md tree line (definition-of-done)"
