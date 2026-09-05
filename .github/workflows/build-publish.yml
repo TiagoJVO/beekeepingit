@@ -233,13 +233,22 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Re-resolve the base image on every build. Without this, buildx is free
-          # to reuse a cached FROM, which keeps the `apk --no-cache upgrade` layer
-          # below it cached too — and that layer exists precisely to pull Alpine
-          # security fixes so the Trivy gate passes. The step whose job is patching
-          # CVEs was the one least likely to re-run. Caught on 2026-09-05, when
-          # 7 HIGH util-linux CVEs (CVE-2026-53612 et al, fixed in 2.42.3-r0)
-          # failed every image build while the cached layer still held 2.42.1-r0.
+          # Re-resolve the base image on every build, so a moved tag is picked up
+          # rather than served from a cached FROM. Worth keeping on its own merit —
+          # but NOT, as the comment added with it on 2026-09-05 claimed, what
+          # unblocked the 7 HIGH util-linux CVEs (CVE-2026-53612 et al) on #716.
+          #
+          # The stale-`apk upgrade`-layer mechanism that comment described is real;
+          # it just was not what happened. The build log of the very run that added
+          # this line shows `RUN apk --no-cache upgrade` EXECUTING — 2 packages, both
+          # apk-tools — so the layer was not cached and the util-linux fix simply was
+          # not in Alpine's v3.24 repository to install. Nor was there a newer base
+          # to move to: nginx:1.31-alpine and nginx:1.31.5-alpine3.24 are one digest.
+          #
+          # The actual cause was libuuid riding in as a transitive dependency of an
+          # nginx module nothing loads. client/Dockerfile and admin/Dockerfile now
+          # delete it, and scripts/check-web-image-hardening.sh keeps them doing so.
+          # Recorded here so the next red scan is not spent re-diagnosing this step.
           pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
