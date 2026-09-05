@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/core/config/app_config.dart';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -45,17 +48,47 @@ void main() {
       },
     );
 
-    test('a request slower than the timeout resolves to a fail', () async {
-      final client = MockClient((req) async {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        return http.Response('', 200);
-      });
-      final probe = HttpConnectivityProbe(
-        client: client,
-        timeout: const Duration(milliseconds: 5),
-      );
+    test('a request slower than the timeout resolves to a fail — at the '
+        'timeout, not when the slow request eventually answers', () {
+      // Fake time (#705, following #697/PR #704). With a real clock this test
+      // rested on the runner honouring a 5ms and a 50ms timer in that order
+      // while both sit inside a single Windows timer tick, and on the isolate
+      // being scheduled promptly enough for the difference to be observable —
+      // a lower bound, not a guarantee. Advancing the clock by hand makes the
+      // deadline exact, which also lets the assertion get *stronger*: it now
+      // pins **when** the verdict lands rather than merely that one
+      // eventually arrives.
+      fakeAsync((async) {
+        final client = MockClient((req) async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          return http.Response('', 200);
+        });
+        final probe = HttpConnectivityProbe(
+          client: client,
+          timeout: const Duration(milliseconds: 5),
+        );
 
-      expect(await probe.check(), isFalse);
+        bool? result;
+        unawaited(probe.check().then((v) => result = v));
+
+        async.elapse(const Duration(milliseconds: 4));
+
+        expect(
+          result,
+          isNull,
+          reason: 'still inside the 5ms timeout — no verdict yet',
+        );
+
+        async.elapse(const Duration(milliseconds: 1));
+
+        expect(
+          result,
+          isFalse,
+          reason:
+              'the fail is the timeout firing at exactly 5ms; the request '
+              'itself does not answer until 50ms',
+        );
+      });
     });
 
     test('dispose() closes the injected http.Client (HIGH #1 — resource leak: '

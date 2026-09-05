@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/auth/auth_platform.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -695,38 +697,75 @@ void main() {
     });
 
     test('a discovery/refresh hang during boot restore completes within the '
-        'bounded timeout, falling back to a stale session', () async {
-      final platform = FakeAuthPlatform();
-      platform.writeLocal('bk.refresh_token', 'refresh-slow-link');
-      final client = MockClient((req) async {
-        // Never resolves within the test's short injected timeout —
-        // stands in for a dead/very slow link during the refresh-token
-        // POST. Long enough to prove the boot path doesn't wait for it,
-        // short enough not to slow the suite down.
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        return _tokenResponse(req);
+        'bounded timeout, falling back to a stale session', () {
+      // Fake time, not a `Stopwatch` (#705, following #697/PR #704). "The boot
+      // path finished in under 50ms of wall clock" is only a lower bound: a
+      // starved isolate can be descheduled for far longer than the injected
+      // 10ms timeout while the code under test behaves perfectly, and this is
+      // the assertion that was observed failing (`Actual: <2632>`, and worse)
+      // under concurrent load. Advancing the clock by hand removes the wall
+      // clock entirely *and* strengthens the assertion: rather than "it was
+      // fast enough", it now pins the fallback to the 10ms deadline exactly —
+      // nothing at 9ms, the stale session at 10ms.
+      fakeAsync((async) {
+        final platform = FakeAuthPlatform();
+        platform.writeLocal('bk.refresh_token', 'refresh-slow-link');
+        final client = MockClient((req) async {
+          // Never resolves within the test's short injected timeout —
+          // stands in for a dead/very slow link during the refresh-token
+          // POST. Comfortably past the timeout, so crossing the deadline
+          // below cannot be the mock answering.
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          return _tokenResponse(req);
+        });
+
+        final container = _container(
+          platform,
+          client,
+          // A short injected timeout (test-only seam) stands in for the
+          // real 5s `_kAuthNetworkTimeout` so this test stays fast.
+          authNetworkTimeout: const Duration(milliseconds: 10),
+        );
+
+        AuthSession? session;
+        var settled = false;
+        unawaited(
+          container.read(authControllerProvider.future).then((s) {
+            session = s;
+            settled = true;
+          }),
+        );
+
+        async.elapse(const Duration(milliseconds: 9));
+
+        expect(
+          settled,
+          isFalse,
+          reason: 'still inside the 10ms bounded timeout',
+        );
+
+        async.elapse(const Duration(milliseconds: 1));
+
+        expect(
+          settled,
+          isTrue,
+          reason:
+              'the timeout fired at exactly 10ms — the mock does not answer '
+              'until 60ms, so its own completion cannot be what produced '
+              'this result',
+        );
+        expect(
+          session,
+          isA<AuthSession>()
+              .having((s) => s.accessToken, 'accessToken', isEmpty)
+              .having(
+                (s) => s.refreshToken,
+                'refreshToken',
+                'refresh-slow-link',
+              )
+              .having((s) => s.isExpired, 'isExpired', isTrue),
+        );
       });
-
-      final container = _container(
-        platform,
-        client,
-        // A short injected timeout (test-only seam) stands in for the
-        // real 5s `_kAuthNetworkTimeout` so this test stays fast.
-        authNetworkTimeout: const Duration(milliseconds: 10),
-      );
-      addTearDown(container.dispose);
-
-      final stopwatch = Stopwatch()..start();
-      final session = await container.read(authControllerProvider.future);
-      stopwatch.stop();
-
-      expect(session, isNotNull);
-      expect(session!.accessToken, isEmpty);
-      expect(session.refreshToken, 'refresh-slow-link');
-      expect(session.isExpired, isTrue);
-      // Bounded well under the mock's 60ms delay — proves the timeout, not
-      // the mock's own completion, produced this result.
-      expect(stopwatch.elapsedMilliseconds, lessThan(50));
     });
   });
 
