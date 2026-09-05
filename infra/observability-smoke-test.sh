@@ -2,10 +2,10 @@
 # Verification aid for #87 (NFR-OBS-1): fires one correlated trace + log + metric
 # through the OTel Collector and prints where to check the result in Grafana.
 #
-# This is a stand-in for a real service's telemetry — #23 (walking-skeleton
-# services) hasn't landed yet, so nothing in the cluster emits OTel data on its own.
-# Once #23 ships and its Go service is wired to the collector endpoint used here,
-# re-run the same checks against its real traffic instead (see FOLLOWUPS.md) and
+# This is a stand-in for a real service's telemetry: the walking-skeleton services (#23)
+# emit OTel data, but the observability stack is not deployed alongside them yet.
+# Once it is and a Go service is wired to the collector endpoint used here,
+# re-run the same checks against its real traffic instead (tracked in #610) and
 # this script can retire.
 #
 # Requires: kubectl pointed at the cluster where the observability release is

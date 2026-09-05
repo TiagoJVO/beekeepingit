@@ -1,7 +1,7 @@
 # Prod overlay — NOT deployed anywhere yet, and deliberately so: D-26 scopes
 # the first real cloud deployment to staging-grade only, until Q-DR
 # (backup/DR targets, still open) and #90 (GDPR data export/erasure UI) land
-# — both scheduled at M6 · Export in the D-14 phase plan. Standing up a real
+# — both scheduled at M6 · Export (D-14). Standing up a real
 # prod environment before then would mean real user data with no DR/export
 # story yet.
 #
@@ -68,7 +68,7 @@ services:
 
 pwa:
   image:
-    tag: latest # TODO: a real per-environment CI-built image — see FOLLOWUPS.md
+    tag: latest # Placeholder until a release's tag-bump PR sets a real version (#367)
 
 admin:
   image:

@@ -6,6 +6,7 @@ import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import 'sync_rejection_messages.dart';
 
 /// One rejected offline write held in the local `sync_rejected_ops` dead-letter
 /// (powersync_schema.dart) — the read model behind the needs-fix list
@@ -20,9 +21,9 @@ class RejectedOp {
     required this.fixApiaryId,
     required this.op,
     required this.errorCode,
-    required this.fieldErrors,
-    required this.detail,
+    required this.fieldIssues,
     this.displayName,
+    this.activityType,
     this.journeyId,
   });
 
@@ -33,10 +34,10 @@ class RejectedOp {
   /// own doc.
   final String id;
 
-  /// `apiary` | `apiary_counter` | `activity` | `journey` |
-  /// `journey_plan_item` | `todo` (powersync_schema.dart's entity-type
-  /// constants) — drives both the entity label and the "Fix" deep-link the
-  /// list row shows (#379).
+  /// `apiary` | `apiary_counter` | `stock_declaration` | `activity` |
+  /// `journey` | `journey_plan_item` | `todo` (powersync_schema.dart's
+  /// entity-type constants) — drives both the entity label and the "Fix"
+  /// deep-link the list row shows (#379).
   final String entityType;
 
   /// Despite its name (kept for backward compatibility with the dead-letter
@@ -47,44 +48,66 @@ class RejectedOp {
   /// `_fixApiaryIdFor` returns the op's own id for anything but a counter) —
   /// i.e. the journey id for a `journey` rejection, the todo id for a `todo`
   /// one. NOT useful for `journey_plan_item` (whose own id is the plan-item
-  /// row, not the journey) — see [journeyId] for that case instead.
+  /// row, not the journey) — see [journeyId] for that case instead — nor for
+  /// `stock_declaration`, which has no per-record editor and routes to the
+  /// stock-declaration log instead (`sync_needs_fix_screen.dart`'s `_navigateToFix`).
   final String fixApiaryId;
 
   /// `put` | `patch` | `delete`.
   final String op;
 
-  /// RFC 9457 problem `code` (e.g. `validation.failed`), or `''`.
+  /// RFC 9457 problem `code` (e.g. `validation.failed`), or `''` when the
+  /// problem body couldn't be parsed.
+  ///
+  /// **Not usable as UI copy (#443).** It is the same value for effectively
+  /// every retained rejection: the connector only dead-letters a `422`/`400`
+  /// (`classifyUploadOutcome`), and the sync endpoints answer those solely
+  /// with `problem.ValidationFailed` — `auth.forbidden`/`resource.conflict`
+  /// are `403`/`409`, which the connector treats as transient and leaves
+  /// queued. The user-facing copy therefore comes from the per-field codes
+  /// ([fieldIssues]) alone; this stays for logs and for the day a new
+  /// rejection class is actually retained.
   final String errorCode;
 
-  /// Field-level messages the server returned for this op, in order — what the
-  /// user actually has to fix. Empty when the op was collateral in an atomic
-  /// push (valid itself, rolled back because a sibling op failed) or the body
-  /// carried no field detail.
-  final List<String> fieldErrors;
-
-  /// The problem's human `detail`, shown when there are no field-level messages.
-  final String detail;
-
-  /// The single most useful raw server line for this rejection: the first field
-  /// error if any, else the problem detail. May be empty.
+  /// The **machine-readable** field errors the server returned for this op:
+  /// `(field, code)` pairs, with none of the accompanying server prose (#443).
+  /// This is the only part of the problem body the UI reads — it goes through
+  /// `sync_rejection_messages.dart`'s allow-listed EN/PT mapping.
   ///
-  /// **Diagnostics only — never render this to the user (#426).** It is the
-  /// server's English-only validation text and can embed internal DB
-  /// field/column names (e.g. "default_attributes must be a JSON object"),
-  /// which both breaks EN/PT i18n and leaks technical terms into the UI. The
-  /// needs-fix screen shows a localized, non-technical message instead; this
-  /// getter is kept for logs/diagnostics (the raw detail also stays persisted
-  /// in the dead-letter row's `error_detail` column).
-  String get primaryMessage =>
-      fieldErrors.isNotEmpty ? fieldErrors.first : detail;
+  /// The raw `errors[].message` and `detail` are deliberately **not** carried
+  /// on this model at all: they are English-only and can embed internal DB
+  /// column names ("default_attributes must be a JSON object"), so #426 stopped
+  /// rendering them and nothing has read them since. They remain available for
+  /// diagnostics where they belong — the connector logs the whole problem body
+  /// (`powersync_connector.dart`'s `_retainRejected`) and the row keeps it in
+  /// its `error_detail` column — rather than sitting on a UI read model where
+  /// a future caller could render one by accident.
+  ///
+  /// Empty when the op was collateral in an atomic push (valid itself, rolled
+  /// back because a sibling op failed), when the body carried no field detail,
+  /// or when `error_detail` was malformed.
+  final List<RejectedFieldIssue> fieldIssues;
 
   /// The record's own name/title, read from the rejected op's stored
   /// `payload` (#379, fix plan item 4): `name` for a journey (and apiary),
-  /// `title` for a todo, `type` for an activity. Null when the payload
-  /// carried no such field (or, for `journey_plan_item`, never — a plan item
-  /// has no name of its own) — the needs-fix row then shows just the plain
-  /// entity label.
+  /// `title` for a todo. Null when the payload carried no such field (or, for
+  /// `journey_plan_item`, never — a plan item has no name of its own) — the
+  /// needs-fix row then shows just the plain entity label.
+  ///
+  /// Always an **already-human** string: an activity has no name of its own,
+  /// only a wire type enum, which lives in [activityType] instead precisely so
+  /// that a raw identifier can never reach the row title through this field.
   final String? displayName;
+
+  /// An `activity` rejection's raw wire type (`harvest`, `feeding`, ... —
+  /// `services/activities/api/types.go`), read from the stored payload. Null
+  /// for every other entity type, and when the payload carried none.
+  ///
+  /// **Never render this directly** — it is an untranslated internal
+  /// identifier. The needs-fix row resolves it through `activity_types.dart`'s
+  /// `activityTypeLabel`, which degrades to no name at all for a type this
+  /// client version doesn't know (#443).
+  final String? activityType;
 
   /// The owning journey's id, read from a `journey_plan_item` rejection's
   /// stored payload (`data.journey_id`) — used to route that entity type's
@@ -131,7 +154,6 @@ class SyncRejectedRepository {
   }
 
   RejectedOp _fromRow(Map<String, Object?> r) {
-    final parsed = _parseDetail(r['error_detail'] as String?);
     final entityType = r['entity_type'] as String;
     final payloadData = _parsePayloadData(r['payload'] as String?);
     return RejectedOp(
@@ -140,9 +162,11 @@ class SyncRejectedRepository {
       fixApiaryId: r['fix_apiary_id'] as String,
       op: r['op'] as String,
       errorCode: r['error_code'] as String? ?? '',
-      fieldErrors: parsed.$1,
-      detail: parsed.$2,
+      fieldIssues: _parseFieldIssues(r['error_detail'] as String?),
       displayName: _displayNameFor(entityType, payloadData),
+      activityType: entityType == activityEntityType
+          ? _nonEmptyString(payloadData?['type'])
+          : null,
       journeyId: payloadData?['journey_id'] as String?,
     );
   }
@@ -152,7 +176,7 @@ class SyncRejectedRepository {
   /// wire op (powersync_connector.dart's `_toOp` shape:
   /// `{op, entity_type, id, data, updated_at}`), so the interesting fields
   /// live one level down under `data`. Tolerant of a missing/malformed
-  /// value, matching [_parseDetail]'s own best-effort parsing — a
+  /// value, matching [_parseFieldIssues]'s own best-effort parsing — a
   /// pre-existing dead-letter row from before this column was read, or any
   /// unexpected shape, just yields no display name/journey id rather than
   /// throwing.
@@ -167,40 +191,58 @@ class SyncRejectedRepository {
   }
 
   /// The record's own name/title for the needs-fix row (#379, fix plan item
-  /// 4): `name` for a journey or apiary, `title` for a todo, `type` for an
-  /// activity. `journey_plan_item` has no name of its own, so it's excluded
-  /// (falls through to null). Only ever returns a non-empty [String] — a
-  /// missing/wrong-typed/blank field yields null, so the caller can treat
-  /// "has a display name" as a simple null check.
+  /// 4): `name` for a journey or apiary, `title` for a todo.
+  /// `journey_plan_item` has no name of its own, so it's excluded (falls
+  /// through to null); `activity` is excluded too — it has only a wire type
+  /// enum, which must be localized before it is shown and so travels as
+  /// [RejectedOp.activityType] rather than as a display name (#443).
+  ///
+  /// `stock_declaration` is excluded for the same reason (#600): it carries no
+  /// already-human name either. Its `declared_on` is a raw ISO `YYYY-MM-DD`
+  /// wire string — a date format neither EN nor PT presents that way — and its
+  /// `registration_number` is an external registry identifier, so both
+  /// would be exactly the kind of raw value #443 stopped reaching the title.
+  /// The row therefore shows the plain "Stock declaration change" label; the
+  /// specific guidance comes from the field mapping instead.
   String? _displayNameFor(String entityType, Map<String, dynamic>? data) {
     if (data == null) return null;
-    final value = switch (entityType) {
+    return _nonEmptyString(switch (entityType) {
       apiaryEntityType || journeyEntityType => data['name'],
       todoEntityType => data['title'],
-      activityEntityType => data['type'],
       _ => null,
-    };
-    return (value is String && value.isNotEmpty) ? value : null;
+    });
   }
 
-  /// Parses the connector's stored `error_detail` JSON
-  /// (`{ detail, errors: [{field, code, message}] }`) into (field messages,
-  /// detail). Tolerant of a malformed/absent value — the row must still render
-  /// (with a generic message) rather than throw, matching the connector's own
-  /// best-effort parsing.
-  (List<String>, String) _parseDetail(String? raw) {
-    if (raw == null || raw.isEmpty) return (const [], '');
+  /// A payload value narrowed to a non-empty [String], else null — so callers
+  /// can treat "the payload carried this" as a simple null check regardless of
+  /// a missing, wrong-typed or blank stored value.
+  String? _nonEmptyString(Object? value) =>
+      (value is String && value.isNotEmpty) ? value : null;
+
+  /// Parses the machine-readable `(field, code)` pairs out of the connector's
+  /// stored `error_detail` JSON (`{ detail, errors: [{field, code, message}] }`)
+  /// — the only part of it the UI reads (#443). The server's prose (`message`,
+  /// `detail`) is deliberately dropped here rather than carried onto
+  /// [RejectedOp]; see that class's [RejectedOp.fieldIssues] doc.
+  ///
+  /// Tolerant of a malformed/absent value at every level — a row must still
+  /// render (with the generic message) rather than throw, matching the
+  /// connector's own best-effort parsing. An entry missing either half is
+  /// skipped rather than defaulted, so it can't masquerade as a real issue and
+  /// can't take the whole row's detail down with it.
+  List<RejectedFieldIssue> _parseFieldIssues(String? raw) {
+    if (raw == null || raw.isEmpty) return const [];
     try {
       final json = jsonDecode(raw) as Map<String, dynamic>;
-      final errors = json['errors'] as List<dynamic>?;
-      final messages = <String>[
-        for (final e in errors ?? const [])
-          if (e is Map<String, dynamic> && (e['message'] as String?) != null)
-            e['message'] as String,
+      return <RejectedFieldIssue>[
+        for (final e in (json['errors'] as List<dynamic>?) ?? const [])
+          if (e is Map<String, dynamic>)
+            if (e['field'] case final String field)
+              if (e['code'] case final String code)
+                RejectedFieldIssue(field: field, code: code),
       ];
-      return (messages, (json['detail'] as String?) ?? '');
     } catch (_) {
-      return (const [], '');
+      return const [];
     }
   }
 }

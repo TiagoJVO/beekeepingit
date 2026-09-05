@@ -8,20 +8,39 @@ import 'package:powersync/powersync.dart';
 import 'package:uuid/uuid.dart';
 
 import '../config/app_config.dart';
+import '../validation/sync_op_validator.dart';
 import 'local_store.dart';
+import 'lww_delete.dart';
 import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
 import 'sync_events.dart';
+import 'sync_op_draft.dart';
 
 /// Bridges PowerSync to the BeekeepingIT backend (walking-skeleton.md §4.4):
 ///   - fetchCredentials → GET /v1/sync/token (the short-TTL sync token).
 ///   - uploadData       → POST /v1/sync/batch (the single write-back seam).
 /// Both authenticate with the caller's OIDC access token.
 class BeekeepingitConnector extends PowerSyncBackendConnector {
-  BeekeepingitConnector({required this.getAccessToken, http.Client? client})
-    : _http = client ?? http.Client();
+  BeekeepingitConnector({
+    required this.getAccessToken,
+    required this.hasMembership,
+    http.Client? client,
+  }) : _http = client ?? http.Client();
 
   final Future<String?> Function() getAccessToken;
+
+  /// Whether the caller currently has an active organization membership
+  /// (`hasOrganizationProvider`, i.e. `GET /v1/organizations/me` resolved to an
+  /// org) — the precondition [fetchCredentials] refuses to issue a request
+  /// without (#622; see its doc for why).
+  ///
+  /// **Synchronous by design.** Adding an `await` to the credential path would
+  /// widen the window PowerSync spends holding a half-started connection, for
+  /// an answer that is already resolved state on the client. It is a closure
+  /// rather than a bool so it reads the *current* value at each credential
+  /// fetch — a membership gained mid-session must take effect without
+  /// rebuilding the connector.
+  final bool Function() hasMembership;
   final http.Client _http;
   static const _uuid = Uuid();
 
@@ -40,10 +59,18 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
   final _rejected = StreamController<RejectedChange>.broadcast();
   Stream<RejectedChange> get rejectedChanges => _rejected.stream;
 
-  /// Per-delete-op device timestamps (MEDIUM finding: see [lwwTimestampFor]'s
-  /// doc) — captured once per queued delete and reused across retries of the
-  /// *same* op, cleared once that op leaves the upload queue
-  /// ([_clearResolved]/[_retainRejected]).
+  /// Legacy per-delete-op device timestamps — the pre-#276 in-memory fallback
+  /// (see [lwwTimestampFor]'s doc), now reached only when an op carries no
+  /// *usable* durable metadata: a delete queued by an app version predating
+  /// #276 and still in the queue after the upgrade, or (defensively) a
+  /// metadata value that failed validation. Kept captured-once-per-op and
+  /// cleared as that op leaves the queue ([_clearResolved]/[_retainRejected])
+  /// so it never outlives its op.
+  ///
+  /// **Removable** once no pre-#276 client can still have a delete queued —
+  /// i.e. one release cycle after this ships, since PowerSync drains the queue
+  /// on the first successful upload after the upgrade. Until then it is the
+  /// only thing standing between such an op and a `null` comparator.
   final _deleteTimestamps = <String, String>{};
 
   void dispose() {
@@ -52,8 +79,36 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     _http.close();
   }
 
+  /// Mints the short-TTL PowerSync token, or returns `null` to stay
+  /// disconnected — the same "no credentials, no connection, no request"
+  /// contract for both of its preconditions:
+  ///
+  /// - **no session** — logged out; there is no access token to authenticate
+  ///   with in the first place;
+  /// - **no membership** (#622, FR-OF-3, FR-ONB-2/D-3) — the sync token is
+  ///   **org-scoped**, so `GET /v1/sync/token` answers a caller with no
+  ///   organization `403` *by construction*. The request cannot succeed, so it
+  ///   is not worth sending: issuing it anyway made PowerSync's `connect()` and
+  ///   its internal retry loop fire ~8 consecutive 403s — a console error each
+  ///   — at every user sitting on the create-organization step of onboarding.
+  ///   [hasMembership] is checked BEFORE the token fetch for the same reason
+  ///   the parity check in [uploadData] runs before its own: the cheapest place
+  ///   to stop a doomed request is before any of its work starts.
+  ///
+  /// Neither is an error: the connector is re-asked for credentials on the next
+  /// connect attempt, and `powersync_service.dart` re-arms the gate the moment
+  /// a membership arrives, so sync starts without a reload.
+  ///
+  /// **[uploadData] is deliberately NOT gated the same way** — the asymmetry is
+  /// the point. Declining here costs nothing (a connection that could not
+  /// authenticate is simply not opened), whereas declining an upload would have
+  /// to decide what happens to writes the beekeeper already made offline. A
+  /// `403` there classifies as `retry`, so the batch stays queued and is pushed
+  /// once membership is (re-)established — never dropped, never dead-lettered
+  /// (FR-OF-2, D-12).
   @override
   Future<PowerSyncCredentials?> fetchCredentials() async {
+    if (!hasMembership()) return null; // no org yet → stay disconnected
     final token = await getAccessToken();
     if (token == null) return null; // logged out → stay disconnected
 
@@ -78,12 +133,29 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     final tx = await database.getNextCrudTransaction();
     if (tx == null) return;
 
-    final token = await getAccessToken();
-    if (token == null) return; // will retry once authenticated
-
     final ops = <Map<String, dynamic>>[
       for (final e in tx.crud) await _toOp(database, e),
     ];
+
+    // Validation parity (FR-OF-2, D-12, sync.md §9): re-check the queued edits
+    // against the shared description of the server's own rules BEFORE spending
+    // a push on them. Deliberately runs before the token fetch and before any
+    // HTTP — it needs no network, so a problem is caught with the device
+    // offline rather than coming back as a post-hoc rejection.
+    final parityErrors = validateSyncOps(ops);
+    if (parityErrors.isNotEmpty) {
+      await handleLocalValidationFailure(
+        ops: ops,
+        errors: parityErrors,
+        store: PowerSyncLocalStore(database),
+        complete: () => tx.complete(),
+      );
+      return;
+    }
+
+    final token = await getAccessToken();
+    if (token == null) return; // will retry once authenticated
+
     final resp = await _http.post(
       Uri.parse(AppConfig.syncBatchUrl),
       headers: {
@@ -141,6 +213,40 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       case UploadDisposition.retry:
         throw http.ClientException('sync batch failed: $status');
     }
+  }
+
+  /// Handles a push the client's own **validation-parity** pass rejected
+  /// (FR-OF-2, D-12, sync.md §9) — the pre-push twin of the `422` branch of
+  /// [handleUploadResponse], and deliberately the *same* landing place: the
+  /// offending edit goes into the local `sync_rejected_ops` dead-letter, is
+  /// surfaced through [rejectedChanges] into the existing needs-fix flow, and
+  /// the CRUD transaction is `complete()`d so the queue advances instead of
+  /// wedging on an op that can never succeed as-is (the FIFO
+  /// `getNextCrudTransaction` would otherwise block every later write behind
+  /// it).
+  ///
+  /// The whole (atomic) transaction is retained, not just the offending ops —
+  /// exactly as for a server rejection, and for the same reason: a push is
+  /// all-or-nothing, so a valid op batched with an invalid one would otherwise
+  /// be lost.
+  ///
+  /// The synthesized problem carries [localValidationFailedCode] rather than
+  /// the server's `validation.failed`, so the needs-fix UI can tell the user
+  /// their change *couldn't be sent yet* rather than that a server rejected it,
+  /// and so a client-predicted rejection stays distinguishable from a real one.
+  ///
+  /// `@visibleForTesting` and taking [store]/[complete] as parameters, matching
+  /// [handleUploadResponse]: the whole decision is unit-testable with a fake
+  /// [LocalStoreEngine] and no PowerSync database.
+  @visibleForTesting
+  Future<void> handleLocalValidationFailure({
+    required List<Map<String, dynamic>> ops,
+    required List<SyncOpFieldError> errors,
+    required LocalStoreEngine store,
+    required Future<void> Function() complete,
+  }) async {
+    await _retainRejected(store, ops, localValidationProblem(errors));
+    await complete();
   }
 
   /// Writes one dead-letter row per op of a rejected push and emits a
@@ -275,16 +381,27 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     // so the next JSON column can't regress the same way.
     data = decodeJsonColumns(e.table, data);
     // Device edit time is the LWW comparator (sync.md §4.3) — see
-    // [lwwTimestampFor]'s doc for why DELETE needs a per-op cache rather than
-    // a bare `DateTime.now()` fallback.
-    final updatedAt = lwwTimestampFor(e.id, data, _deleteTimestamps);
-    return {
-      'op': _opName(e.op),
-      'entity_type': entityTypeForTable(e.table),
-      'id': e.id,
-      'data': data,
-      'updated_at': updatedAt,
-    };
+    // [lwwTimestampFor]'s doc for why a DELETE reads its timestamp off the
+    // op's durable metadata rather than a bare `DateTime.now()` fallback.
+    final updatedAt = lwwTimestampFor(
+      e.id,
+      data,
+      _deleteTimestamps,
+      metadata: e.metadata,
+    );
+    // The envelope is shaped by [SyncOpDraft], not spelled out here, so the
+    // save-time check a form runs (#597) is looking at the same op shape this
+    // push sends. The payloads can still differ on an edit — this one is
+    // PowerSync's column diff, the form's is the whole row it is about to
+    // write — but only ever in the safe direction; [SyncOpDraft]'s own doc
+    // explains why.
+    return SyncOpDraft(
+      op: _opName(e.op),
+      entityType: entityTypeForTable(e.table),
+      id: e.id,
+      data: data,
+      updatedAt: updatedAt,
+    ).toWireOp();
   }
 
   String _opName(UpdateType op) => switch (op) {
@@ -330,48 +447,49 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
 }
 
 /// The device-time LWW comparator a queued CRUD entry's wire op carries in
-/// `updated_at` (sync.md §4.3). PUT/PATCH carry it in [data]'s own
-/// `updated_at` (read straight through). DELETE has no payload
-/// (`CrudEntry.opData` is null for a delete, per the `powersync` package's own
-/// doc), so it falls back to a device timestamp — captured **once**, on the
-/// first upload attempt of a given queued op, and **reused** on every later
-/// call for that same still-queued op via [deleteTimestampCache] (keyed by
-/// the CRUD entry's own id — a client-generated UUID, so it's stable and
-/// unique across tables).
+/// `updated_at` (sync.md §4.3), resolved from the first source that has one:
 ///
-/// **MEDIUM finding this fixes:** the previous code recomputed
-/// `DateTime.now()` on every call, including every retry of the *same*
-/// queued delete (PowerSync's own idempotent forward-retry, sync.md §6.2)
-/// — so a delete stuck retrying for a while kept getting an ever-later
-/// timestamp purely from retry timing, which could let it spuriously "win" a
-/// last-write-wins conflict against a genuinely newer concurrent edit.
-/// Capturing the timestamp once and reusing it removes that drift.
+/// 1. **PUT/PATCH** carry it in [data]'s own `updated_at` — read straight
+///    through, the row's real edit time.
+/// 2. **DELETE** has no payload at all (`CrudEntry.opData` is null for a
+///    delete, per the `powersync` package's own doc), so it carries its
+///    device time in the op's [metadata] instead — captured at **delete-time**
+///    by `lww_delete.dart`'s `deleteWithLwwStamp` and persisted with the
+///    queued op by PowerSync (`Table.trackMetadata`, powersync_schema.dart).
+/// 3. **[deleteTimestampCache]** — the legacy in-memory fallback, kept only
+///    for a delete that was already queued by an app version predating #276
+///    (no metadata) and is still in the queue after the upgrade. Keyed by the
+///    CRUD entry's own id (a client-generated UUID, so it's stable and unique
+///    across tables), captured once and reused across that op's retries.
 ///
-/// **Scope of this fix:** [deleteTimestampCache] is owned by the connector
-/// instance ([BeekeepingitConnector._deleteTimestamps]) and cleared once an
-/// op leaves the upload queue ([BeekeepingitConnector._clearResolved]/
-/// [BeekeepingitConnector._retainRejected]), so it fixes the realistic case —
-/// the SDK's own fast in-session retry loop — without a local schema change.
-/// It does **not** survive an app restart mid-retry (the cache is in-memory
-/// only); the fully durable fix would persist the delete's device time on the
-/// row itself at delete-time (e.g. via PowerSync's `Table.trackMetadata`
-/// hidden `_metadata` column, captured before the row disappears) and read it
-/// back here instead of a cache — tracked as a follow-up
-/// (github.com/TiagoJVO/beekeepingit#276, under EPIC-06) rather than risked
-/// in this PR, since it requires coordinated changes at every repository call
-/// site that issues a delete.
+/// **The drift this prevents (#276, FR-OF-1):** a delete's comparator must be
+/// the moment the user deleted, not the moment the op happened to upload. An
+/// upload-time `DateTime.now()` gets later on every retry of the *same* queued
+/// op — so a delete that sat offline could spuriously "win" a last-write-wins
+/// conflict against a genuinely newer concurrent edit purely from retry
+/// timing. Capturing at upload time and caching in memory (the earlier fix)
+/// held that still only while the app stayed open; capturing at **delete
+/// time** into durable op metadata holds it still across an app restart with
+/// the delete still queued, which is the case the cache could never cover.
+///
+/// [metadata] is validated, not trusted (`lwwTimestampFromDeleteMetadata`): an
+/// unparseable value falls through to the cache rather than being POSTed as a
+/// timestamp the server would compare as garbage.
 ///
 /// `@visibleForTesting` and taking [deleteTimestampCache] as a parameter (not
-/// reaching for connector state) so the once-per-id behavior is unit-testable
-/// with a plain `Map`, no PowerSync database needed.
+/// reaching for connector state) so the resolution order is unit-testable with
+/// a plain `Map`, no PowerSync database needed.
 @visibleForTesting
 String lwwTimestampFor(
   String entryId,
   Map<String, dynamic>? data,
-  Map<String, String> deleteTimestampCache,
-) {
+  Map<String, String> deleteTimestampCache, {
+  String? metadata,
+}) {
   final fromPayload = data?['updated_at'] as String?;
   if (fromPayload != null) return fromPayload;
+  final fromMetadata = lwwTimestampFromDeleteMetadata(metadata);
+  if (fromMetadata != null) return fromMetadata;
   return deleteTimestampCache.putIfAbsent(
     entryId,
     () => DateTime.now().toUtc().toIso8601String(),
@@ -395,6 +513,7 @@ String lwwTimestampFor(
 @visibleForTesting
 String entityTypeForTable(String table) => switch (table) {
   apiaryCountersTable => apiaryCounterEntityType,
+  stockDeclarationsTable => stockDeclarationEntityType,
   activitiesTable => activityEntityType,
   journeysTable => journeyEntityType,
   journeyPlanItemsTable => journeyPlanItemEntityType,
@@ -415,6 +534,11 @@ String entityTypeForTable(String table) => switch (table) {
 ///   (services/journeys/api/types.go, which `json.Unmarshal`s into a
 ///   `map[string]any` and rejects a JSON string with "default_attributes must
 ///   be a JSON object").
+/// - [stockDeclarationsTable] `breakdown` — #298 (FR-AP-10): the per-apiary
+///   snapshot taken when a declaration is recorded. A JSON ARRAY rather than an
+///   object, which this seam handles unchanged (`jsonDecode` returns either),
+///   and which the owning service accepts as `json.RawMessage` after validating
+///   it is a bounded array of objects (services/apiaries/api/declarations.go).
 ///
 /// Listing every JSON column in one place is the single seam the connector
 /// decodes through, so a newly-added JSON column can't silently regress the
@@ -422,6 +546,7 @@ String entityTypeForTable(String table) => switch (table) {
 const jsonColumnsByTable = <String, List<String>>{
   activitiesTable: ['attributes'],
   journeysTable: ['default_attributes'],
+  stockDeclarationsTable: ['breakdown'],
 };
 
 /// Normalizes a syncable op's JSON columns back to nested JSON objects before
@@ -567,6 +692,34 @@ class RejectedFieldError {
   final String field;
   final String code;
   final String message;
+}
+
+/// Builds the [RejectedProblem] a **client-side** validation-parity failure
+/// records, from the errors [validateSyncOps] produced — the same shape the
+/// server's `422` body parses into ([parseRejectedProblem]), so one dead-letter
+/// writer ([BeekeepingitConnector._retainRejected]) and one needs-fix read model
+/// (`sync_rejected_repository.dart`) serve both origins.
+///
+/// The `detail` is deliberately a short, stable English diagnostic, never
+/// rendered to the beekeeper (#426) — the needs-fix screen shows a localized
+/// message keyed off [localValidationFailedCode] instead.
+///
+/// Pure and `@visibleForTesting`, matching this file's other seams.
+@visibleForTesting
+RejectedProblem localValidationProblem(List<SyncOpFieldError> errors) {
+  return RejectedProblem(
+    code: localValidationFailedCode,
+    detail: 'client-side validation parity check rejected this push',
+    fieldErrors: [
+      for (final e in errors)
+        RejectedFieldError(
+          opIndex: e.opIndex,
+          field: e.field,
+          code: e.code,
+          message: e.message,
+        ),
+    ],
+  );
 }
 
 /// Parses a `422`/`400` problem+json body into a [RejectedProblem]. Pure and

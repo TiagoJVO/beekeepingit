@@ -15,7 +15,7 @@
 -- place_label (#252): a plain nullable text column, selected alongside notes
 -- — no join/derivation needed, unlike location (GeoJSON) or hive_count
 -- (counters join).
-SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.registration_number, a.created_at, a.updated_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -69,7 +69,7 @@ LIMIT $2;
 -- hive_count (#256): same LEFT JOIN as ListApiaries above. place_label
 -- (#252): same plain column as ListApiaries above.
 WITH ranked AS (
-    SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+    SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.registration_number, a.created_at, a.updated_at,
            COALESCE(hc.value, 0)::integer AS hive_count,
            COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson,
            public.ST_Distance(a.location, public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography) AS distance_m,
@@ -87,7 +87,7 @@ WITH ranked AS (
     WHERE a.organization_id = $1
       AND a.deleted_at IS NULL
 )
-SELECT id, organization_id, name, notes, place_label, created_at, updated_at, hive_count, location_geojson, distance_m
+SELECT id, organization_id, name, notes, place_label, registration_number, created_at, updated_at, hive_count, location_geojson, distance_m
 FROM ranked
 ORDER BY knn_distance ASC NULLS LAST, id
 LIMIT $2
@@ -97,7 +97,7 @@ OFFSET $3;
 -- hive_count (#256): LEFT JOIN'd from apiary_counters, same convention as
 -- ListApiaries above. place_label (#252): same plain column as ListApiaries
 -- above.
-SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.registration_number, a.created_at, a.updated_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -143,7 +143,7 @@ WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 -- UpsertApiaryCounter's own ON CONFLICT (atomic per-row, no extra lock
 -- needed for a single-row upsert). place_label (#252): same plain column as
 -- GetApiary above.
-SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at, a.deleted_at,
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.registration_number, a.created_at, a.updated_at, a.deleted_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -166,9 +166,9 @@ FOR UPDATE OF a;
 -- in the same transaction, mirroring how the REST path (write.go's
 -- createApiary) does the same. place_label (#252): plain nullable text,
 -- alongside notes.
-INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, deleted_at, location)
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, registration_number, updated_at, deleted_at, location)
 VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
+    $1, $2, $3, $4, $5, sqlc.narg('registration_number')::text, $6, $7,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
          ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
@@ -187,14 +187,14 @@ VALUES (
 -- one, for hive_count in the response it builds. place_label (#252): plain
 -- nullable text, alongside notes — no join/derivation, so it's read back
 -- straight from the just-inserted row like every other scalar column here.
-INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, location)
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, registration_number, updated_at, location)
 VALUES (
-    $1, $2, $3, $4, $5, $6,
+    $1, $2, $3, $4, $5, sqlc.narg('registration_number')::text, $6,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
          ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
 )
-RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, registration_number, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: UpdateApiary :exec
@@ -210,6 +210,7 @@ UPDATE apiaries.apiaries
 SET name = $3,
     notes = $4,
     place_label = $5,
+    registration_number = sqlc.narg('registration_number')::text,
     updated_at = $6,
     deleted_at = $7,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
@@ -230,13 +231,14 @@ UPDATE apiaries.apiaries
 SET name = $3,
     notes = $4,
     place_label = $5,
+    registration_number = sqlc.narg('registration_number')::text,
     updated_at = $6,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
                      ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, registration_number, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: SoftDeleteApiary :execrows

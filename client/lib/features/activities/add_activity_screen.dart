@@ -1,11 +1,11 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/l10n/localized_number_input.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
@@ -15,6 +15,7 @@ import '../journeys/journey_matching.dart';
 import '../journeys/journey_picker.dart';
 import '../journeys/journey_quick_create_sheet.dart';
 import '../journeys/journeys_repository.dart';
+import '../organization/organization_repository.dart';
 import 'activities_repository.dart';
 import 'activity_attributes.dart';
 import 'activity_types.dart';
@@ -175,7 +176,13 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   Future<void> _prefillHivesInvolvedInner() async {
     try {
       final repo = await ref.read(apiariesRepositoryProvider.future);
-      final apiary = await repo.getById(widget.apiaryId);
+      // Org-scoped like every other apiary read (#658, FR-TEN-2) — a
+      // prefill must not resolve an apiary the org can't see.
+      final org = await ref.read(organizationProvider.future);
+      final apiary = await repo.getById(
+        widget.apiaryId,
+        organizationId: org?.id,
+      );
       if (!mounted) return;
       if (apiary == null || apiary.hiveCount <= 0) return;
       if (_hivesInvolvedController.text.trim().isNotEmpty) return;
@@ -314,13 +321,19 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     });
   }
 
+  /// The numeric input/parsing rules for the ACTIVE locale (#623) — one
+  /// shared implementation (core/l10n/localized_number_input.dart) rather
+  /// than a per-field regex, so what the fields accept, what the validators
+  /// reject and what the edit prefill writes back can't drift apart.
+  LocalizedNumberInput get _numbers => LocalizedNumberInput.of(context);
+
+  /// A stored number as editable field text — in the ACTIVE locale's decimal
+  /// separator, so an activity loaded for editing in Portuguese shows
+  /// `15,5`, which its own field then parses back to 15.5. Writing `15.5`
+  /// there (the pre-#623 behaviour) produced text the pt field rejects.
   String _numText(dynamic value) {
     if (value == null) return '';
-    if (value is num) {
-      return value == value.truncate()
-          ? value.truncate().toString()
-          : value.toString();
-    }
+    if (value is num) return _numbers.format(value);
     return '$value';
   }
 
@@ -345,37 +358,44 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   /// rather than sending an empty string/null, so [validateActivityAttributes]
   /// treats it as "absent" (its own required-field check, not a
   /// present-but-blank value).
+  ///
+  /// Numeric text is read with the ACTIVE locale's separators (#623) —
+  /// `double.tryParse`/`int.tryParse` only ever understood `.`, so a
+  /// Portuguese `40,5` could not be parsed at all and only ever reached
+  /// here as the `405` the English-only input filter had already made of
+  /// it. An unparseable field yields no key, exactly as an empty one does;
+  /// [_numericFieldError] is what makes that state VISIBLE and blocks the
+  /// save, rather than letting the attribute quietly disappear.
   Map<String, dynamic> _buildAttributes() {
+    final numbers = _numbers;
     final notes = _notesController.text.trim();
+    final honeySupers = numbers.parseInt(_honeySupersController.text);
+    final honeyKg = numbers.parseDouble(_honeyKgController.text);
+    final hivesInvolved = numbers.parseInt(_hivesInvolvedController.text);
+    final feedAmount = numbers.parseDouble(_feedAmountController.text);
     switch (_selectedType) {
       case activityTypeHarvest:
         final lotBatch = _lotBatchController.text.trim();
         return {
-          if (int.tryParse(_honeySupersController.text.trim()) != null)
-            'honey_supers': int.parse(_honeySupersController.text.trim()),
-          if (double.tryParse(_honeyKgController.text.trim()) != null)
-            'honey_kg': double.parse(_honeyKgController.text.trim()),
-          if (int.tryParse(_hivesInvolvedController.text.trim()) != null)
-            'hives_involved': int.parse(_hivesInvolvedController.text.trim()),
+          'honey_supers': ?honeySupers,
+          'honey_kg': ?honeyKg,
+          'hives_involved': ?hivesInvolved,
           if (lotBatch.isNotEmpty) 'lot_batch': lotBatch,
           if (notes.isNotEmpty) 'notes': notes,
         };
       case activityTypeFeeding:
         return {
-          if (_feedType != null) 'feed_type': _feedType,
-          if (double.tryParse(_feedAmountController.text.trim()) != null)
-            'feed_amount': double.parse(_feedAmountController.text.trim()),
-          if (int.tryParse(_hivesInvolvedController.text.trim()) != null)
-            'hives_involved': int.parse(_hivesInvolvedController.text.trim()),
+          'feed_type': ?_feedType,
+          'feed_amount': ?feedAmount,
+          'hives_involved': ?hivesInvolved,
           if (notes.isNotEmpty) 'notes': notes,
         };
       case activityTypeTreatment:
         return {
-          if (_treatmentContext != null) 'treatment_context': _treatmentContext,
-          if (_treatmentType != null) 'treatment_type': _treatmentType,
-          if (_disease != null) 'disease': _disease,
-          if (int.tryParse(_hivesInvolvedController.text.trim()) != null)
-            'hives_involved': int.parse(_hivesInvolvedController.text.trim()),
+          'treatment_context': ?_treatmentContext,
+          'treatment_type': ?_treatmentType,
+          'disease': ?_disease,
+          'hives_involved': ?hivesInvolved,
           if (notes.isNotEmpty) 'notes': notes,
         };
       default: // activityTypeGeneric
@@ -412,6 +432,37 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       }
     }
     return null;
+  }
+
+  /// A numeric field's validation message (#623 AC: "input that cannot be
+  /// parsed is rejected visibly, never silently altered").
+  ///
+  /// Non-empty text that isn't a number in the ACTIVE locale is its own
+  /// error, checked BEFORE [_attrError]: [_buildAttributes] simply omits an
+  /// unparseable field, which the shared attribute rules would otherwise
+  /// read as "absent" — silently dropping an optional attribute, or blaming
+  /// a required one for being missing when the real problem is the value the
+  /// user can see in front of them. So `40.5` typed in Portuguese (`.` is
+  /// pt's grouping separator; a lone `5` is not a thousands group) says "this
+  /// value isn't valid" and blocks the save, instead of storing 405 as it
+  /// did before.
+  ///
+  /// Blank stays [_attrError]'s business — "required" is the right message
+  /// for an empty required field, not "invalid".
+  String? _numericFieldError(
+    AppLocalizations l10n,
+    TextEditingController controller,
+    String attrKey, {
+    required bool integerOnly,
+  }) {
+    final text = controller.text.trim();
+    if (text.isNotEmpty) {
+      final parsed = integerOnly
+          ? _numbers.parseInt(text)
+          : _numbers.parseDouble(text);
+      if (parsed == null) return l10n.activityFieldInvalid;
+    }
+    return _attrError(l10n, attrKey);
   }
 
   /// The AC-defined effective journey selection: while the user hasn't
@@ -951,6 +1002,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             value: _feedType,
             options: feedTypes,
             attrKey: 'feed_type',
+            // The stored value stays the wire string; only its rendering is
+            // localized (#625, NFR-I18N-1) — see activity_types.dart.
+            optionLabel: (v) => feedTypeLabel(l10n, v),
             onChanged: (v) => setState(() => _feedType = v),
           ),
           const SizedBox(height: 16),
@@ -1002,6 +1056,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             value: _treatmentType,
             options: treatmentTypes,
             attrKey: 'treatment_type',
+            optionLabel: (v) => treatmentTypeLabel(l10n, v),
             helperText: isDetectionOnly
                 ? l10n.activityTreatmentTypeOptionalForDetectionHint
                 : null,
@@ -1030,6 +1085,10 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                   _disease!,
               ],
               attrKey: 'disease',
+              // An out-of-vocab legacy value falls through to its own raw
+              // text (#625's documented fallback), so the extra option above
+              // still renders exactly what is stored.
+              optionLabel: (v) => diseaseConditionLabel(l10n, v),
               onChanged: (v) => setState(() => _disease = v),
             ),
           ],
@@ -1077,14 +1136,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       key: Key(key),
       controller: controller,
       keyboardType: TextInputType.numberWithOptions(decimal: !integerOnly),
-      inputFormatters: integerOnly
-          ? [FilteringTextInputFormatter.digitsOnly]
-          : [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+      // Locale-aware, shared with every other numeric field (#623): the old
+      // `RegExp(r'[0-9.]')` / `digitsOnly` pair was English-only and silently
+      // ate the comma a Portuguese keypad produces, turning `40,5` into
+      // `405` before any validator could object.
+      inputFormatters: _numbers.formatters,
       // A real validator (not a cosmetic errorText) so Form.validate() in
       // _save() genuinely blocks submission when a required numeric
       // attribute is missing/invalid (HIGH review fix).
       autovalidateMode: AutovalidateMode.onUserInteraction,
-      validator: (_) => _attrError(l10n, attrKey),
+      validator: (_) => _numericFieldError(
+        l10n,
+        controller,
+        attrKey,
+        integerOnly: integerOnly,
+      ),
       decoration: InputDecoration(labelText: label),
       onChanged: (_) => setState(() {}),
     );

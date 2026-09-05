@@ -73,6 +73,27 @@ audience validation.
 - CORS is **default-off**: an empty allowlist emits no CORS headers (same-origin only), so no
   service is accidentally opened to arbitrary origins.
 - Adding an origin is a values change (`global.adminOrigin`), not a code change.
+- A third host means a third hostname to keep in step across two repos. "Mirrored per
+  environment" is only true once the **deployed** values in `beekeepingit-gitops`
+  (`apps/<env>/beekeepingit-helmrelease.yaml`, D-27/ADR-0018) carry `gateway.adminHost` — this
+  repo's `environments/<env>.yaml` is a mirror, not the source. Staging got only the mirror, so
+  its cert-manager Certificate asked a public CA for the dev default
+  `admin.beekeepingit.local`, drew `400 urn:ietf:params:acme:error:rejectedIdentifier`, and
+  renewal was dead for five weeks ([#556](https://github.com/TiagoJVO/beekeepingit/issues/556)).
+  The gateway chart now refuses to render a `.local`/`.localhost` value — in `gateway.appHost` /
+  `authHost` / `adminHost` **and** in `global.appOrigin` / `global.adminOrigin`, since the latter
+  two become credentialed CORS allowlist entries and OIDC redirect URIs — when cert-manager is
+  enabled (`gateway.assertPublicHostnames`), so the drift fails loudly at render time. It also
+  fails when `global.adminOrigin` is set while `gateway.adminHost` is empty, which would otherwise
+  be a silent way to satisfy the guard and leave the admin app unreachable.
+- Turning the admin host on is a **strictly ordered** operation, because the guard sees values but
+  not DNS: (1) set the `ADMIN_HOST` gate-environment variable, (2) run `cluster-ops` `up`/
+  `scale-up` so the Cloudflare A record is actually created, (3) add `gateway.adminHost` **and**
+  `global.adminOrigin` to the gitops `apps/<env>/beekeepingit-helmrelease.yaml`, (4) only then
+  promote a chart carrying the guard. Adding the host before the A record exists merely trades the
+  `rejectedIdentifier` rejection for a failed HTTP-01 challenge, and one failed authorization
+  invalidates the whole multi-SAN order — taking the app and auth certificates down with it.
+  Staging has no `admin.` A record yet; `ADMIN_HOST` is an optional per-gate-environment variable.
 
 ## Alternatives considered
 

@@ -35,6 +35,21 @@ abstract final class BrandDimens {
   /// Small status pills / badges (priority, role, journey state) — 8px.
   static const double radiusBadge = 8;
 
+  /// The brand mark's default edge length — 96px (#686).
+  static const double sizeBrandMark = 96;
+
+  /// The brand mark's squircle — 28px at [sizeBrandMark] (#686).
+  ///
+  /// Deliberately outside the prototype's 12–20px content range: this is the
+  /// app-icon tile, and it is rounded to read like the icon the operating
+  /// system draws for the installed app, not like a card.
+  ///
+  /// It is a *proportion*, not a fixed inset: `BrandMark` scales it with the
+  /// requested size, because a radius held at 28 would clamp to half the box
+  /// (`RRect`'s own rule) and turn any mark at or below 56px into a plain
+  /// circle — the one shape the app icon is not.
+  static const double radiusBrandMark = 28;
+
   /// Pill radius for chips and the sync/nav pills — large enough that a
   /// [heightChip]-tall chip renders as a full pill.
   static const double radiusPill = 999;

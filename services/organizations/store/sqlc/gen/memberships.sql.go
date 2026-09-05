@@ -158,7 +158,7 @@ func (q *Queries) GetActiveMembershipByUser(ctx context.Context, userID pgtype.U
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, name, address, created_by, created_at, updated_at
+SELECT id, name, address, registration_number, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 `
@@ -170,6 +170,7 @@ func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organiza
 		&i.ID,
 		&i.Name,
 		&i.Address,
+		&i.RegistrationNumber,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

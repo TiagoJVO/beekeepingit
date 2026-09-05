@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../../core/sync/sync_op_draft.dart';
 import '../activities/activity_types.dart';
 import '../apiaries/counter_types.dart';
 import '../organization/organization_repository.dart';
@@ -86,6 +88,62 @@ class JourneysRepository {
 
   final LocalStoreEngine _store;
   static const _uuid = Uuid();
+
+  /// The wire op a [create] (when [id] is null) or an [update] would queue for
+  /// these values — the input to the **save-time** validation-parity check
+  /// (#597, FR-OF-2, D-12, sync.md §9).
+  ///
+  /// Lives here, next to the SQL, on purpose: the column names below are the
+  /// ones [create]'s INSERT and [update]'s UPDATE write. A form calls this and
+  /// never builds a column-to-value mapping of its own; the one place it does
+  /// name columns is its allow-list of the columns it binds, which a test pins
+  /// to the keys this builds.
+  ///
+  /// `default_attributes` is carried as a **decoded object**, not as the
+  /// JSON-encoded TEXT the local column stores: that is the shape the wire op
+  /// has by the time it is validated (`powersync_connector.dart`'s
+  /// `decodeJsonColumns`, #385), and validating the encoded string instead
+  /// would fail the description's `jsonObject` rule against every save.
+  ///
+  /// The plan items are a separate entity (`journey_plan_item`) written by
+  /// their own ops, and are not part of this draft — their only mechanical
+  /// rules are that both ids are present UUIDs, which the multi-select cannot
+  /// violate.
+  static SyncOpDraft draftForSave({
+    String? id,
+    required String name,
+    required String mainActivityType,
+    required String status,
+    Map<String, dynamic> defaultAttributes = const {},
+  }) {
+    final data = <String, dynamic>{
+      'name': name,
+      'main_activity_type': mainActivityType,
+      'status': status,
+    };
+    // Present only when there ARE defaults, mirroring what PowerSync actually
+    // uploads: "no defaults" is stored as SQL NULL
+    // ([_encodeDefaultAttributes]), and `powersync_diff` DROPS null columns
+    // from a `put` (it emits an explicit JSON `null` only from a `patch` that
+    // clears a column — measured in #603). Omitting the key is therefore the
+    // faithful shape here, and the safe one: absent has always been valid on
+    // both sides, and since #603 the explicit `null` is accepted too
+    // (`absentWhen: "jsonNull"` in the shared description), so neither form
+    // can cost a beekeeper a valid save.
+    if (defaultAttributes.isNotEmpty) {
+      data['default_attributes'] = defaultAttributes;
+    }
+    // An edit rewrites the whole row, so it queues a `patch`; a create queues
+    // a `put`. Validating an edit as a `put` would apply `required` rules the
+    // server applies to a `put` only (#378).
+    return SyncOpDraft(
+      op: id == null ? 'put' : 'patch',
+      entityType: journeyEntityType,
+      id: id ?? draftPlaceholderId,
+      data: data,
+      updatedAt: draftUpdatedAt(),
+    );
+  }
 
   /// Creates a journey with [apiaryIds] as its initial plan (FR-JO-4) —
   /// always starts **open** (D-21). [apiaryIds] may be empty: a journey can
@@ -254,9 +312,13 @@ class JourneysRepository {
 
     for (final row in existing) {
       if (!desired.contains(row['apiary_id'])) {
-        await _store.execute(
-          'DELETE FROM $journeyPlanItemsTable WHERE id = ?',
-          [row['id']],
+        // #276: through the stamping seam like every other synced delete, so
+        // a plan-item removal queued offline keeps its own delete-time LWW
+        // comparator across retries and app restarts.
+        await deleteWithLwwStamp(
+          _store,
+          journeyPlanItemsTable,
+          row['id'] as String,
         );
       }
     }
@@ -285,15 +347,16 @@ class JourneysRepository {
     );
   }
 
-  /// Deletes the journey row (FR-JO-4). A plain local DELETE — PowerSync's
+  /// Deletes the journey row (FR-JO-4). A local delete — PowerSync's
   /// CRUD queue observes it as a `delete` op regardless, applied server-side
   /// as a tombstone (services/journeys/api/sync.go's applyJourneyOp). The
   /// journey's plan-item rows are deliberately left in place: inert and
   /// invisible once their parent journey is gone, mirroring
   /// apiaries_repository.dart's own "delete apiary, leave its counter rows"
-  /// convention.
+  /// convention. Issued through [deleteWithLwwStamp] (#276) so the op's LWW
+  /// comparator is the delete moment, not the upload moment.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $journeysTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, journeysTable, id);
 
   /// Every journey in the caller's org (#45's minimal list screen; #47 adds
   /// filters later), newest-first. Tenancy (FR-TEN-2) is primarily enforced

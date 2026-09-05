@@ -67,10 +67,17 @@ kubectl cluster-info
 # rather than a subchart of the per-environment umbrella release (see ADR-0008
 # and infra/helm/beekeepingit/charts/postgres/Chart.yaml). Idempotent: `upgrade
 # --install` is a no-op reconcile if it's already there.
+# Pulled from CNPG's OCI registry rather than the classic
+# `https://cloudnative-pg.github.io/charts` Helm repo: that URL now 301s to
+# `https://cloudnative-pg.io/charts/index.yaml`, and that domain's authoritative
+# nameservers are refusing queries ("No Reachable Authority at delegation"), so
+# `helm repo add` follows the redirect into a host that doesn't resolve and
+# bring-up dies before installing anything. The same chart releases are pushed
+# to `ghcr.io/cloudnative-pg/charts` by upstream's own release workflow, and
+# that path depends on neither the redirect nor the broken domain. OCI charts
+# are referenced directly — there is no repo to add or update.
 echo "installing/upgrading the CloudNativePG operator"
-helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null
-helm repo update cnpg >/dev/null
-helm upgrade --install cnpg-operator cnpg/cloudnative-pg \
+helm upgrade --install cnpg-operator oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg \
   --namespace cnpg-system --create-namespace --wait
 
 cat <<'EOF'

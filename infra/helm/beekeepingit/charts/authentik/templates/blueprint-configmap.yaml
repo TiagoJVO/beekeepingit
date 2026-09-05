@@ -27,4 +27,39 @@ metadata:
 data:
   beekeepingit.yaml: |
     {{- tpl (.Files.Get (printf "files/%s" .Values.blueprintFile)) . | nindent 4 }}
+    {{- /*
+      Credential fingerprint — the line below is why a rotated or newly-created
+      out-of-band credential actually takes effect.
+
+      authentik decides whether to re-apply a blueprint by HASHING THE FILE:
+      `blueprints/v1/tasks.py` computes `sha512(path.read_bytes())` and skips the
+      apply unless it differs from `last_applied_hash`. The credentials reach the
+      blueprint through `!Env` tags, which are resolved at APPLY time and are
+      therefore invisible to that hash. So creating or rotating a credential left
+      the file byte-identical, the hash unchanged, and the blueprint never
+      re-applied — the Google source simply never appeared, and no restart helped,
+      because discovery makes the same comparison on boot. (Observed live on
+      staging: the Secret existed, the env was in the pod, and the blueprint still
+      reported `last_applied` from before it. It took a manual `ak apply_blueprint`.)
+
+      Appending a fingerprint of the credential Secrets makes the file content
+      change exactly when they do, which is the signal authentik is already
+      looking for. It is a YAML comment, so it changes nothing about what the
+      blueprint declares.
+
+      A sha256 rather than the values themselves: this renders into a ConfigMap,
+      readable by anything in the namespace (the same reason the credentials
+      arrive via `!Env` and not Helm interpolation — see the blueprint's own
+      section comment). This is the standard `checksum/`-annotation idiom.
+
+      Pod env is the OTHER half of the same problem: kubernetes does not restart
+      pods when a mounted Secret changes, so the worker keeps stale `!Env` values
+      until it is rolled. `scaleway-up.sh` does that when it writes the Secrets.
+      Both halves are needed — a re-apply against stale env resolves the
+      credentials to empty and the `conditions:` gate drops the entries again.
+    */}}
+    # credential-fingerprint: {{ printf "%s|%s"
+         (dig "data" "" (lookup "v1" "Secret" .Values.global.namespace "beekeepingit-authentik-google-credentials" | default dict))
+         (dig "data" "" (lookup "v1" "Secret" .Values.global.namespace "beekeepingit-authentik-email-credentials" | default dict))
+       | toString | sha256sum }}
 {{- end }}

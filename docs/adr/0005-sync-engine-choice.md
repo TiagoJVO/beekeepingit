@@ -95,9 +95,9 @@ Adopt **PowerSync**, **self-hosted (Open Edition)** on the k8s cluster, as the o
   notify-and-fix UX (FR-OF-2).
 - **EPIC-13 (#22) — ✅ subchart delivered**: `infra/helm/beekeepingit/charts/powersync/` — the
   self-hosted service + a **Postgres** storage backend (not MongoDB, matching the SP-1 config
-  below — avoids a second datastore technology). Ships with two documented local-dev stopgaps
-  (placeholder sync-config, IdP JWKS) since no domain tables/connector exist yet —
-  see `FOLLOWUPS.md`.
+  below — avoids a second datastore technology). Shipped with two local-dev stopgaps
+  (placeholder sync-config, IdP JWKS) since no domain tables/connector existed yet; both are gone
+  now that `#23`/`#106` landed the real org-scoped Sync Rules and the `sync`-service connector.
 - **EPIC-06 (#7) / EPIC-00 (#1) — still open**: the per-service connector in the shared service
   template, the real org-scoped Sync Rules (once `#23` lands `apiaries`/`organizations`), and
   offline/sync tests (NFR-TST). Validate **iOS PWA** persistence when iOS is in scope (D-10).

@@ -103,8 +103,8 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
 
 - Three new external chart-repo dependencies (`cloudnative-pg`, `codecentric`, `charts.min.io`) —
   CI now does `helm repo add` for the first time (`.github/workflows/helm-ci.yml`); each pinned
-  version needs periodic bumping (a maintenance task, not tracked as a FOLLOWUPS item yet since
-  there's no Dependabot-for-Helm equivalent wired up).
+  version needs periodic bumping by hand — there's no Dependabot-for-Helm equivalent wired up, and
+  the wider upgrade/patching process is `#540`.
 - The CNPG operator living outside the umbrella release is a deliberate asymmetry from "every
   subchart is declared in Chart.yaml" — documented here and in `infra/helm/beekeepingit/README.md`
   so it isn't mistaken for an oversight.

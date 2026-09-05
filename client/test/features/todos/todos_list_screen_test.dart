@@ -9,9 +9,11 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
+import 'package:beekeepingit_client/routing/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 /// Fixtures mirroring activities_list_screen_test.dart's own (file-private
 /// there, so re-declared here).
@@ -210,6 +212,13 @@ List<String> _rowTitlesInOrder(WidgetTester tester) {
   titles.sort((a, b) => a.$1.compareTo(b.$1));
   return titles.map((e) => e.$2).toList();
 }
+
+/// The app's [GoRouter], for the tests below that navigate a second time
+/// after the first `pumpWidget` — i.e. a deep link arriving at an
+/// already-mounted tab.
+GoRouter _routerOf(WidgetTester tester) => ProviderScope.containerOf(
+  tester.element(find.byType(BeekeepingitApp)),
+).read(routerProvider);
 
 void main() {
   group('main Todos tab (#53, FR-TD-1)', () {
@@ -649,5 +658,201 @@ void main() {
         expect(find.text('Inspect hive 3'), findsOneWidget);
       },
     );
+  });
+
+  // Task 13 of #658 (D-35): Home's "view all tasks" link must land on the
+  // Todos tab ALREADY filtered to the set it previewed — which means the
+  // filter has to travel in the URL and be seeded from inside this screen
+  // once mounted. Seeding the `autoDispose` filter providers from the
+  // caller before navigating cannot work: with no listener at that instant
+  // the written value is discarded before the list screen ever subscribes.
+  group('filter seeded from the route (#658, D-35)', () {
+    /// Deep-links to [location] (rather than tapping the tab) so the query
+    /// parameters under test are what the screen is built from.
+    Future<void> openAt(
+      WidgetTester tester, {
+      required List<Todo> todos,
+      required String location,
+    }) async {
+      await tester.pumpWidget(_buildApp(todos: todos));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(BeekeepingitApp)),
+      );
+      container.read(routerProvider).go(location);
+      await tester.pumpAndSettle();
+    }
+
+    final overdue = _todo(
+      'od',
+      title: 'Late task',
+      dueDate: _isoDate(_yesterday),
+    );
+    final upcoming = _todo(
+      'up',
+      title: 'Future task',
+      dueDate: _isoDate(_tomorrow),
+    );
+    final completed = _todo(
+      'dn',
+      title: 'Finished task',
+      status: 'done',
+      completedAt: '2026-01-01T00:00:00Z',
+    );
+
+    testWidgets('?status= renders the list already filtered, with the status '
+        'control showing that state', (tester) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=overdue',
+      );
+
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsNothing);
+      expect(find.byKey(const Key('todo-dn')), findsNothing);
+      // The control visibly reflects the seeded state, so the user can see
+      // what is filtered — and therefore that it can be cleared.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('todo-filter-status-field')),
+          matching: find.text('Overdue'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('?due= seeds the due-date filter too, combining with '
+        '?status=', (tester) async {
+      final dueToday = _todo(
+        'today',
+        title: 'Due today',
+        dueDate: _isoDate(_today),
+      );
+      await openAt(
+        tester,
+        todos: [dueToday, upcoming, overdue],
+        location: '/todos?status=all&due=today',
+      );
+
+      expect(find.byKey(const Key('todo-today')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsNothing);
+      expect(find.byKey(const Key('todo-od')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('todo-filter-due-field')),
+          matching: find.text('Due today'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unknown parameter value falls back to the screen default '
+        'instead of throwing', (tester) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=not-a-status&due=%F0%9F%90%9D',
+      );
+
+      expect(tester.takeException(), isNull);
+      // The default filter (#427, D-29: open, any due date) — the open,
+      // not-yet-due row only.
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
+      expect(find.byKey(const Key('todo-od')), findsNothing);
+      expect(find.byKey(const Key('todo-dn')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('todo-filter-status-field')),
+          matching: find.text('Open'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('clearing the seeded filter restores the full list', (
+      tester,
+    ) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=overdue',
+      );
+
+      await tester.tap(find.byKey(const Key('todo-filter-clear-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
+      expect(find.byKey(const Key('todo-dn')), findsOneWidget);
+    });
+
+    // Review of #658: seeding has to happen on every ARRIVAL at the tab, not
+    // only when the parameter VALUE changes. This branch's [State] is
+    // retained by [StatefulShellRoute.indexedStack], so a second, identical
+    // deep link used to compare `overdue == overdue`, skip the re-seed, and
+    // leave the user on whatever filter they had last set — a different set
+    // from the one Home's count had just promised. The Todos tab's OWN
+    // bottom-nav destination masks this (its `goBranch(initialLocation:
+    // true)` resets the branch to a parameterless `/todos`), which is why
+    // the trip out and back has to go via another tab.
+    testWidgets('the same deep link arriving again re-applies its filter, '
+        'even after the user widened it', (tester) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=overdue',
+      );
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsNothing);
+
+      // The user widens the filter on the Todos tab itself.
+      await tester.tap(find.byKey(const Key('todo-filter-clear-button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
+
+      // They leave for the Home tab...
+      await tester.tap(find.byKey(const Key('shell-tab-home')));
+      await tester.pumpAndSettle();
+
+      // ...and follow the same "view all tasks" link a second time.
+      _routerOf(tester).go('/todos?status=overdue');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('todo-filter-status-field')),
+          matching: find.text('Overdue'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    // The other half of the arrival rule: coming back to the tab from the
+    // bottom nav lands on a parameterless `/todos`
+    // (`goBranch(initialLocation: true)`), which says nothing about the
+    // filter — so it must leave the user's own selection alone rather than
+    // re-applying whatever the last deep link carried.
+    testWidgets('returning to the tab from the bottom nav keeps the filter '
+        'the user chose, seeding nothing', (tester) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=overdue',
+      );
+      await tester.tap(find.byKey(const Key('todo-filter-clear-button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-todos')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
+      expect(find.byKey(const Key('todo-dn')), findsOneWidget);
+    });
   });
 }

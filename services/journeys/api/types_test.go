@@ -145,10 +145,38 @@ func TestValidateDefaultAttributes_ValidObjectIsValid(t *testing.T) {
 	}
 }
 
-func TestValidateDefaultAttributes_RejectsNull(t *testing.T) {
-	errs := validateDefaultAttributes([]byte(`null`))
+// An explicit `null` is the wire form of "this journey has no defaults" — the
+// op a device produces when a user CLEARS the bag, since PowerSync's upload
+// diff emits a column key only when it changed and a column set to SQL NULL is
+// emitted as JSON null. Rejecting it dead-lettered an ordinary edit; see
+// contracts/validation/README.md §"journey.default_attributes and an explicit
+// null" for the evidence.
+func TestValidateDefaultAttributes_ExplicitNullIsValid(t *testing.T) {
+	for _, raw := range []string{`null`, " null ", "\nnull\n"} {
+		if errs := validateDefaultAttributes([]byte(raw)); len(errs) != 0 {
+			t.Fatalf("validateDefaultAttributes(%q) = %+v, want no errors", raw, errs)
+		}
+	}
+}
+
+// The relaxation is exactly the `null` literal — a JSON string spelling the
+// word must still be rejected as a non-object.
+func TestValidateDefaultAttributes_RejectsTheStringNull(t *testing.T) {
+	errs := validateDefaultAttributes([]byte(`"null"`))
 	if !hasFieldCode(errs, "default_attributes", "invalid") {
 		t.Fatalf("errs = %+v, want default_attributes/invalid", errs)
+	}
+}
+
+// An explicit `null` and an absent bag must reach the SAME stored shape — nil
+// bytes, i.e. SQL NULL — or a cleared bag would land in the column as the
+// JSONB literal `null`, breaking the NULL-means-no-defaults convention.
+func TestNormalizeDefaultAttributes_ExplicitNullStoresSQLNull(t *testing.T) {
+	for _, raw := range []string{``, `null`} {
+		stored, decoded := normalizeDefaultAttributes([]byte(raw))
+		if stored != nil || decoded != nil {
+			t.Fatalf("normalizeDefaultAttributes(%q) = (%v, %v), want (nil, nil)", raw, stored, decoded)
+		}
 	}
 }
 
