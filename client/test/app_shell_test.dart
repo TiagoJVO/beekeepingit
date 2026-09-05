@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'widget_test.dart' show FakeDeviceLocationService;
 
@@ -269,30 +270,94 @@ Future<void> _pumpShellOnApiaries(
 
 void main() {
   testWidgets(
-    'the bottom nav shows all 5 tabs in unchanged order with Tasks selected by '
-    'default (#427, D-29)',
+    'the bottom nav shows the 5 tabs in D-35 order (Home at the centre, no '
+    'Assistant) with Home selected by default (#658, D-35)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
-      // Tab ORDER is unchanged (#427, D-29 only moved the landing target) —
-      // Apiaries still leads, Tasks is still the 4th tab (index 3).
-      for (final route in [
-        'apiaries',
-        'activities',
-        'journeys',
-        'todos',
-        'assistant',
-      ]) {
-        expect(find.byKey(Key('shell-tab-$route')), findsOneWidget);
-      }
+      // Tab position IS branch position (AppShell.tabs drives both the
+      // NavigationBar destinations and `tabs[currentIndex]`), so this pins
+      // the ORDER, not just the presence, of every destination: D-35's
+      // apiaries · activities · home · journeys · todos.
       final nav = tester.widget<NavigationBar>(
         find.byKey(const Key('shell-bottom-nav')),
       );
-      // Tasks (the todos branch, 4th tab) is the landing selection now, not
-      // Apiaries.
-      expect(nav.selectedIndex, 3);
+      expect(
+        nav.destinations.map((destination) => destination.key).toList(),
+        const [
+          Key('shell-tab-apiaries'),
+          Key('shell-tab-activities'),
+          Key('shell-tab-home'),
+          Key('shell-tab-journeys'),
+          Key('shell-tab-todos'),
+        ],
+      );
+
+      // D-35 removes the Assistant placeholder tab (the AI assistant itself
+      // stays an M8 roadmap item — the tab goes, not the feature).
+      expect(find.byKey(const Key('shell-tab-assistant')), findsNothing);
+
+      // Home (the centre branch) is the landing selection: the router opens
+      // on /home (#658, D-35, amending D-29's Tasks landing), so the nav's
+      // own selection must agree with it without anyone tapping a tab.
+      expect(nav.selectedIndex, 2);
+    },
+  );
+
+  testWidgets(
+    'tapping the Home tab shows the home screen, selects the centre tab and '
+    'titles the header (#658, D-35, FR-UX-1)',
+    (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-tab-home')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('home-screen')), findsOneWidget);
+      final nav = tester.widget<NavigationBar>(
+        find.byKey(const Key('shell-bottom-nav')),
+      );
+      expect(nav.selectedIndex, 2);
+      // The shell (not the screen) supplies the header — the localized home
+      // title, matching every other tab root.
+      expect(find.text('Home'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'the Home tab shows no FAB — its area is every area, so no single create '
+    'action is the right one (#658, D-35, FR-UX-2)',
+    (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-tab-home')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-fab')), findsNothing);
+      expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+    },
+  );
+
+  testWidgets(
+    '/assistant no longer resolves to a shell tab (#658, D-35: the placeholder '
+    'tab and its route are retired)',
+    (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      GoRouter.of(
+        tester.element(find.byKey(const Key('shell-bottom-nav'))),
+      ).go('/assistant');
+      await tester.pumpAndSettle();
+
+      // No branch matches it any more, so the shell itself is gone (go_router
+      // renders its unknown-route page instead of a tab).
+      expect(find.byKey(const Key('shell-bottom-nav')), findsNothing);
     },
   );
 
@@ -324,7 +389,7 @@ void main() {
     nav = tester.widget<NavigationBar>(
       find.byKey(const Key('shell-bottom-nav')),
     );
-    expect(nav.selectedIndex, 3);
+    expect(nav.selectedIndex, 4);
   });
 
   testWidgets(
@@ -453,7 +518,7 @@ void main() {
         final nav = tester.widget<NavigationBar>(
           find.byKey(const Key('shell-bottom-nav')),
         );
-        expect(nav.selectedIndex, 2);
+        expect(nav.selectedIndex, 3);
       },
     );
 
@@ -557,30 +622,29 @@ void main() {
   );
 
   testWidgets(
-    'tabs without their own quick-add action have no FAB (Activities/Assistant)',
+    'tabs without their own quick-add action have no FAB (Activities)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      // Activities has no FAB (its create entry point lives on the apiary
-      // detail page, since an activity always needs an apiary context
-      // first); Assistant has no real screen yet. Journeys (#45) and Todos
-      // (#52) DO have their own FAB — covered by their own tests below, not
-      // this one.
-      for (final route in ['activities', 'assistant']) {
-        await tester.tap(find.byKey(Key('shell-tab-$route')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('shell-fab')),
-          findsNothing,
-          reason: '$route tab should not show the contextual FAB',
-        );
-        expect(
-          find.byKey(const Key('actions-speed-dial-toggle')),
-          findsNothing,
-          reason: '$route tab should not show the Actions control',
-        );
-      }
+      // Activities has no FAB: its create entry point lives on the apiary
+      // detail page, since an activity always needs an apiary context first.
+      // Journeys (#45) and Todos (#52) DO have their own FAB — covered by
+      // their own tests below, not this one. Home's own no-FAB rule (#658,
+      // D-35) has its own dedicated test above, since its reason differs
+      // (every area is its area, so no create action is the right one).
+      await tester.tap(find.byKey(const Key('shell-tab-activities')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('shell-fab')),
+        findsNothing,
+        reason: 'the Activities tab should not show the contextual FAB',
+      );
+      expect(
+        find.byKey(const Key('actions-speed-dial-toggle')),
+        findsNothing,
+        reason: 'the Activities tab should not show the Actions control',
+      );
     },
   );
 
@@ -753,20 +817,11 @@ void main() {
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
   });
 
-  testWidgets('the remaining 1 placeholder tab renders without error '
-      '(Activities, Journeys and Todos are real content since #43/#45/#53 — '
-      'see the dedicated switching-tabs test above)', (tester) async {
-    await tester.pumpWidget(_buildShellApp());
-    await tester.pumpAndSettle();
-
-    const expected = {'assistant': 'Assistant — coming soon'};
-    for (final entry in expected.entries) {
-      await tester.tap(find.byKey(Key('shell-tab-${entry.key}')));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expect(find.text(entry.value), findsOneWidget);
-    }
-  });
+  // No placeholder-tab test any more: Activities/Journeys/Todos have rendered
+  // real content since #43/#45/#53 (see the dedicated switching-tabs test
+  // above), and #658/D-35 retired the last placeholder — the Assistant tab —
+  // along with its route and ComingSoonScreen. The AI assistant itself stays
+  // an M8 roadmap item; only the tab that led nowhere is gone.
 
   testWidgets('the offline banner is hidden when sync status is online', (
     tester,

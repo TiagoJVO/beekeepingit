@@ -19,10 +19,9 @@
 // profile's GET-as-completeness-probe pattern, client-side) -- after first
 // trying the accept-on-login fallback in getMyOrganization (#27, FR-ONB-3).
 // That fallback matches a pending invitation against the caller's verified
-// JWT claims.Email, never identity's resolve-response Email (the mutable
-// PATCH /v1/profile field, #25) -- see ResolvedUser's and
-// getMyOrganization's doc comments for why that distinction is
-// security-critical, not stylistic.
+// JWT claims.Email, never identity's resolve-response Email (a cached copy
+// of the address, #25/#170) -- see ResolvedUser's and getMyOrganization's doc
+// comments for why that distinction is security-critical, not stylistic.
 //
 // POST /organizations is open to ANY authenticated caller with a verified
 // email (D-3's #362 amendment: self-registered users may create an
@@ -89,6 +88,13 @@ const (
 	// full postal address (street, locality, region, postal code, country)
 	// with room for PT diacritics, matching name's rune-count semantics.
 	maxOrgAddressLength = 500
+	// maxRegistrationNumberLength bounds the beekeeper registration
+	// number the local authority issues (FR-AP-9, #296; DGAV's in
+	// Portugal). Real identifiers are far shorter; 50 is simply a bound,
+	// and it matches the column CHECK added by migration 00007 so a value
+	// that passes validation here can never fail the constraint.
+	// Rune-counted like name/address, so PT diacritics are not penalised.
+	maxRegistrationNumberLength = 50
 )
 
 // OrganizationResponse is the client-facing organization shape
@@ -100,13 +106,19 @@ const (
 // property of the organization itself (two callers viewing the same org see
 // their own, possibly different, role here).
 type OrganizationResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Address   string    `json:"address"`
-	CreatedBy string    `json:"created_by"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	// RegistrationNumber (FR-AP-9, #296) is the organization-wide
+	// DEFAULT beekeeper registration number. Apiaries may override it
+	// individually (apiaries.apiaries.registration_number), for an
+	// organization covering several beekeepers; the client resolves an
+	// apiary's EFFECTIVE number as override-or-this. Empty means unset.
+	RegistrationNumber string    `json:"registration_number"`
+	CreatedBy          string    `json:"created_by"`
+	Role               string    `json:"role"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // organizationCreateRequest is the POST /organizations request body
@@ -123,14 +135,20 @@ type organizationCreateRequest struct {
 // ResolvedUser is what identity's internal resolve endpoint tells us about a
 // verified OIDC subject: identity.users' current row. UserID is the only
 // field used for anything security-sensitive. Email mirrors
-// identity.users.email -- the profile field PATCH /v1/profile (#25) lets the
-// caller set to an arbitrary string with no tie back to the IdP-verified
-// identity -- so it MUST NOT be used to decide access (e.g. which invitation
-// to auto-accept): doing so would let a caller self-edit their profile email
-// to someone else's pending invitation and join that org at the invited role.
-// Use the
-// JWT's verified claims.Email (via resolveCaller's verifiedCaller) for
-// anything security-sensitive instead. Kept here only because it's part of
+// identity.users.email, which MUST NOT be used to decide access (e.g. which
+// invitation to auto-accept).
+//
+// The reason has outlived the attack that produced it. Originally the field
+// was settable: PATCH /v1/profile let a caller point their profile email at
+// someone else's pending invitation and join that org at the invited role
+// (#170). Since the #365 follow-up the field is IdP-owned and read-only, so
+// that specific path is structurally gone -- but the rule is unchanged,
+// because the reason it was never trustworthy is broader: this column has no
+// uniqueness constraint, it is a cache seeded once at first sight, and it is
+// never re-verified against the token afterwards. A cache that stopped being
+// writable is not a cache that became authoritative. Use the JWT's verified
+// claims.Email (via resolveCaller's verifiedCaller) for anything
+// security-sensitive instead. Kept here only because it's part of
 // identity's resolve response and may be useful for non-security display
 // purposes later.
 type ResolvedUser struct {
@@ -911,15 +929,19 @@ func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc
 var errStaleIfMatch = errors.New("api: stale If-Match on organization update")
 
 // updateOrganizationRequest is the PATCH /organizations/{orgId} request body
-// (OrganizationUpdate schema): name and/or address. Both are pointers so an
-// absent key is distinguishable from a supplied one, and presence is tracked
-// separately (via the raw field map) so an explicit JSON null on address --
-// which the schema's `[string, "null"]` type allows, meaning "clear it" --
-// isn't confused with "leave unchanged". name is a non-nullable string
-// (schema `type: string`), so a null there is rejected.
+// (OrganizationUpdate schema): name, address and/or registration_number.
+// All are pointers so an absent key is distinguishable from a supplied one,
+// and presence is tracked separately (via the raw field map) so an explicit
+// JSON null on a nullable field -- which the schema's `[string, "null"]` type
+// allows, meaning "clear it" -- isn't confused with "leave unchanged". name is
+// a non-nullable string (schema `type: string`), so a null there is rejected.
 type updateOrganizationRequest struct {
 	Name    *string `json:"name"`
 	Address *string `json:"address"`
+	// RegistrationNumber (FR-AP-9, #296) is nullable in the contract
+	// like Address: an explicit JSON null clears it, an absent key leaves
+	// it unchanged.
+	RegistrationNumber *string `json:"registration_number"`
 }
 
 // updateOrganization applies an admin's edit of their own org's mutable
@@ -959,8 +981,9 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		}
 		_, nameSet := fields["name"]
 		_, addressSet := fields["address"]
+		_, registrationNumberSet := fields["registration_number"]
 
-		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet); len(fieldErrs) > 0 {
+		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet, registrationNumberSet); len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
 		}
@@ -1009,11 +1032,21 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 				}
 			}
 
+			wantRegistrationNumber := current.RegistrationNumber
+			if registrationNumberSet {
+				if body.RegistrationNumber == nil {
+					wantRegistrationNumber = ""
+				} else {
+					wantRegistrationNumber = strings.TrimSpace(*body.RegistrationNumber)
+				}
+			}
+
 			updated, err = txq.UpdateOrganization(r.Context(), sqlcgen.UpdateOrganizationParams{
-				ID:        member.OrgID,
-				Name:      wantName,
-				Address:   wantAddress,
-				UpdatedAt: now,
+				ID:                 member.OrgID,
+				Name:               wantName,
+				Address:            wantAddress,
+				RegistrationNumber: wantRegistrationNumber,
+				UpdatedAt:          now,
 			})
 			if err != nil {
 				return fmt.Errorf("update organization: %w", err)
@@ -1052,12 +1085,12 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 // validateOrganizationUpdate enforces the OrganizationUpdate schema server-side
 // (NFR-SEC-1): at least one field present (minProperties:1); name, when
 // present, a non-null non-empty string of at most maxOrgNameLength runes;
-// address, when present, either null (clear) or at most maxOrgAddressLength
-// runes. Rune counts (not byte lengths) match createOrganization's own limits
-// so PT diacritics aren't penalized.
-func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet bool) []problem.FieldError {
+// address and registration_number (FR-AP-9, #296), when present, either
+// null (clear) or at most their own rune cap. Rune counts (not byte lengths)
+// match createOrganization's own limits so PT diacritics aren't penalized.
+func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet, registrationNumberSet bool) []problem.FieldError {
 	var fieldErrs []problem.FieldError
-	if !nameSet && !addressSet {
+	if !nameSet && !addressSet && !registrationNumberSet {
 		fieldErrs = append(fieldErrs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
 	}
 	if nameSet {
@@ -1071,6 +1104,17 @@ func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, address
 	if addressSet && body.Address != nil {
 		if utf8.RuneCountInString(strings.TrimSpace(*body.Address)) > maxOrgAddressLength {
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "address", Code: "too_long", Message: "address must be at most 500 characters"})
+		}
+	}
+	// FR-AP-9 (#296): bounded exactly like address -- present-and-null
+	// clears, present-and-set is trimmed then rune-capped. Nothing here
+	// constrains the FORMAT: registration identifiers are not documented
+	// as a stable pattern in any jurisdiction we support (Portugal's DGAV
+	// numbers included), and a format guess that rejects a real number
+	// would be worse than no check at all.
+	if registrationNumberSet && body.RegistrationNumber != nil {
+		if utf8.RuneCountInString(strings.TrimSpace(*body.RegistrationNumber)) > maxRegistrationNumberLength {
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "registration_number", Code: "too_long", Message: "registration_number must be at most 50 characters"})
 		}
 	}
 	return fieldErrs
@@ -1118,13 +1162,14 @@ func toOrganizationResponse(o sqlcgen.OrganizationsOrganization, callerRole stri
 		createdBy = uuidString(o.CreatedBy)
 	}
 	return OrganizationResponse{
-		ID:        uuidString(o.ID),
-		Name:      o.Name,
-		Address:   o.Address,
-		CreatedBy: createdBy,
-		Role:      callerRole,
-		CreatedAt: o.CreatedAt.Time,
-		UpdatedAt: o.UpdatedAt.Time,
+		ID:                 uuidString(o.ID),
+		Name:               o.Name,
+		Address:            o.Address,
+		RegistrationNumber: o.RegistrationNumber,
+		CreatedBy:          createdBy,
+		Role:               callerRole,
+		CreatedAt:          o.CreatedAt.Time,
+		UpdatedAt:          o.UpdatedAt.Time,
 	}
 }
 

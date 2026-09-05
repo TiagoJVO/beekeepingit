@@ -11,10 +11,12 @@ import 'journey_filters.dart';
 import 'journey_list_widgets.dart';
 import 'journey_status.dart';
 
-/// The main Journeys tab (#45/#47, FR-JO-4/FR-JO-2): every journey in the
-/// caller's organization, offline-first over the local synced set
-/// ([journeysViewModelProvider]), filterable by date range and activity
-/// type (combinable, #47 AC) with a plan-vs-done progress badge per row
+/// The main Journeys tab (#45/#47/#658, FR-JO-4/FR-JO-2, D-35): every
+/// journey in the caller's organization, offline-first over the local
+/// synced set ([journeysViewModelProvider]), filterable by date range and
+/// activity type (combinable, #47 AC) and by status (open/closed — D-35's
+/// own addition, so Home's "view all journeys" has an open-only list to
+/// hand off to) with a plan-vs-done progress badge per row
 /// ([JourneyProgress] — see journey_filters.dart's own doc for what it
 /// deliberately does and doesn't count). Tapping a row opens the #48 journey
 /// detail screen (journey_detail_screen.dart) — apiaries visited, per-apiary
@@ -33,17 +35,90 @@ import 'journey_status.dart';
 /// the PR description rather than blocking on it.
 ///
 /// No own AppBar/Scaffold — like ActivitiesListScreen/ApiariesListScreen,
-/// this is the Journeys tab's root content within the app shell
-/// (app_router.dart wires it in place of the placeholder
-/// ComingSoonScreen), which supplies the header and the "New journey" FAB
-/// (app_shell.dart's `_fabConfigByTab`).
-class JourneysListScreen extends ConsumerWidget {
-  const JourneysListScreen({super.key});
+/// this is the Journeys tab's root content within the app shell, which
+/// supplies the header and the "New journey" FAB (app_shell.dart's
+/// `_fabConfigByTab`).
+class JourneysListScreen extends ConsumerStatefulWidget {
+  const JourneysListScreen({super.key, this.initialStatusFilter});
+
+  /// The status this screen was routed with (`?status=`, validated by
+  /// [knownJourneyStatusOrNull]), or null to leave the tab's own current
+  /// selection alone — which is also what an unknown value yields, so a
+  /// stale deep link degrades to the unfiltered list rather than throwing
+  /// or silently emptying it.
+  final String? initialStatusFilter;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JourneysListScreen> createState() => _JourneysListScreenState();
+}
+
+class _JourneysListScreenState extends ConsumerState<JourneysListScreen> {
+  /// Whether this tab is the shell's visible branch — go_router disables
+  /// [TickerMode] on the offstage branches of a
+  /// [StatefulShellRoute.indexedStack], so it doubles as "am I the
+  /// foreground tab". Same signal, and the same reason for tracking it from
+  /// [didChangeDependencies], as todos_list_screen.dart.
+  bool _tabVisible = true;
+
+  /// Whether the routed status has already been applied during the CURRENT
+  /// visit to this tab — see [_seedFilterOnArrival].
+  bool _seededThisVisit = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tabVisible = TickerMode.valuesOf(context).enabled;
+    _seedFilterOnArrival();
+  }
+
+  @override
+  void didUpdateWidget(covariant JourneysListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different status is a new instruction even without leaving the tab.
+    if (widget.initialStatusFilter != oldWidget.initialStatusFilter) {
+      _seededThisVisit = false;
+    }
+    _seedFilterOnArrival();
+  }
+
+  /// Seeds once per ARRIVAL at this tab rather than once per parameter
+  /// CHANGE — the identical shape, and for the identical reason, as
+  /// todos_list_screen.dart's own `_seedFiltersOnArrival` (read its doc for
+  /// the full rationale): this branch's [State] outlives any single visit,
+  /// so a repeat of the SAME "view all open journeys" link from Home used to
+  /// find `open == open` and skip the re-seed, dropping the user on a list
+  /// that contradicted the count they had just tapped.
+  void _seedFilterOnArrival() {
+    if (!_tabVisible) {
+      _seededThisVisit = false;
+      return;
+    }
+    if (_seededThisVisit) return;
+    _seededThisVisit = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _seedFilterFromRoute();
+    });
+  }
+
+  /// Writes the routed status into the tab's own filter provider, so the
+  /// control visibly shows it and "clear filters" clears it like any other.
+  /// Called from a post-frame callback because every call site runs inside
+  /// the build phase, where mutating a provider is not allowed; it reads
+  /// [widget] at that point so it always applies the newest parameter.
+  /// A parameterless arrival (the bottom-nav `/journeys`) leaves the current
+  /// filter alone — it makes no claim about it.
+  void _seedFilterFromRoute() {
+    final status = widget.initialStatusFilter;
+    if (status == null) return;
+    ref.read(journeyStatusFilterProvider.notifier).state = status;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final type = ref.watch(journeyTypeFilterProvider);
+    final status = ref.watch(journeyStatusFilterProvider);
     final dateRange = ref.watch(journeyDateRangeFilterProvider);
     final viewModelAsync = ref.watch(journeysViewModelProvider);
 
@@ -51,9 +126,12 @@ class JourneysListScreen extends ConsumerWidget {
       children: [
         JourneyFilterBar(
           type: type,
+          status: status,
           dateRange: dateRange,
           onTypeChanged: (v) =>
               ref.read(journeyTypeFilterProvider.notifier).state = v,
+          onStatusChanged: (v) =>
+              ref.read(journeyStatusFilterProvider.notifier).state = v,
           onDateRangeChanged: (v) =>
               ref.read(journeyDateRangeFilterProvider.notifier).state = v,
         ),

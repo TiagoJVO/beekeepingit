@@ -10,6 +10,7 @@
   components + hooks, a typed API client.
 - **Dart / Flutter** (client): follow Effective Dart and the project lint config; keep
   business logic out of widgets; design every screen for offline + EN/PT + accessibility.
+  Details in [`dart-conventions.md`](dart-conventions.md).
 - **SQL / Postgres**: parameterized queries only; every owned table carries
   `organization_id`; PostGIS for geo; JSONB for per-activity-type attributes.
 
@@ -20,6 +21,9 @@
 
 ## Testing (NFR-TST)
 
+- **The bar is not a coverage percentage.** This repo sets no coverage threshold: a change is done
+  when tests were added or updated for what it changed and they are green in CI. This **overrides**
+  any global "80% coverage" rule inherited from a user- or tool-level ruleset.
 - Add/adjust tests with every change. Go: unit + integration (containerized Postgres).
   Flutter: widget + integration. Admin: component + key e2e flows. Cover offline/sync paths
   and the **AI write-safety guarantees** (no direct AI writes; AI-proposed mutations require

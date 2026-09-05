@@ -1,17 +1,90 @@
 import 'package:flutter/material.dart';
 
 import '../core/widgets/tap_target.dart';
+import '../l10n/gen/app_localizations.dart';
 import 'app_theme.dart';
 import 'brand_dimens.dart';
 import 'brand_theme.dart';
 
 /// The shared building blocks that give every screen the prototype's look
-/// (FR-UX-1, D-18, EPIC-11) — an uppercase section [Eyebrow], a Playfair
-/// [SectionHeader], the label-above-field [LabeledField], the plum [HeroCard],
-/// the white [BrandRowCard], the sand [NotesCard], an [EmptyState], a
-/// selectable [BrandChip], and the divided [MenuListCard]. Screens compose
+/// (FR-UX-1, D-18, EPIC-11) — the [BrandMark], an uppercase section [Eyebrow],
+/// a Playfair [SectionHeader], the label-above-field [LabeledField], the plum
+/// [HeroCard], the white [BrandRowCard], the sand [NotesCard], an [EmptyState],
+/// a selectable [BrandChip], and the divided [MenuListCard]. Screens compose
 /// these rather than re-deriving paddings/radii/colours inline, so the visual
 /// language lives in one place and future screens inherit it by construction.
+
+/// The app's brand mark artwork, bundled as an asset (see `pubspec.yaml`).
+///
+/// A byte-identical copy of `web/icons/Icon-512.png`, the Melargil bee the
+/// installed app shows in its title bar and taskbar (#233/#681);
+/// `test/brand_mark_asset_test.dart` fails if the two ever diverge. (Android's
+/// home screen draws the *maskable* variant of the same artwork, inset for its
+/// circle crop — see `docs/client/pwa-installability.md` §1.)
+const String kBrandMarkAsset = 'assets/brand/app-icon-512.png';
+
+/// The one brand mark: the Melargil bee on the brand amber, clipped to the
+/// app-icon squircle (#686, FR-UX-1).
+///
+/// It draws [kBrandMarkAsset] — literally the app-icon file — rather than a
+/// glyph or a hand-drawn shape, because the mark's whole job is to agree with
+/// what the operating system is showing a centimetre above it. Before #686 the
+/// login screen drew `Icons.hive_rounded` (a honeycomb) on a honey tile, so
+/// launching the installed app put two different brand marks on screen within
+/// a second of each other.
+///
+/// **Theme-independent by construction.** The artwork carries its own amber
+/// ground, so it reads identically on the plum login hero and on any light or
+/// dark surface a future screen puts it on — there is no light/dark variant to
+/// keep in sync, and no colour of ours to tint it with. That is also why it is
+/// exempt from the WCAG 2.2 AA contrast floor: it is a logotype, not text.
+///
+/// **Announced, not skipped.** It carries a localized [Semantics] label from
+/// the ARB files (FR-AX-1, NFR-I18N-1): the mark stands in for the app's name,
+/// so a screen reader should say it rather than pass over an unlabelled image.
+class BrandMark extends StatelessWidget {
+  const BrandMark({
+    this.size = BrandDimens.sizeBrandMark,
+    this.borderRadius,
+    super.key,
+  });
+
+  /// Width and height in logical pixels. The source artwork is 512px square,
+  /// so it stays crisp at any size a screen asks for, at any device pixel
+  /// ratio.
+  final double size;
+
+  /// Corner radius of the squircle the artwork is clipped to.
+  ///
+  /// Defaults to [BrandDimens.radiusBrandMark] **scaled to [size]**, so a
+  /// smaller mark keeps the icon's proportions instead of degenerating into a
+  /// circle (`RRect` clamps a radius to half the shorter side, which a fixed
+  /// 28 would hit at any size ≤ 56).
+  final double? borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius =
+        borderRadius ??
+        size * (BrandDimens.radiusBrandMark / BrandDimens.sizeBrandMark);
+    // Decode at the size this device will actually paint, not the source's
+    // 512² (~1 MB in the image cache for a 96dp mark). The artwork is shared
+    // with the app icon, so it is deliberately larger than any screen needs.
+    final decodeSize = (size * MediaQuery.devicePixelRatioOf(context)).round();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: Image.asset(
+        kBrandMarkAsset,
+        width: size,
+        height: size,
+        cacheWidth: decodeSize,
+        cacheHeight: decodeSize,
+        fit: BoxFit.cover,
+        semanticLabel: AppLocalizations.of(context).appLogoLabel,
+      ),
+    );
+  }
+}
 
 /// A gold, letter-spaced, uppercase section eyebrow (e.g. "ORDERED BY
 /// PROXIMITY", "STEP 1 OF 2").

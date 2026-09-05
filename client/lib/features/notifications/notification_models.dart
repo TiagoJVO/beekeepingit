@@ -1,11 +1,14 @@
+import '../todos/todo_due.dart';
 import 'notification_events.dart';
 
-/// Which due-date window a todo currently falls in (#82, FR-TD-1) — computed
-/// by `notification_engine.dart`'s `computeTodoDueNotifications` relative to
-/// the todo's own due date/priority (D-24). A closed set (never an open
-/// string) since every caller must handle both cases explicitly — Dart's
-/// exhaustive `switch` over an enum is a compile error if a case is missed.
-enum TodoDueBucket { dueSoon, overdue }
+// `TodoDueBucket` (which due-date window a todo falls in, #82/FR-TD-1) used
+// to be declared here. It now lives in `features/todos/todo_due.dart`
+// alongside the rule that computes it, so the notification engine and
+// #658/D-35's Home summary share one answer to "what's overdue / due soon".
+// Re-exported so every existing import site of this file — and the bucket
+// names persisted in `NotificationDedupState.todoDueBuckets` — keep working
+// untouched.
+export '../todos/todo_due.dart' show TodoDueBucket;
 
 /// Which sync-result outcome occurred (#82, D-24, FR-OF-2's notify-and-fix
 /// rule) — computed by `notification_engine.dart`'s

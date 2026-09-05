@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
+import 'package:beekeepingit_client/features/journeys/journey_form_screen.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,9 +45,38 @@ class FakeLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => _select(sql, args);
 
+  /// The delete-time LWW stamp (#276) each deleted row id was removed with —
+  /// what `deleteWithLwwStamp` wrote into the hidden `_metadata` column and
+  /// PowerSync persists with the queued op.
+  final Map<String, String> deleteStamps = {};
+
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
+    // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
+    // TRUE, _metadata = ? WHERE id = ?`) — checked BEFORE the broad
+    // `UPDATE JOURNEYS` branch below, which would otherwise swallow the
+    // journeys variant and then mis-read its args as an edit's. The real core
+    // extension turns exactly this statement into a local row delete plus a
+    // queued DELETE op carrying the metadata.
+    if (normalized.startsWith(
+      'UPDATE $journeyPlanItemsTable SET _DELETED'.toUpperCase(),
+    )) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      planRows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
+    if (normalized.startsWith(
+      'UPDATE $journeysTable SET _DELETED'.toUpperCase(),
+    )) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      rows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
     if (normalized.startsWith('INSERT INTO $journeysTable'.toUpperCase())) {
       // (id, name, main_activity_type, status, default_attributes,
       //  created_at, updated_at)
@@ -81,16 +111,6 @@ class FakeLocalStore implements LocalStoreEngine {
       row['status'] = args[2];
       row['default_attributes'] = args[3];
       row['updated_at'] = args[4];
-    } else if (normalized.startsWith(
-      'DELETE FROM $journeyPlanItemsTable'.toUpperCase(),
-    )) {
-      final id = args[0];
-      planRows.removeWhere((r) => r['id'] == id);
-    } else if (normalized.startsWith(
-      'DELETE FROM $journeysTable'.toUpperCase(),
-    )) {
-      final id = args[0];
-      rows.removeWhere((r) => r['id'] == id);
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
     }
@@ -723,6 +743,41 @@ void main() {
         expect(store.planRows, hasLength(1));
       },
     );
+
+    test('captures the delete-time LWW stamp on the queued op (#276, '
+        'FR-OF-1)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.delete(id);
+
+      expect(DateTime.parse(store.deleteStamps[id]!).isUtc, isTrue);
+    });
+
+    test('a plan-item removed by update() is also delete-time stamped '
+        '(#276) — the plan diff queues a real delete op too', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      final planItemId = store.planRows.single['id'] as String;
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+        defaultAttributes: const {},
+      );
+
+      expect(store.planRows, isEmpty);
+      expect(DateTime.parse(store.deleteStamps[planItemId]!).isUtc, isTrue);
+    });
   });
 
   group('JourneysRepository.watchAll() org-scoping (FR-TEN-2)', () {
@@ -1259,6 +1314,85 @@ void main() {
       await pumpEventQueue();
 
       expect(emissions.last, 2);
+    });
+  });
+
+  /// Pins `draftForSave`'s column map to the INSERT next to it, so the
+  /// save-time parity check (#597) cannot drift into validating a shape
+  /// nothing writes.
+  group('draftForSave mirrors the write (#597)', () {
+    test('every drafted column is written by create()', () async {
+      await repo.create(
+        name: 'Colheita de Primavera',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+        defaultAttributes: const {'lot_batch': 'L-2026-01'},
+      );
+
+      final draft = JourneysRepository.draftForSave(
+        name: 'Colheita de Primavera',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        defaultAttributes: const {'lot_batch': 'L-2026-01'},
+      );
+
+      final row = store.rows.single;
+      expect(draft.op, 'put');
+      for (final column in draft.data!.keys) {
+        expect(
+          row.containsKey(column),
+          isTrue,
+          reason: 'drafted column $column is not written by create()',
+        );
+      }
+      expect(row['name'], draft.data!['name']);
+      expect(row['main_activity_type'], draft.data!['main_activity_type']);
+      expect(row['status'], draft.data!['status']);
+      // `default_attributes` is deliberately the one column whose VALUE
+      // differs: the row stores JSON-encoded TEXT, while the draft (like the
+      // wire op) carries the decoded object.
+      expect(row['default_attributes'], '{"lot_batch":"L-2026-01"}');
+      expect(draft.data!['default_attributes'], const {
+        'lot_batch': 'L-2026-01',
+      });
+    });
+
+    test('an edit drafts a patch, matching the op an UPDATE queues', () {
+      final draft = JourneysRepository.draftForSave(
+        id: 'j1',
+        name: 'Colheita',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      );
+      expect(draft.op, 'patch');
+      expect(draft.id, 'j1');
+    });
+
+    test('the journey form binds only real drafted columns', () {
+      // Without this, a column renamed in draftForSave but not in the form's
+      // allow-list would silently turn the check off for that field — a
+      // fail-open drift nothing else would catch.
+      final drafted = JourneysRepository.draftForSave(
+        name: 'x',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      ).data!.keys.toSet();
+      expect(journeyFormSyncCheckedColumns.difference(drafted), isEmpty);
+    });
+
+    test('no defaults are drafted as ABSENT, mirroring what a put uploads', () {
+      // `powersync_diff` drops null columns from a `put` (#603), so an empty
+      // bag reaches the wire as an absent field, not as an explicit `null` —
+      // and the draft has to look like the op, not like the local row.
+      // Either form validates today (#603 made the null literal acceptable
+      // too, via `absentWhen: "jsonNull"`), so this pins fidelity to the wire
+      // rather than guarding against a rejection.
+      final draft = JourneysRepository.draftForSave(
+        name: 'Colheita',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      );
+      expect(draft.data!.containsKey('default_attributes'), isFalse);
     });
   });
 }

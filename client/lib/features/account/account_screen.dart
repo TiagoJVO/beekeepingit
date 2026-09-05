@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
-import '../../core/validation/email.dart';
+import '../../core/l10n/supported_locales.dart';
+import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
@@ -19,7 +20,6 @@ import '../settings/notification_event_toggles_list.dart';
 import '../settings/notification_settings_section.dart';
 import '../settings/sync_settings_repository.dart';
 import '../sync/sync_rejected_repository.dart';
-import 'account_platform.dart';
 
 /// Account settings screen (FR-AU-1, #29): update profile information
 /// in-app, and change password by delegating to the identity provider's own
@@ -56,8 +56,7 @@ class AccountScreen extends ConsumerStatefulWidget {
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  String _locale = 'en';
+  String _locale = kDefaultLocaleTag;
   bool _saving = false;
   bool _initialized = false;
   Map<String, String> _fieldErrors = {};
@@ -65,7 +64,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
@@ -73,8 +71,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _emailController.text = profile.email;
-    _locale = profile.locale;
+    // A stored `pt`/`en` (or anything else the picker doesn't offer) is
+    // mapped onto a supported tag before it reaches the dropdown — #656/D-34.
+    // Without this the field's value wouldn't match any item, which is a
+    // Flutter assertion failure, not a graceful fallback.
+    _locale = canonicalLocaleTag(profile.locale) ?? kDefaultLocaleTag;
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -86,11 +87,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     try {
       await ref
           .read(profileProvider.notifier)
-          .submit(
-            name: _nameController.text.trim(),
-            email: _emailController.text.trim(),
-            locale: _locale,
-          );
+          .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -116,7 +113,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   void _openChangePassword() {
-    createAccountPlatform().openInNewTab(AppConfig.oidcAccountUrl);
+    ref
+        .read(externalLinkPlatformProvider)
+        .openInNewTab(AppConfig.oidcAccountUrl);
   }
 
   bool _syncing = false;
@@ -158,8 +157,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           key: const Key('account-back-button'),
           icon: const Icon(Icons.arrow_back),
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-          // Back to the app home, which is the Tasks tab now (D-29, #427).
-          onPressed: () => context.go('/todos'),
+          // Back to the app home, which is the Home tab now (#658, D-35,
+          // amending D-29's Tasks landing).
+          onPressed: () => context.go('/home'),
         ),
         title: Text(l10n.accountTitle),
       ),
@@ -197,39 +197,24 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                 : null,
                           ),
                           const SizedBox(height: 16),
-                          TextFormField(
-                            key: const Key('account-email-field'),
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: InputDecoration(
-                              labelText: l10n.profileEmailLabel,
-                              errorText: _fieldErrors['email'],
-                            ),
-                            validator: (v) {
-                              final value = (v ?? '').trim();
-                              if (value.isEmpty) {
-                                return l10n.profileEmailRequired;
-                              }
-                              if (!looksLikeEmail(value)) {
-                                return l10n.profileEmailInvalid;
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
                           DropdownButtonFormField<String>(
                             key: const Key('account-locale-field'),
                             initialValue: _locale,
                             decoration: InputDecoration(
                               labelText: l10n.profileLocaleLabel,
                             ),
+                            // Endonyms, deliberately untranslated: each
+                            // option must read correctly to a speaker of the
+                            // language it selects. The values are the
+                            // supported BCP 47 tags (D-34) — `en-GB`/`pt-PT`,
+                            // never the generic `en`/`pt`.
                             items: const [
                               DropdownMenuItem(
-                                value: 'en',
+                                value: kDefaultLocaleTag,
                                 child: Text('English'),
                               ),
                               DropdownMenuItem(
-                                value: 'pt',
+                                value: kPortugueseLocaleTag,
                                 child: Text('Português'),
                               ),
                             ],
@@ -282,20 +267,34 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       icon: Icons.lock_outline,
                       onPressed: _openChangePassword,
                     ),
-                    // Admin-only (#172): the destination screen's endpoints
-                    // are admin-only server-side (auth.md §5.3), so a
-                    // non-admin would only hit a dead-end 403 — hide the
+                    // The Organization section (#197): relocated here from the
+                    // apiaries list app bar — now that the app shell
+                    // (FR-UX-2) owns that screen's header, org/session actions
+                    // live on the account screen, matching the prototype's
+                    // "Conta" screen (docs/design/melargil-prototype).
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    SectionHeader(l10n.accountOrganizationSectionTitle),
+                    const SizedBox(height: 16),
+                    // Organization details (#296, FR-ONB-2/FR-AP-9): name,
+                    // address and the beekeeper registration-number default.
+                    // NOT admin-gated like the members row below — a
+                    // non-admin may READ their organization's details; only
+                    // EDITING them is admin-only, which the destination
+                    // screen enforces on the fields themselves (and the
+                    // server enforces regardless).
+                    SecondaryActionButton(
+                      key: const Key('account-organization-details-button'),
+                      label: l10n.organizationDetailsTitle,
+                      icon: Icons.badge_outlined,
+                      onPressed: () => context.go('/organization/details'),
+                    ),
+                    // Members (#172) IS admin-only: the destination screen's
+                    // endpoints are admin-only server-side (auth.md §5.3), so
+                    // a non-admin would only hit a dead-end 403 — hide the
                     // entry point rather than show one that never works.
-                    // Relocated here from the apiaries list app bar (#197):
-                    // now that the app shell (FR-UX-2) owns that screen's
-                    // header, org/session actions live on the account
-                    // screen, matching the prototype's "Conta" screen
-                    // (docs/design/melargil-prototype).
                     if (ref.watch(isOrgAdminProvider)) ...[
-                      const SizedBox(height: 32),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      SectionHeader(l10n.accountOrganizationSectionTitle),
                       const SizedBox(height: 16),
                       SecondaryActionButton(
                         key: const Key('account-manage-members-button'),
@@ -304,6 +303,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         onPressed: () => context.go('/organization/members'),
                       ),
                     ],
+                    // The stock-declaration log (#298, FR-AP-10). Its own
+                    // section, and available to EVERY member: a non-admin can
+                    // record declarations against a number they can only read.
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    SecondaryActionButton(
+                      key: const Key('account-stock-declarations-button'),
+                      label: l10n.stockDeclarationsTitle,
+                      icon: Icons.fact_check_outlined,
+                      onPressed: () => context.go('/stock-declarations'),
+                    ),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
@@ -405,10 +416,12 @@ class _SyncSection extends ConsumerWidget {
         const SizedBox(height: 8),
         // Auto-sync setting (FR-ST-1, FR-OF-3, #81): honored by the EPIC-06
         // sync layer's connection-quality gate (`core/sync/powersync_service
-        // .dart`'s `applyAutoSyncSetting`). Turning it off never disables
-        // "Sync now" above — the manual override always works regardless
-        // (sync.md §7.1) — so there is no invalid combination to prevent
-        // between these two controls.
+        // .dart`'s `applySyncPreconditions`). Turning it off never disables
+        // "Sync now" above — the manual override works regardless of this
+        // setting (sync.md §7.1) — so there is no invalid combination to
+        // prevent between these two controls. (The override's one
+        // precondition, a membership, is not reachable from this screen: a
+        // caller without one is held in onboarding and never sees it, #622.)
         SwitchListTile(
           key: const Key('settings-auto-sync-toggle'),
           contentPadding: EdgeInsets.zero,

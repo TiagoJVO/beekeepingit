@@ -96,6 +96,95 @@ entries:
             "email": request.user.email,
             "email_verified": request.user.attributes.get("email_verified", False) is True,
         }
+  # --- #599: PIN the three objects both OAuth2 providers reference, so a missing
+  # one is LOUD instead of a silent null (NFR-SEC-1, NFR-TST-1, D-7) -------------
+  #
+  # These three entries declare nothing. Each is IDENTIFIERS-ONLY and names an
+  # object authentik itself creates. Their whole job is to turn a silent null
+  # into a reported, retried error.
+  #
+  # THE DEFECT THEY CLOSE. Until #599 the providers below reached
+  # `authorization_flow`, `invalidation_flow` and `signing_key` with `!Find`.
+  # `Find.resolve` (blueprints/v1/common.py) returns None with NO exception and
+  # NO log line when the target does not exist yet — and nothing orders the apply
+  # of authentik's own bundled blueprint files against ours
+  # (`blueprints_discovery` -> `check_blueprint_v1_file` ->
+  # `apply_blueprint.send_with_options`, i.e. independent async actors).
+  #
+  # Whether that null is SILENT is decided by the SERIALIZER, not the model. All
+  # three FKs are `null=True` on the model (core/models.py 645/654,
+  # providers/oauth2/models.py 308) — the check #594 made — but the importer
+  # validates through `OAuth2ProviderSerializer`, and there, at 2026.5.4, only
+  # `signing_key` is `required=False, allow_null=True`. The two flows are
+  # `required=True, allow_null=False`, so their null was already REJECTED. So:
+  #   * `signing_key` — the real silent instance. The entry still validated, the
+  #     file was recorded APPLIED, and authentik never re-applies a file whose
+  #     hash is unchanged, so the null was PERMANENT and nothing reported it.
+  #     `OAuth2Provider.jwt_key` then falls back to `(client_secret, HS256)` and
+  #     `JWKSView` yields nothing, so the endpoint serves `{}` — every relying
+  #     party verifying signatures against the JWKS (our Go middleware,
+  #     PowerSync, the admin app) breaks, with a valid-looking provider in the UI.
+  #   * the two flows — loud already, but by UPSTREAM's serializer choice rather
+  #     than by anything in this file. Pinned anyway: `signing_key` proves
+  #     upstream is willing to leave such a field nullable, and a future
+  #     relaxation would turn the `!Find` spelling silent with nothing noticing.
+  # The full nullability table is in auth.md §8.17.
+  #
+  # WHY PINNED, NOT OWNED (#594 OWNED its flow — these cannot be owned):
+  #   * The certificate is created by `authentik/crypto/apps.py` at BOOT
+  #     (`self_signed`, a `reconcile_tenant` hook), never by a blueprint. Owning
+  #     it would mean committing a PRIVATE KEY into this file — which renders
+  #     into a ConfigMap readable namespace-wide (NFR-SEC-1 forbids it, the same
+  #     reason the source credentials arrive via `!Env`) — and generating one per
+  #     render would rotate the JWKS on every `helm upgrade`, invalidating every
+  #     live token.
+  #   * A second `designation: invalidation` flow would RE-ARM the exact
+  #     second-order trap #594 had to close: `ToDefaultFlow.get_flow` falls back
+  #     to scanning flows of that designation ORDERED BY SLUG when the brand
+  #     field is null, upstream's `default-brand.yaml` sets `flow_invalidation`
+  #     with its own racy `!Find` under `state: created`, and any
+  #     `beekeepingit-*` slug sorts ahead of `default-invalidation-flow`. Pinning
+  #     adds no flow, so no designation ordering changes and no new brand pin is
+  #     needed.
+  #   * Copying the authorization flow would fork upstream's consent behaviour
+  #     for no gain.
+  #
+  # WHY AN IDENTIFIERS-ONLY ENTRY IS LOUD. `Importer._validate_single` attaches
+  # the serializer to an EXISTING row with `partial=True` — with no attrs that is
+  # a no-op update — and otherwise validates a CREATE in full. With no attrs a
+  # create can never validate: `FlowSerializer` requires name/title/designation,
+  # `CertificateKeyPairSerializer` requires `certificate_data`. So a genuinely
+  # missing target raises `EntryInvalidError`, `apply_blueprint` records
+  # `BlueprintInstanceStatus.ERROR`, `last_applied_hash` is NOT written, and the
+  # next discovery pass retries — instead of shipping a null forever.
+  # `Importer.apply()` is atomic, so nothing half-wired is committed meanwhile.
+  # `!KeyOf` then resolves against ids in THIS file and RAISES where `!Find`
+  # yielded None. Same shape as `flow-default-authentication` further down, which
+  # #594 introduced for the brand pin.
+  #
+  # DO NOT give these entries `attrs`, a `state:`, or anything but `identifiers`.
+  # The ABSENCE of attrs is what makes a create impossible and therefore the
+  # failure loud; on the certificate it is also what keeps a private key out of
+  # the ConfigMap; and `state: absent` would DELETE authentik's own boot-created
+  # certificate (`signing_key` is `on_delete=SET_NULL`). The guard asserts all
+  # three. They must also stay ABOVE the providers: `!KeyOf` only resolves
+  # against entries already applied earlier in this file.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (offline — the
+  # `!KeyOf` spellings, these entries' shape, and that nothing reaches these
+  # objects by `!Find` again) and infra/ci/authentik-federation-probe.py (live —
+  # on the deployed providers, incl. that the JWKS is non-empty and RS256).
+  # Written up in docs/architecture/auth.md §8.17.
+  - model: authentik_flows.flow
+    id: flow-default-provider-authorization
+    identifiers: { slug: default-provider-authorization-implicit-consent }
+  - model: authentik_flows.flow
+    id: flow-default-provider-invalidation
+    identifiers: { slug: default-provider-invalidation-flow }
+  - model: authentik_crypto.certificatekeypair
+    id: cert-authentik-self-signed
+    identifiers: { name: "authentik Self-signed Certificate" }
+
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
     identifiers: { name: beekeepingit-pwa }
@@ -103,11 +192,11 @@ entries:
       name: beekeepingit-pwa
       client_type: public
       client_id: beekeepingit-pwa
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # #599: `!KeyOf` at the pins above, never `!Find` — a missing target must
+      # raise, not write a null (see the block above; auth.md §8.17).
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       include_claims_in_id_token: true
@@ -299,16 +388,16 @@ entries:
       name: beekeepingit-admin
       client_type: public
       client_id: beekeepingit-admin
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # #599: `!KeyOf` at the pins above the PWA provider, never `!Find`.
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
       # Same shared signing key as the PWA — LOAD-BEARING, not just convenience: the iss
       # override makes admin tokens claim the beekeepingit issuer, and they only verify because
       # this provider signs with the key the beekeepingit discovery/JWKS advertises. Giving the
       # admin provider its own cert would silently break admin login (401) — keep them shared
-      # (oidc-integration.md §8 watch-list).
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # (oidc-integration.md §8 watch-list). Referencing the SAME pin entry as the PWA is what
+      # makes "shared" structural rather than a coincidence of two lookups agreeing (#599).
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       # MUST stay true: the access token the services read is built from the id_token's
@@ -372,12 +461,40 @@ entries:
         provider: !KeyOf provider-beekeepingit-admin,
       }
 
+  # Flow header text: "Welcome to authentik!" -> "Sign in".
+  # Carries an `id` (and sits ABOVE the brand entry) purely so the brand below can
+  # reference this flow by `!KeyOf` — see that entry's `flow_authentication` comment.
+  # This entry cannot silently create a stub flow in upstream's place: `FlowSerializer`
+  # requires `name`/`title`/`slug`/`designation`, so with no existing row the partial
+  # update here fails validation, and `Importer.apply` is atomic — the whole file rolls
+  # back and the BlueprintInstance is marked ERROR.
+  - model: authentik_flows.flow
+    id: flow-default-authentication
+    identifiers: { slug: default-authentication-flow }
+    attrs: { title: "Sign in" }
+
   # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
   # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
   # so a fresh deploy matches. ---
   - model: authentik_brands.brand
     identifiers: { domain: authentik-default }
     attrs:
+      # PIN the brand's default authentication flow (#594, review finding). This is not
+      # cosmetic. `ToDefaultFlow.get_flow` (flows/views/executor.py) — what
+      # /flows/-/default/authentication/ resolves, i.e. where the OIDC authorize endpoint
+      # sends every unauthenticated sign-in — returns `brand.flow_authentication` when it
+      # is set, and ONLY falls back to `flow_by_policy`, which scans every
+      # `designation: authentication` flow **ordered by slug** and takes the first whose
+      # policies pass, when it is null. Upstream's own `default-brand.yaml` sets this
+      # field with `!Find [flow, default-authentication-flow]` under `state: created`, so
+      # on a cluster where that lookup lost its own race the field is null and the
+      # slug-ordered fallback is live — and `beekeepingit-source-authentication` sorts
+      # BEFORE `default-authentication-flow`. The SSO gate on that flow denies a plain
+      # browser, so the fallback still lands on the right flow, but that would make the
+      # gate load-bearing for the entire login page. Pinning the field here removes the
+      # dependency outright. `!KeyOf` (not `!Find`) so a missing flow raises instead of
+      # writing a null — the whole point of #594.
+      flow_authentication: !KeyOf flow-default-authentication
       branding_title: BeekeepingIT
       # branding_logo only accepts a file path (not a data URI), so the authentik wordmark is
       # hidden and replaced by a text header in CSS; the "Powered by authentik" footer is
@@ -390,11 +507,6 @@ entries:
         .pf-c-background-image,.pf-c-background-image::before{background:#1a120b!important;background-image:none!important}
         .ak-static-page,body{background:#1a120b!important}
         .pf-c-button.pf-m-primary{background:#E8B979!important;border-color:#E8B979!important;color:#1a120b!important}
-  # Flow header text: "Welcome to authentik!" -> "Sign in".
-  - model: authentik_flows.flow
-    identifiers: { slug: default-authentication-flow }
-    attrs: { title: "Sign in" }
-
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
   # Built when accounts were exclusively invite/admin-provisioned (registration
   # disabled), so verification couldn't ride an enrollment flow — it's injected
@@ -1255,6 +1367,103 @@ entries:
         !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
       order: 100
 
+  # === Source AUTHENTICATION flow, owned HERE (#594, NFR-TST-1, NFR-SEC-1) ====
+  #
+  # The flow a RETURNING federated identity is signed in through — the sibling
+  # of the enrollment flow above, and now owned by this file for the same
+  # reason.
+  #
+  # WHY THIS IS NOT `!Find [authentik_flows.flow, [slug,
+  # default-source-authentication]]` ANY MORE (#594). That spelling was a
+  # cross-blueprint dependency with NO ordering guarantee, and it failed
+  # SILENTLY:
+  #   * authentik's own defaults are ordinary blueprint FILES
+  #     (`/blueprints/default/flow-default-source-authentication.yaml`),
+  #     discovered by the same `blueprints_discovery` pass as this one, and each
+  #     is applied by a SEPARATE ASYNC actor
+  #     (`apply_blueprint.send_with_options`, blueprints/v1/tasks.py). Nothing
+  #     orders theirs before ours — on a fresh cluster the default files'
+  #     `last_applied` timestamps are interleaved and spread over minutes.
+  #   * `Find.resolve` (blueprints/v1/common.py) returns `None` when the query
+  #     matches nothing — no exception, no log line — and the entry still
+  #     validates, because `authentication_flow` is an OPTIONAL FK. The source
+  #     was then created with a NULL authentication flow, PERMANENTLY: authentik
+  #     skips the re-apply while the file hash is unchanged, so nothing ever
+  #     repaired it for that cluster's life.
+  #   * The only outward symptom was `handle_auth` 400ing with "Configured flow
+  #     does not exist." on the next federated sign-in — two steps from the
+  #     cause. It red-lit `helm-e2e` on unrelated PRs (#594).
+  # Owning the flow REMOVES the dependency rather than re-ordering it, and
+  # `!KeyOf` is the loud spelling: it resolves against ids in THIS file, in file
+  # order, and RAISES `EntryInvalidError` if the referenced entry is missing or
+  # failed to apply — which marks the BlueprintInstance ERROR (and, since
+  # `last_applied_hash` is only stored on success, gets retried) instead of
+  # quietly shipping a half-wired source. Same reasoning as #365's
+  # `enrollment_flow`.
+  #
+  # It is a faithful copy of upstream's `default-source-authentication` — on
+  # purpose, so the write-safety property #363/#364/#365 lean on is unchanged,
+  # and now OURS to pin:
+  #   * exactly ONE `user_login` stage and nothing else. NO `user_write` stage,
+  #     which is what guarantees a RETURNING federated login can never overwrite
+  #     the local user's `email`, `attributes.upn` (the app-facing `sub`) or
+  #     `attributes.email_verified`. Enrollment writes exactly once, through the
+  #     guarded flow above.
+  #   * `authentication: require_unauthenticated` plus an `ak_is_sso_flow` gate,
+  #     exactly as upstream sets them: reachable only from inside a
+  #     SourceFlowManager-planned sign-in, never by a browser walking into
+  #     /if/flow/beekeepingit-source-authentication/.
+  # The login stage is owned here too, for the same reason the flow is — an
+  # upstream-owned stage reached by `!Find` would put the very race this fixes
+  # back into the fix. It carries no attrs, so it is behaviourally identical to
+  # the stage upstream creates with none (`session_duration: seconds=0`, i.e. a
+  # session cookie): the SSO session a federated login creates stays the same
+  # session object shape a password login creates.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (static — every
+  # source references THIS flow by `!KeyOf`, and the flow carries its login
+  # stage, its SSO gate and NO other stage), and
+  # infra/ci/authentik-federation-probe.py (live — the deployed source points at
+  # this flow, the flow's only stage is a user_login, and one sign-in is driven
+  # through it end to end).
+  - model: authentik_flows.flow
+    id: flow-source-authentication
+    identifiers: { slug: beekeepingit-source-authentication }
+    attrs:
+      name: beekeepingit-source-authentication
+      # Untranslated DB string, like the other flow titles in this file.
+      title: Signing you in
+      designation: authentication
+      # An already-authenticated user does not re-enter this flow; a signed-in
+      # user connects a source via Connected services instead (auth.md §8.13).
+      authentication: require_unauthenticated
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-source-authentication-sso-only
+    identifiers: { name: beekeepingit-source-authentication-sso-only }
+    attrs:
+      name: beekeepingit-source-authentication-sso-only
+      expression: |
+        # Only a flow planned by a SourceFlowManager — an in-progress
+        # federated sign-in — may enter. A raising policy evaluates to the
+        # binding's default failure_result (false) -> denied: fail closed.
+        return ak_is_sso_flow
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-source-authentication-sso-only
+      target: !KeyOf flow-source-authentication
+      order: 0
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-source-authentication-login
+    identifiers: { name: beekeepingit-source-authentication-login }
+    attrs:
+      name: beekeepingit-source-authentication-login
+  - model: authentik_flows.flowstagebinding
+    id: binding-source-authentication-login
+    identifiers:
+      target: !KeyOf flow-source-authentication
+      stage: !KeyOf stage-source-authentication-login
+      order: 0
+
   # === Google federation (#363, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7, D-18) =====
   #
   # Google is added as an UPSTREAM federation source on Authentik. Domain
@@ -1336,16 +1545,18 @@ entries:
   #     completed, #361-gated password login. Neither path adds an email
   #     stage to the source-authentication flow: on the inbound path the
   #     resolver already demanded proof on BOTH sides.
-  #   * `default-source-authentication` (upstream) is used UNCHANGED as the
-  #     authentication_flow. It must be set: `handle_auth` passes it straight to
-  #     `_prepare_flow`, which 400s with "Configured flow does not exist." when
-  #     it is null. It contains only a user_login stage (at order **0**, so
-  #     there is no room to slot stages before it from a blueprint anyway —
-  #     `unique_together (target, stage, order)` means an upstream binding can't
-  #     be moved, and an upgrade would re-assert it) and the `ak_is_sso_flow`
-  #     guard. It has NO user_write stage, which is the property that guarantees
-  #     Google can never overwrite the local user's `email`, `attributes.upn`
-  #     (the app-facing `sub`) or `attributes.email_verified`.
+  #   * `authentication_flow: !KeyOf flow-source-authentication` (#594) — the
+  #     faithful copy of upstream's `default-source-authentication` defined in
+  #     this file, NOT an `!Find` at upstream's slug. It must be set:
+  #     `handle_auth` passes it straight to `_prepare_flow`, which 400s with
+  #     "Configured flow does not exist." when it is null — and `!Find` yielded
+  #     exactly that null, silently, whenever this file happened to apply before
+  #     authentik's own default blueprints (see that flow's section comment).
+  #     It contains only a user_login stage (at order **0**) and the
+  #     `ak_is_sso_flow` guard. It has NO user_write stage, which is the
+  #     property that guarantees Google can never overwrite the local user's
+  #     `email`, `attributes.upn` (the app-facing `sub`) or
+  #     `attributes.email_verified`.
   - model: authentik_sources_oauth.oauthsource
     id: source-google
     conditions:
@@ -1388,7 +1599,10 @@ entries:
       # it this source DENIES every unlinked login. See its section comment.
       user_matching_mode: username_link
       user_property_mappings: [!KeyOf mapping-federation-account-link]
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      # #594: the source-authentication flow this file OWNS, by `!KeyOf` — an
+      # `!Find` at upstream's `default-source-authentication` slug raced
+      # authentik's own default blueprints and landed NULL, silently.
+      authentication_flow: !KeyOf flow-source-authentication
       # #365: self-service registration via Google, through the dedicated,
       # SSO-gated flow only — see the ACCOUNT POSTURE comment above.
       enrollment_flow: !KeyOf flow-source-enrollment
@@ -1451,7 +1665,8 @@ entries:
       # rather than relying on the source type to be defensive for us.
       user_matching_mode: username_link
       user_property_mappings: [!KeyOf mapping-federation-account-link]
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      # #594: identical to the Google source — the owned flow, by `!KeyOf`.
+      authentication_flow: !KeyOf flow-source-authentication
       # #365: identical enrollment posture to the Google source — the probe
       # drives a real enrollment through this stand-in in CI.
       enrollment_flow: !KeyOf flow-source-enrollment

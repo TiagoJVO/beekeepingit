@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
-import '../../core/validation/email.dart';
+import '../../core/config/app_config.dart';
+import '../../core/l10n/supported_locales.dart';
+import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import 'profile_repository.dart';
 
@@ -25,8 +28,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  String _locale = 'en';
+  String _locale = kDefaultLocaleTag;
   bool _saving = false;
   bool _initialized = false;
   Map<String, String> _fieldErrors = {};
@@ -34,7 +36,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
@@ -42,8 +43,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _emailController.text = profile.email;
-    _locale = profile.locale;
+    // See account_screen.dart — a legacy `pt`/`en` is mapped onto a
+    // supported tag before it reaches the dropdown (#656/D-34).
+    _locale = canonicalLocaleTag(profile.locale) ?? kDefaultLocaleTag;
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -55,11 +57,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       await ref
           .read(profileProvider.notifier)
-          .submit(
-            name: _nameController.text.trim(),
-            email: _emailController.text.trim(),
-            locale: _locale,
-          );
+          .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -82,26 +80,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ref.invalidate(organizationProvider);
         // Next onboarding step: the router's own redirect (app_router.dart)
         // sends a profile-complete, no-organization user to
-        // /organization/new (FR-ONB-2, #26) and everyone else to the Tasks
-        // home (/todos, D-29/#427), so a plain '/todos' navigation here always
-        // lands wherever the router's gates currently require.
-        context.go('/todos');
+        // /organization/new (FR-ONB-2, #26) and everyone else to the app home
+        // (/home, #658/D-35, amending D-29's Tasks landing), so a plain
+        // '/home' navigation here always lands wherever the router's gates
+        // currently require.
+        context.go('/home');
       }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
-      // Only `name`/`email` have a field on this form that renders its own
+      // Only `name` has a field on this form that renders its own
       // `errorText` below. Any other field the server rejects (e.g.
       // `locale`, which has no dedicated error slot) would otherwise be
       // silently dropped entirely once `_fieldErrors` is non-empty (the
       // generic snackbar below used to be suppressed whenever *any* field
       // error came back) — surface those unrendered field errors via the
       // snackbar too.
-      final unrendered = _fieldErrors.keys.where(
-        (k) => k != 'name' && k != 'email',
-      );
+      final unrendered = _fieldErrors.keys.where((k) => k != 'name');
       if (_fieldErrors.isEmpty || unrendered.isNotEmpty) {
         final msg = unrendered.isNotEmpty
             ? unrendered.map((k) => _fieldErrors[k]).join('\n')
@@ -155,7 +152,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   child: _ProfileFormFields(
                     l10n: l10n,
                     nameController: _nameController,
-                    emailController: _emailController,
+                    accountEmail: profile.email,
+                    onManageAccount: () => ref
+                        .read(externalLinkPlatformProvider)
+                        .openInNewTab(AppConfig.oidcAccountUrl),
                     locale: _locale,
                     fieldErrors: _fieldErrors,
                     saving: _saving,
@@ -181,7 +181,8 @@ class _ProfileFormFields extends StatelessWidget {
   const _ProfileFormFields({
     required this.l10n,
     required this.nameController,
-    required this.emailController,
+    required this.accountEmail,
+    required this.onManageAccount,
     required this.locale,
     required this.fieldErrors,
     required this.saving,
@@ -192,7 +193,11 @@ class _ProfileFormFields extends StatelessWidget {
 
   final AppLocalizations l10n;
   final TextEditingController nameController;
-  final TextEditingController emailController;
+
+  /// The IdP-verified account address, rendered read-only: the provider owns
+  /// it and the API refuses to set it (D-7, FR-ONB-1).
+  final String accountEmail;
+  final VoidCallback onManageAccount;
   final String locale;
   final Map<String, String> fieldErrors;
   final bool saving;
@@ -224,31 +229,49 @@ class _ProfileFormFields extends StatelessWidget {
               (v == null || v.trim().isEmpty) ? l10n.profileNameRequired : null,
         ),
         const SizedBox(height: 16),
-        TextFormField(
-          key: const Key('profile-email-field'),
-          controller: emailController,
-          keyboardType: TextInputType.emailAddress,
-          decoration: InputDecoration(
-            labelText: l10n.profileEmailLabel,
-            errorText: fieldErrors['email'],
+        // Read-only: the account address comes from the verified token and is
+        // changed at the identity provider, never here. A disabled
+        // TextFormField would still announce as an editable input to a screen
+        // reader, so this is a labelled value with its own semantics.
+        LabeledField(
+          label: l10n.profileAccountEmailLabel,
+          child: Semantics(
+            readOnly: true,
+            label: l10n.profileAccountEmailSemantics(accountEmail),
+            child: ExcludeSemantics(
+              child: Text(
+                accountEmail,
+                key: const Key('profile-account-email-value'),
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
           ),
-          validator: (v) {
-            final value = (v ?? '').trim();
-            if (value.isEmpty) return l10n.profileEmailRequired;
-            if (!looksLikeEmail(value)) {
-              return l10n.profileEmailInvalid;
-            }
-            return null;
-          },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.profileAccountEmailHint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        SecondaryActionButton(
+          key: const Key('profile-manage-account-button'),
+          label: l10n.profileManageAccountButton,
+          icon: Icons.open_in_new,
+          onPressed: onManageAccount,
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           key: const Key('profile-locale-field'),
           initialValue: locale,
           decoration: InputDecoration(labelText: l10n.profileLocaleLabel),
+          // Endonyms with the supported BCP 47 tags as values (D-34) —
+          // `en-GB`/`pt-PT`, never the generic `en`/`pt`.
           items: const [
-            DropdownMenuItem(value: 'en', child: Text('English')),
-            DropdownMenuItem(value: 'pt', child: Text('Português')),
+            DropdownMenuItem(value: kDefaultLocaleTag, child: Text('English')),
+            DropdownMenuItem(
+              value: kPortugueseLocaleTag,
+              child: Text('Português'),
+            ),
           ],
           onChanged: (v) {
             if (v != null) onLocaleChanged(v);

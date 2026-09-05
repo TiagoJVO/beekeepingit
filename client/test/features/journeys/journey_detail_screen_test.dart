@@ -445,12 +445,12 @@ void main() {
             find.byKey(const Key('activity-detail-header')),
             findsOneWidget,
           );
-          // Still the Journeys tab (index 2 in AppShell.tabs), not bounced
-          // into the Apiaries branch.
+          // Still the Journeys tab (index 3 in AppShell.tabs since Home took
+          // the centre, #658/D-35), not bounced into the Apiaries branch.
           final nav = tester.widget<NavigationBar>(
             find.byKey(const Key('shell-bottom-nav')),
           );
-          expect(nav.selectedIndex, 2);
+          expect(nav.selectedIndex, 3);
 
           await tester.tap(find.byKey(const Key('shell-back-button')));
           await tester.pumpAndSettle();

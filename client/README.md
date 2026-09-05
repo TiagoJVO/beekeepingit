@@ -13,12 +13,14 @@ flutter pub get
 flutter run -d chrome --no-web-resources-cdn
 ```
 
-`--no-web-resources-cdn` bundles CanvasKit/fonts locally instead of fetching them from
-Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
+`--no-web-resources-cdn` bundles the **CanvasKit engine payload** locally instead of fetching it
+from Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
 wherever that CDN is unreachable (corporate networks, offline). `task dart:build` /
 `flutter build web` already always pass this flag; it matters for `flutter run` too, since
 an offline-first field app must not depend on external network reachability just to paint
-its first frame.
+its first frame. It does **not** cover the engine's own font fetches from `fonts.gstatic.com` —
+those are closed separately, see the typography bullets under
+[Decisions this scaffold makes](#decisions-this-scaffold-makes-ac-of-21) below (`#620`).
 
 To point at a gateway host other than the local k3d dev mapping
 (`https://app.beekeepingit.local:8443`, see `infra/README.md`), pass:
@@ -27,8 +29,24 @@ To point at a gateway host other than the local k3d dev mapping
 flutter run -d chrome --no-web-resources-cdn --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
 ```
 
-`flutter build web` produces the installable PWA bundle (`build/web/`): web app manifest
-and the service worker Flutter generates at build time for app-shell caching.
+`flutter build web` produces the installable PWA bundle (`build/web/`): the web app manifest,
+the icons, and this repo's own app-shell service worker (`web/service_worker.js`).
+
+**The build is two steps, not one.** Flutter no longer generates a caching service worker —
+since [flutter/flutter#156910](https://github.com/flutter/flutter/issues/156910) the generated
+`flutter_service_worker.js` is a self-unregistering deprecation stub, which is why the app
+silently lost its offline shell (#619). This repo ships its own worker instead, and because
+nothing `flutter build web` emits is content-hashed (#678) that worker gets its cache key from a
+manifest generated **after** the build:
+
+```sh
+flutter build web --release --no-web-resources-cdn
+dart run tool/build_app_shell_cache.dart build/web
+```
+
+Skip the second step and the worker ships inert — it installs, caches nothing, and the app
+cannot start without a connection. Every build site in CI runs both, and
+`scripts/check-app-shell-precache-wired.sh` (in `task lint`) fails if one ever stops.
 
 ### Configuration (`--dart-define`)
 
@@ -48,24 +66,67 @@ hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 
 ## Structure
 
-| Path                        | What's there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/app.dart`, `main.dart` | App bootstrap: `ProviderScope`, `MaterialApp.router`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `lib/routing/`              | [go_router](https://pub.dev/packages/go_router) config — `/login`, onboarding gates (`/profile`, `/organization/new`), an auth redirect, and the post-onboarding app shell (`StatefulShellRoute.indexedStack`, one nav stack per tab): apiaries (`/apiaries`, `/apiaries/new`, `/apiaries/:id` read-only detail, `/apiaries/:id/edit` the form, `FR-AP-7`/`#32`) plus the not-yet-built activities/journeys/todos/assistant tabs; `/organization/members` and `/account` sit outside the shell |
-| `lib/shell/`                | The persistent app shell (`FR-UX-2`, `#197`) — 5-tab bottom nav, header (contextual back, brand + screen title, sync-status pill, account), contextual honey FAB, offline banner, and `ComingSoonScreen` placeholders for tabs without real screens yet                                                                                                                                                                                                                                        |
-| `lib/theming/`              | Light/dark Material 3 `ThemeData` (`app_theme.dart`) hand-built from the Melargil brand tokens (`brand_tokens.dart`) — the single source of truth for every brand hex; plus the bundled brand fonts under `../fonts/` (see Theming below)                                                                                                                                                                                                                                                      |
-| `lib/l10n/`                 | i18n scaffold — `arb/app_{en,pt}.arb` source strings (`flutter gen-l10n`); generated `gen/` output is committed (matches `services/shared`'s committed `sqlc` output — no codegen step needed to build/test)                                                                                                                                                                                                                                                                                   |
-| `lib/core/config/`          | Compile-time config (`--dart-define`) — gateway/OIDC/PowerSync URLs (see the table above)                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `lib/core/auth/`            | Provider-agnostic OIDC Authorization Code + PKCE flow via `openid_client` (discovery-driven; web redirect behind a conditional import so widget tests compile on the VM)                                                                                                                                                                                                                                                                                                                       |
-| `lib/core/sync/`            | PowerSync schema + backend connector (`fetchCredentials`→`/v1/sync/token`, `uploadData`→`/v1/sync/batch`) + the DB provider; the connector also parses per-op `superseded` results into a notify-and-fix event stream (`sync.md` §4.2/§8, `#58`) consumed by `lib/shell/sync_status.dart`'s real `syncStatusProvider`/`syncNowProvider`                                                                                                                                                        |
-| `lib/core/api/`             | Generic REST scaffold (`ApiClient`) — base URL + bearer injection (reuses `core/auth`'s access token), typed JSON, RFC 9457 `ApiException` mapping. Not profile-specific — other features reuse it (`#25`)                                                                                                                                                                                                                                                                                     |
-| `lib/core/l10n/`            | `LocaleFormatting` — locale-aware date/number formatting helper (`intl` `DateFormat`/`NumberFormat`), ready for the first screen that displays a date or a decimal (`NFR-I18N-1`, `#77`); see [Translations (i18n)](#translations-i18n) below                                                                                                                                                                                                                                                  |
-| `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`, `profile`, `organization`, `members`, `account`)                                                                                                                                                                                                                                                                                                                                                                                            |
+| Path                        | What's there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/app.dart`, `main.dart` | App bootstrap: `ProviderScope`, `MaterialApp.router`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `lib/routing/`              | [go_router](https://pub.dev/packages/go_router) config — `/login`, onboarding gates (`/profile`, `/organization/new`), an auth redirect, and the post-onboarding app shell (`StatefulShellRoute.indexedStack`, one nav stack per tab): apiaries, activities, home, journeys, todos; `/organization/members`, `/account`, `/organization/details`, `/stock-declarations` and `/sync-needs-fix` sit outside the shell. **`/home` is the landing screen** and the post-login / post-onboarding redirect target (`#658`, `D-35`, `D-29` as amended). Branch order must match `AppShell.tabs` — tab position is branch position                           |
+| `lib/shell/`                | The persistent app shell (`FR-UX-2`, `#197`) — 5-tab bottom nav (apiaries · activities · **home** · journeys · todos, `#658`/`D-35`), header (contextual back, brand + screen title, sync-status pill, account), contextual honey FAB, offline banner. Every tab has a real screen; Home and Activities carry no FAB, having no single right create action                                                                                                                                                                                                                                                                                           |
+| `lib/theming/`              | Light/dark Material 3 `ThemeData` (`app_theme.dart`) hand-built from the Melargil brand tokens (`brand_tokens.dart`) — the single source of truth for every brand hex; plus the bundled brand fonts under `../fonts/` (see Theming below)                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `lib/l10n/`                 | i18n scaffold — `arb/app_{en,pt}.arb` source strings plus the `app_{en_GB,pt_PT}.arb` region markers (`D-34`) (`flutter gen-l10n`); generated `gen/` output is committed (matches `services/shared`'s committed `sqlc` output — no codegen step needed to build/test)                                                                                                                                                                                                                                                                                                                                                                                |
+| `lib/core/config/`          | Compile-time config (`--dart-define`) — gateway/OIDC/PowerSync URLs (see the table above)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `lib/core/auth/`            | Provider-agnostic OIDC Authorization Code + PKCE flow via `openid_client` (discovery-driven; web redirect behind a conditional import so widget tests compile on the VM)                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `lib/core/sync/`            | PowerSync schema + backend connector (`fetchCredentials`→`/v1/sync/token`, `uploadData`→`/v1/sync/batch`) + the DB provider; the connector also parses per-op `superseded` results into a notify-and-fix event stream (`sync.md` §4.2/§8, `#58`) consumed by `lib/shell/sync_status.dart`'s real `syncStatusProvider`/`syncNowProvider`                                                                                                                                                                                                                                                                                                              |
+| `lib/core/api/`             | Generic REST scaffold (`ApiClient`) — base URL + bearer injection (reuses `core/auth`'s access token), typed JSON, RFC 9457 `ApiException` mapping. Not profile-specific — other features reuse it (`#25`)                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `lib/core/l10n/`            | `supported_locales.dart` (the shipped locale set `en-GB`/`pt-PT` and the normalization every stored locale code goes through, `D-34`/`#656`), `LocaleFormatting` (display) and `LocalizedNumberInput` (typed input) — locale-aware date/number handling on `intl` (`NFR-I18N-1`, `#77`, `#623`); see [Translations (i18n)](#translations-i18n) below                                                                                                                                                                                                                                                                                                 |
+| `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`, `activities`, `home`, `journeys`, `todos`, `history`, `notifications`, `stock_declarations`, `sync`, `profile`, `organization`, `members`, `account`, `settings`)                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `web/`                      | The bundle's non-Dart sources, copied verbatim into `build/web/`: `index.html`, `manifest.json`, `icons/`, the repo-controlled `flutter_bootstrap.js` override (`#620`), and the app-shell service worker `service_worker.js` with its registration script `sw_register.js` (`#619`)                                                                                                                                                                                                                                                                                                                                                                 |
+| `assets/`                   | Bundled runtime assets declared under `flutter: assets:` — today just `brand/app-icon-512.png`, a byte-identical copy of `web/icons/Icon-512.png` so the in-app `BrandMark` and the installed app's icon are the same artwork (`#686`); `test/brand_mark_asset_test.dart` pins that. Bundled rather than fetched, so the login screen paints on an offline cold boot                                                                                                                                                                                                                                                                                 |
+| `tool/`                     | Tooling that produces things `web/`+`build/web/` need, rather than app code. `build_app_shell_cache.dart` runs **against the built bundle** after every `flutter build web`, injecting the service worker's per-release precache manifest (`#619`); unit-tested in `test/tool/`. `icons/` is the design-time app-icon generator (`#682`) — the committed Melargil vector master plus the Node script that rasterises `web/icons/*` and `web/favicon.png` from it (`task web:icons`); see its own `README.md`. Regenerating the set obliges you to re-copy `assets/brand/app-icon-512.png` — `test/brand_mark_asset_test.dart` fails if the two drift |
 
 ## Translations (i18n)
 
-EN + PT today, structured to add more languages later without touching feature
-screens (`NFR-I18N-1`, `#77`/`#78`). Source strings are
+**British English (`en-GB`) + European Portuguese (`pt-PT`)** today — the two
+locales the app supports (`D-34`, `#656`), structured to add more languages
+later without touching feature screens (`NFR-I18N-1`, `#77`/`#78`).
+
+> **Why the region codes matter.** Generic `pt`/`en` are not neutral: CLDR
+> resolves them to **Brazilian** and **American** conventions (`1.234,5`,
+> `Sep 3, 2026`). `pt-PT` groups thousands with a non-breaking space and
+> `en-GB` puts the day first. Three consequences to know about:
+>
+> - **The offered set is `kSupportedLocales`** (`lib/core/l10n/supported_locales.dart`),
+>   which is what `app.dart` hands `MaterialApp` — **not**
+>   `AppLocalizations.supportedLocales`, which also lists the generic `en`/`pt`
+>   base ARBs `gen-l10n` requires behind each region variant. Widget tests
+>   should pass `kSupportedLocales` too, or they exercise a locale set the app
+>   never uses.
+> - **Dates are the one place the app overrides CLDR.** `LocaleFormatting`
+>   pins `d MMM y` for both locales — `3 set. 2026` / `3 Sept 2026` — rather
+>   than taking each locale's medium default, which for `pt-PT` is the numeric
+>   `d/MM/y`. A named month cannot be misread in the field; `3/09` vs `09/03`
+>   can. Numbers follow CLDR unchanged.
+> - **Anything reading a locale must keep the country** — `toLanguageTag()`,
+>   never `languageCode`.
+
+**Typing numbers** goes through `LocalizedNumberInput` (`NFR-I18N-1`,
+`FR-AC-1`, `#623`, `#657`), which every numeric form field shares. A grouping
+separator is always followed by exactly three digits and a decimal separator
+by any number, so:
+
+- the active locale's decimal separator always wins (`40,5` → 40.5 in
+  `pt-PT`);
+- a separator that **cannot** mean thousands is read as the decimal point,
+  whichever character it is — `40.5` in `pt-PT` and `40,5` in `en-GB` are both
+  40.5;
+- where the input genuinely could mean thousands, the **locale** decides:
+  `1,234` is 1234 in `en-GB` (its own grouping separator), while `1.234` in
+  `pt-PT` is **rejected** — the dot is neither that locale's decimal nor its
+  grouping character, so there is no rule to break the tie and guessing would
+  be a 1000x error;
+- anything with no coherent reading is still rejected visibly and blocks the
+  save. A number is never silently rewritten into a different one.
+
+Source strings are
 [ARB](https://github.com/google/app-resource-bundle) files under
 `lib/l10n/arb/`; `flutter gen-l10n` (configured by `l10n.yaml`) generates the
 typed `AppLocalizations` API into `lib/l10n/gen/`, which is **committed**
@@ -78,6 +139,9 @@ step needed to build/test).
    `@key` metadata block describing where it's used (see existing entries).
    Use [ICU plural syntax](https://docs.flutter.dev/ui/accessibility-and-localization/internationalization#pluralization)
    for anything that varies by count, e.g. `hiveCountValue`.
+   (`app_en.arb` and `app_pt.arb` hold every string; `app_en_GB.arb` and
+   `app_pt_PT.arb` carry only `@@locale` and inherit them — see the header of
+   `l10n.yaml` for why those two files exist.)
 2. Add the same key to `lib/l10n/arb/app_pt.arb` too — CI only checks that
    the key exists in both files (see "What CI enforces" below), not that the
    Portuguese value is a real translation yet, but don't merge with an
@@ -95,7 +159,7 @@ new language's ARB file) — no Dart code changes needed. Re-run
 job in `.github/workflows/build-publish.yml`, `#78`):
 
 - Every ARB file is valid JSON and every key in `app_en.arb` (the template)
-  exists in every other ARB file, and vice versa — a key added to one
+  exists in every other base-language ARB file, and vice versa — a key added to one
   language but not the other fails the build.
 - `flutter gen-l10n` runs clean (fails on malformed ARB or an ICU syntax
   error).
@@ -109,6 +173,31 @@ raw lat/lon text). `lib/core/l10n/locale_formatting.dart`'s
 `LocaleFormatting` helper wraps `intl`'s `DateFormat`/`NumberFormat` keyed to
 the active locale, ready for the first field that needs it — see its tests
 (`test/core/l10n/locale_formatting_test.dart`) for EN vs. PT output.
+
+## Tests
+
+`flutter test` from this directory runs the whole suite (unit + widget).
+
+`test/flutter_test_config.dart` is loaded automatically for every test file
+and stubs out the one thing no widget test can do for real: **opening the
+on-device PowerSync database**. `PowerSyncDatabase` registers its path in a
+process-wide instance registry from its constructor and only deregisters on
+`close()` — which under `testWidgets` never happens, because
+`initialize()` stays pending there (real disk/isolate I/O doesn't progress
+under the widget binding's fake-async clock), so `powerSyncProvider` never
+reaches its teardown. Every widget test therefore leaked one entry and the
+run filled up with
+`[PowerSync] WARNING: Multiple instances for the same database ...` (`#286`).
+The stub (`debugOpenPowerSyncDatabase` in `lib/core/sync/powersync_service.dart`)
+keeps `powerSyncProvider` pending, exactly as it already behaved in widget
+tests, without opening anything. A test that needs a **resolved** sync
+session overrides the providers it actually depends on (`syncStatusProvider`,
+a repository's stream provider, …) — see `test/account_screen_test.dart` and
+`test/app_shell_test.dart`; `await`ing `powerSyncProvider` itself without an
+override hangs until the test times out. A test that deliberately wants the
+**real** database (a plain `test()`, not a widget test — the open does
+complete there) opts back in by setting `debugOpenPowerSyncDatabase = null`
+and restoring it in an `addTearDown`.
 
 ## Decisions this scaffold makes (AC of `#21`)
 
@@ -134,6 +223,27 @@ the active locale, ready for the first field that needs it — see its tests
     [`fonts/`](fonts/) with each family's `OFL.txt`, declared under `flutter: fonts:` in
     `pubspec.yaml`. This also fixes the shell header's old dangling `fontFamily: 'Playfair
 Display'` that had no bundled font and fell back to Roboto.
+  - **Roboto is bundled too — as the glyph fallback, not as a brand face** (`#620`, `NFR-CMP`,
+    `FR-OF-1`, `C-2`). CanvasKit needs a default family and hardcodes the name `Roboto`: with no
+    such family in `FontManifest.json` it downloads one from `fonts.gstatic.com` on **every cold
+    load**, which `--no-web-resources-cdn` does not suppress (that flag only localises the
+    CanvasKit engine payload). Bundling the family stops the request, and widens fallback coverage
+    from Archivo/Playfair's ~230 code points each to ~896 (Latin Extended, Greek, Cyrillic,
+    Vietnamese). The file is the exact Roboto the Flutter SDK ships, so
+    [`fonts/Roboto/LICENSE.txt`](fonts/Roboto/LICENSE.txt) is Apache-2.0 rather than the OFL the
+    two brand families carry.
+  - **The per-code-point fallback is pinned to our own origin.** For a code point _no_ registered
+    font covers, the engine downloads a Noto font from `fontFallbackBaseUrl`, which defaults to
+    `https://fonts.gstatic.com/s/`. [`web/flutter_bootstrap.js`](web/flutter_bootstrap.js) — the
+    only reason this repo overrides Flutter's generated bootstrap at all — pins it to the relative
+    path `font-fallback/`. Nothing is bundled there, so such a code point renders as the
+    missing-glyph box: a deliberate trade against disclosing every user's IP address to Google, on
+    a boot path that must work with no signal at all anyway. The reachable case is **emoji** in
+    user-entered text, and whether that trade holds for it is `#673`; `nginx.conf` already routes
+    the prefix with `try_files $uri =404`, so bundling a face under `web/font-fallback/` needs no
+    code change. Both settings are pinned by
+    [`test/fonts_local_fallback_test.dart`](test/fonts_local_fallback_test.dart) and the outcome by
+    [`e2e/tests/same-origin-boot.spec.ts`](e2e/tests/same-origin-boot.spec.ts).
 - **i18n: Flutter `intl`** (`flutter gen-l10n`), EN default + a real (not lorem-ipsum) PT
   translation, per `NFR-I18N`.
 - **Backend through the gateway (`#23`):** the `#21` provider-reachability placeholder is
@@ -143,16 +253,20 @@ Display'` that had no bundled font and fell back to Roboto.
 
 ## PWA installability
 
-Manifest, service worker (Flutter-generated at build time), icons, and hosting are covered by
-`#93`. An automated Lighthouse CI installability audit runs in `build-publish.yml` on every
-client change, plus a manual verification procedure (with a first pass already filled in) for
-what a static-build audit can't check (real install prompt, offline shell serving) — see
+Manifest, icons and hosting are covered by `#93`; the app-shell service worker is this repo's
+own (`web/service_worker.js`, #619 — see the build note above). An automated Lighthouse CI
+installability audit runs in `build-publish.yml` on every client change, and
+`e2e/tests/offline-boot.spec.ts` takes a real browser offline against the deployed bundle and
+asserts the shell renders. A manual pass remains for what neither can check (the real install
+prompt on a device) — see
 [`docs/client/pwa-installability.md`](../docs/client/pwa-installability.md).
 
-## Not in scope here (see `FOLLOWUPS.md`)
+## Not in scope here
 
 The PowerSync **web assets** (wasm SQLite + workers) and a few **deploy-time** wirings
-(OIDC issuer/host resolution, the `/sync-stream` gateway route) are validated against the
-live cluster — see `FOLLOWUPS.md`. The full-slice **Playwright e2e** lives in
-[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) are Flutter's default placeholders —
-real branded artwork is still needed (`#93`'s "real project app icons" AC).
+(OIDC issuer/host resolution, the `/sync-stream` gateway route) were validated against the
+live cluster in `#23` (#160). The full-slice **Playwright e2e** lives in
+[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) carry the Melargil bee brand mark
+(white on `#F9A825`, matching the manifest theme), rasterised from the vector logo master (#233).
+The in-app mark is that same file, bundled as `assets/brand/app-icon-512.png` and drawn by
+`BrandMark` (#686) — there is one brand mark, not one per source.

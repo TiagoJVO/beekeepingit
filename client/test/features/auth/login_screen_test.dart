@@ -1,11 +1,15 @@
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/auth/login_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openid_client/openid_client.dart';
+
+import '../../support/image_asset.dart';
 
 /// [LoginScreen] rendered on its own (no router/onboarding gates) with a
 /// controllable [oidcIssuerProvider] override, so a discovery/network
@@ -17,13 +21,47 @@ Widget _buildLoginScreen({required List<Override> overrides}) {
     overrides: overrides,
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: LoginScreen(),
     ),
   );
 }
 
 void main() {
+  testWidgets(
+    'the sign-in screen shows the SAME brand mark the app icon ships — the '
+    'bee, not the honeycomb glyph it used to draw (#686)',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildLoginScreen(
+          overrides: [
+            oidcIssuerProvider.overrideWith(
+              (ref) => Future<Issuer>.error(Exception('not reached')),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The mark on this screen is the bundled copy of web/icons/Icon-512.png
+      // (byte-identity pinned by test/brand_mark_asset_test.dart), so the
+      // installed app's title bar and the screen under it cannot disagree.
+      expect(find.byType(BrandMark), findsOneWidget);
+      final image = tester.widget<Image>(
+        find.descendant(
+          of: find.byType(BrandMark),
+          matching: find.byType(Image),
+        ),
+      );
+      expect(assetNameOf(image), kBrandMarkAsset);
+      // The pre-#686 mark: a Material honeycomb on a honey tile.
+      expect(find.byIcon(Icons.hive_rounded), findsNothing);
+      // Decorative-but-named: a screen reader announces the brand, from the
+      // ARB files, never a literal (FR-AX-1, NFR-I18N-1).
+      expect(find.bySemanticsLabel('BeekeepingIT logo'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'tapping "Sign in" while offline (discovery fails) shows an error '
     'instead of an unhandled exception',

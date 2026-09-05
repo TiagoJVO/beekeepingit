@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/todos/todo_apiary_picker_field.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -48,7 +49,7 @@ class _HarnessState extends State<_Harness> {
       child: MaterialApp(
         theme: AppTheme.light(),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
+        supportedLocales: kSupportedLocales,
         home: Scaffold(
           body: TodoApiaryPickerField(
             selectedApiaryId: _selected,

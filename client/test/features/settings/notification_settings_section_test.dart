@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
 import 'package:beekeepingit_client/features/settings/notification_settings_section.dart';
@@ -30,7 +31,7 @@ Widget _buildSection({LocalPrefs? prefs, Widget? eventTogglesSlot}) {
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Scaffold(
         body: NotificationSettingsSection(eventTogglesSlot: eventTogglesSlot),
       ),

@@ -3,7 +3,8 @@
 The **apiaries** service — owner of apiary records
 ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23),
 [#31](https://github.com/TiagoJVO/beekeepingit/issues/31)). It owns the
-`apiaries.apiaries`, `apiaries.apiary_counters`, `apiaries.sync_conflict_log`
+`apiaries.apiaries`, `apiaries.apiary_counters`, `apiaries.stock_declarations`,
+`apiaries.sync_conflict_log`
 and `apiaries.audit_log` tables, exposes the client-facing **REST CRUD**
 surface (FR-AP-1), and implements the internal sync **validate/apply** path
 with server-authoritative last-write-wins (LWW), conflict logging, tombstones
@@ -17,6 +18,16 @@ sync-apply write paths. `notes` is optional free-text (FR-AP-8, #196);
 "Montargil"); both are shown on the client's apiary detail screen when
 present. Hive count is a typed counter row in `apiary_counters` (FR-AP-7,
 D-20, #256), not a column on `apiaries.apiaries` — see `api/counters.go`.
+
+`registration_number` (FR-AP-9, #296) is the optional per-apiary **override** of
+the organization's beekeeper registration-number default — the issuing authority
+grants one number per beekeeper (in Portugal, DGAV's `número de registo do
+apicultor`), so the default lives on the organization and this column exists only
+for an organization covering several beekeepers. `stock_declarations` (FR-AP-10,
+#298) is the declared-stock log (Portugal's "Declaração de Existências" is the
+motivating case) — a **point-in-time** record of declared stock, keyed by
+registration number rather than by apiary, and deliberately distinct from the
+live hive counter; see `api/declarations.go`.
 
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
 access via [`services/shared/dbaccess`](../shared/README.md); history
