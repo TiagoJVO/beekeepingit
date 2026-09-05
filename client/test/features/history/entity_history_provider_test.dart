@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/features/history/history_repository.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -96,6 +97,16 @@ Future<void> _settle() async {
   }
 }
 
+/// [_settle]'s fake-time twin: drains the same zero-duration hops **without
+/// advancing the clock**, so a test inside `fakeAsync` can still say "let the
+/// generator finish what it can do right now" and then assert on a deadline
+/// it moves by hand.
+void _settleFake(FakeAsync async) {
+  for (var i = 0; i < 8; i++) {
+    async.elapse(Duration.zero);
+  }
+}
+
 void main() {
   group('entityHistoryProvider local-first/remote-fallback (#60)', () {
     test('an empty local slice triggers exactly one remote fetch', () async {
@@ -162,35 +173,66 @@ void main() {
       },
     );
 
-    test('a sync landing during the fetch beats the remote result', () async {
+    test('a sync landing during the fetch beats the remote result', () {
       // The race `await for` creates: the local subscription is PAUSED while
       // the network call is in flight, so rows that sync mid-fetch are still
       // queued when the (now stale) remote result resolves. Local must win.
-      final controller = StreamController<List<HistoryEntry>>();
-      addTearDown(controller.close);
-      final repo = _FakeHistoryRepository(
-        localController: controller,
-        remote: const [], // e.g. the fetch failed, or returned nothing
-        landedAfterFetch: [_entry('synced-mid-fetch')],
-        remoteDelay: const Duration(milliseconds: 10),
-      );
-      final h = _listen(repo);
+      //
+      // Fake time (#705, following #697/PR #704): this used to wait a real
+      // 50ms for a 10ms fetch — a *lower bound* on wall clock that a starved
+      // isolate can miss while the code under test is perfectly correct.
+      // Elapsing by hand pins the re-read to the fetch's own 10ms deadline,
+      // which strengthens the test: it now also asserts that nothing is
+      // re-read *before* the fetch resolves, which the old window could not
+      // see at all.
+      fakeAsync((async) {
+        final controller = StreamController<List<HistoryEntry>>();
+        addTearDown(controller.close);
+        final repo = _FakeHistoryRepository(
+          localController: controller,
+          remote: const [], // e.g. the fetch failed, or returned nothing
+          landedAfterFetch: [_entry('synced-mid-fetch')],
+          remoteDelay: const Duration(milliseconds: 10),
+        );
+        final h = _listen(repo);
 
-      controller.add(const []);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      await _settle();
+        controller.add(const []);
+        _settleFake(async);
 
-      expect(
-        repo.localReReads,
-        1,
-        reason: 'must re-check local after the fetch',
-      );
-      expect(h.emissions.last.map((e) => e.id), ['synced-mid-fetch']);
-      expect(
-        h.emissions.any((e) => e.isEmpty),
-        isFalse,
-        reason: 'the stale empty remote result must never be shown',
-      );
+        expect(
+          repo.remoteCalls,
+          1,
+          reason: 'sanity check: the fetch really is in flight',
+        );
+        expect(
+          repo.localReReads,
+          0,
+          reason: 'nothing may be re-read while the fetch is still running',
+        );
+
+        async.elapse(const Duration(milliseconds: 9));
+
+        expect(
+          repo.localReReads,
+          0,
+          reason: 'still 1ms short of the fetch resolving',
+        );
+
+        async.elapse(const Duration(milliseconds: 1));
+        _settleFake(async);
+
+        expect(
+          repo.localReReads,
+          1,
+          reason: 'must re-check local after the fetch',
+        );
+        expect(h.emissions.last.map((e) => e.id), ['synced-mid-fetch']);
+        expect(
+          h.emissions.any((e) => e.isEmpty),
+          isFalse,
+          reason: 'the stale empty remote result must never be shown',
+        );
+      });
     });
 
     test(
