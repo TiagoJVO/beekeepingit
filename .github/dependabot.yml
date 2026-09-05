@@ -46,6 +46,14 @@ updates:
       prefix: "build"
     labels:
       - "type/chore"
+    ignore:
+      # `intl` is not ours to bump. flutter_localizations, from the pinned Flutter
+      # SDK, depends on an EXACT intl version, so any bump fails `flutter pub get`
+      # with "version solving failed" — the client then neither builds nor tests.
+      # Dependabot cannot see an SDK-side pin, so it proposed 0.20.3 (#680), which
+      # merged and broke main. Bumping it is a side effect of moving the Flutter pin
+      # in mise.toml (Renovate's job, #521), never a standalone PR.
+      - dependency-name: "intl"
 
   # React admin app (#72). Only the npm ecosystem here; the admin/ Dockerfile's base-image
   # bumps are tracked with the other Docker ecosystems (below is per-service; admin's is
