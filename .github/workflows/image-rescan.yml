@@ -1,0 +1,175 @@
+# Re-scan the images that are ALREADY PUBLISHED, on a timer (#718, NFR-SEC-1).
+#
+# WHY THIS EXISTS
+# ---------------
+# Every other scan in this repo is triggered by a change: build-publish.yml scans a
+# component only when files under that component changed, and security-scan.yml runs on
+# pull_request/push. So an image whose folder nobody touches is never looked at again —
+# its known vulnerabilities accumulate with CI green the whole time, because the check
+# that would catch them simply does not run.
+#
+# That is not hypothetical. admin/ sat on nginx:1.27-alpine (Alpine 3.21.3) while client/
+# had moved to 3.24.1 — three Alpine branches of unpatched packages — and nothing went red
+# for months, because admin/ had not changed. It surfaced only when someone read the two
+# Dockerfiles side by side (#719).
+#
+# WHY DEPENDABOT DOES NOT COVER THIS
+# ----------------------------------
+# The `docker` ecosystem in ../dependabot.yml watches the base image TAG in each
+# Dockerfile: it opens a PR when `nginx:1.31-alpine` is superseded by a newer tag. It says
+# nothing about a vulnerability newly discovered INSIDE the tag you are already pinned to,
+# which is the case that actually bites. Only a scan of the built image finds that, and
+# Trivy — which this repo already runs — is that scan. The only missing ingredient was a
+# clock, which is all this workflow adds.
+#
+# WHAT IT REPORTS, AND THE DISTINCTION THAT MATTERS (#718 AC 3)
+# ------------------------------------------------------------
+# Two passes per image, because "vulnerable" splits into two very different situations:
+#
+#   * FIXABLE (`ignore-unfixed: true`) — an upstream fix exists, so rebuilding and
+#     republishing the image clears it. This FAILS the job: it is actionable today, and a
+#     failed scheduled run is what reaches a human (GitHub emails the repo owner).
+#   * UNFIXED — no fix published anywhere yet. Reported into the run summary but NOT
+#     failed: there is nothing to act on, and failing on it would train everyone to ignore
+#     this workflow, which is the only failure mode that would make it worthless.
+#
+# The 2026-09-05 libuuid case is the worked example: Trivy reported it as fixed-in-2.42.3-r0
+# (so, FIXABLE and reported here) even though Alpine had not yet shipped it to v3.24. That
+# is the right call — a human then decides between waiting, rebasing, or removing the
+# package, exactly as #719 did.
+#
+# This workflow deliberately only REPORTS. It does not rebuild or republish: a rebuild on a
+# timer would move `latest`, which the dev cluster's Flux HelmRelease pulls, and quietly
+# changing what is deployed is a decision for a person, not a cron (D-27, ADR-0018).
+name: image-rescan
+
+on:
+  # Weekly. The minute is deliberately not :00 — every repo that asks for "Monday morning"
+  # lands on the hour and the runner queue feels it.
+  schedule:
+    - cron: "17 6 * * 1"
+  # So a human can answer "is anything vulnerable right now?" without waiting for Monday.
+  workflow_dispatch:
+
+concurrency:
+  group: image-rescan
+  cancel-in-progress: false
+
+jobs:
+  # Same derivation as build-publish.yml's `detect`: a directory holding a Dockerfile IS a
+  # published component, so the list cannot drift as services are added. It is NOT filtered
+  # by "changed files" here — the whole point is to look at the ones nobody has touched.
+  discover:
+    name: discover published images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: List every component that publishes an image
+        id: scan
+        run: |
+          set -euo pipefail
+          components="$(find . -type f -name Dockerfile \
+            -not -path './.git/*' -not -path '*/.claude/*' -not -path '*/node_modules/*' \
+            -printf '%h\n' | sed 's|^\./||' | sort -u)"
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          include=""
+          for dir in $components; do
+            name="$(echo "$dir" | tr '/' '-')"
+            include="${include}{\"component\":\"${name}\",\"image\":\"ghcr.io/${owner}/beekeepingit/${name}\"},"
+          done
+          include="${include%,}"
+
+          echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+          echo "Components: [${include}]"
+
+  rescan:
+    name: rescan ${{ matrix.component }}
+    needs: discover
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pull the published image from ghcr.io
+    strategy:
+      # Every image is scanned even when an earlier one is vulnerable — a single bad image
+      # must not hide the state of the rest, which is the whole report.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A component can have a Dockerfile without ever having been published — a new
+      # service before its first merge to main. That is not a vulnerability, so it must not
+      # read as one: skip cleanly and say so in the summary.
+      - name: Check the image exists
+        id: exists
+        run: |
+          set -uo pipefail
+          # `docker buildx imagetools inspect`, not `docker manifest inspect`: the latter
+          # still needs the experimental CLI flag on some Docker versions, and buildx is
+          # preinstalled on the runners.
+          if docker buildx imagetools inspect "${{ matrix.image }}:latest" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "### ⏭️ ${{ matrix.component }} — never published" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`${{ matrix.image }}:latest\` does not exist yet; nothing to scan." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Pass 1 — informational. Everything, fix or no fix, into the run summary so the
+      # unfixed ones are visible without being alarms.
+      - name: Report every HIGH/CRITICAL (including ones with no fix yet)
+        if: steps.exists.outputs.found == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0" # informational only — see the header comment
+          output: trivy-all.txt
+
+      - name: Add the findings to the run summary
+        if: steps.exists.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ matrix.component }}"
+            echo
+            echo '```text'
+            cat trivy-all.txt || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Pass 2 — the gate. Only vulnerabilities an upstream fix already exists for, i.e.
+      # the ones a rebuild would actually clear. This is what turns the run red, and a red
+      # scheduled run is what GitHub emails the repo owner about.
+      - name: Fail on anything a rebuild would fix
+        if: steps.exists.outputs.found == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Say what a failure means
+        if: failure() && steps.exists.outputs.found == 'true'
+        run: |
+          {
+            echo
+            echo "> **${{ matrix.component }} has HIGH/CRITICAL vulnerabilities with an upstream fix available.**"
+            echo "> The published image is stale, not the Dockerfile — rebuilding and republishing"
+            echo "> it is what clears these. If a fix is listed but not yet in the base distro's"
+            echo "> repository, see #719 for the alternative (drop the package that pulls it in)."
+          } >> "$GITHUB_STEP_SUMMARY"

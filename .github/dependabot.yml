@@ -67,14 +67,26 @@ updates:
     labels:
       - "type/chore"
 
-  # Base images for the deployable components' Dockerfiles (#23).
+  # Base images for the deployable components' Dockerfiles (#23). This list must hold
+  # EVERY directory with a Dockerfile — each one publishes an image, and one left out is
+  # an image whose base tag silently stops being watched. `admin`, `activities`,
+  # `journeys` and `todos` were missing until 2026-09-05; admin is the reason it mattered,
+  # having sat three Alpine branches behind on nginx:1.27-alpine without anything going
+  # red (#719).
+  #
+  # This only catches a MOVED TAG. A vulnerability found inside the tag already pinned is
+  # invisible here — image-rescan.yml is the timer that catches those (#718).
   - package-ecosystem: "docker"
     directories:
-      - "/services/identity"
-      - "/services/organizations"
-      - "/services/apiaries"
-      - "/services/sync"
+      - "/admin"
       - "/client"
+      - "/services/activities"
+      - "/services/apiaries"
+      - "/services/identity"
+      - "/services/journeys"
+      - "/services/organizations"
+      - "/services/sync"
+      - "/services/todos"
     schedule:
       interval: "weekly"
     commit-message:
