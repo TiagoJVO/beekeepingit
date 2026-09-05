@@ -36,6 +36,19 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
     super.dispose();
   }
 
+  /// Drops the last save's server verdict for [field] once its value changes
+  /// (#649) — the same rule apiary_form_screen.dart applies in its
+  /// `Form.onChanged`. Server errors arrive as `InputDecoration.errorText`,
+  /// which `InputDecoration.copyWith` preserves whenever the local validator
+  /// passes, so autovalidation alone would leave a rejected-value message
+  /// sitting under a value the user has already rewritten. The client can't
+  /// know the new value satisfies the server, so this clears on edit rather
+  /// than on validity: the next save re-asks.
+  void _clearFieldError(String field) {
+    if (!_fieldErrors.containsKey(field)) return;
+    setState(() => _fieldErrors = {..._fieldErrors}..remove(field));
+  }
+
   Future<void> _save(AppLocalizations l10n) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -111,6 +124,16 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     key: const Key('organization-name-field'),
                     controller: _nameController,
                     autofocus: true,
+                    // Per-field, so a blocked save's "enter a name" error
+                    // clears the moment the field holds one instead of
+                    // waiting for the next save (#649, FR-UX-1) — matching
+                    // journey/todo. Field-level rather than on the Form: a
+                    // Form-level onUserInteraction validates every field as
+                    // soon as ANY of them is touched, which would flag this
+                    // still-untouched name the instant the user types an
+                    // address.
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    onChanged: (_) => _clearFieldError('name'),
                     decoration: InputDecoration(
                       labelText: l10n.organizationNameLabel,
                       errorText: _fieldErrors['name'],
@@ -123,6 +146,7 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                   TextFormField(
                     key: const Key('organization-address-field'),
                     controller: _addressController,
+                    onChanged: (_) => _clearFieldError('address'),
                     decoration: InputDecoration(
                       labelText: l10n.organizationAddressLabel,
                       errorText: _fieldErrors['address'],

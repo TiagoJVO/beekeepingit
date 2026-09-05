@@ -39,6 +39,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     super.dispose();
   }
 
+  /// Drops the last save's server verdict for [field] once its value changes
+  /// (#649) — the same rule apiary_form_screen.dart applies in its
+  /// `Form.onChanged`. Server errors arrive as `InputDecoration.errorText`,
+  /// which `InputDecoration.copyWith` preserves whenever the local validator
+  /// passes, so autovalidation alone would leave a rejected-value message
+  /// sitting under a value the user has already rewritten. The client can't
+  /// know the new value satisfies the server, so this clears on edit rather
+  /// than on validity: the next save re-asks.
+  void _clearFieldError(String field) {
+    if (!_fieldErrors.containsKey(field)) return;
+    setState(() => _fieldErrors = {..._fieldErrors}..remove(field));
+  }
+
   void _syncFromProfile(Profile profile) {
     if (_initialized) return;
     _initialized = true;
@@ -155,6 +168,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         .openInNewTab(AppConfig.oidcAccountUrl),
                     locale: _locale,
                     fieldErrors: _fieldErrors,
+                    onFieldEdited: _clearFieldError,
                     saving: _saving,
                     showOnboardingIntro: !profile.profileComplete,
                     onLocaleChanged: (v) => setState(() => _locale = v),
@@ -182,6 +196,7 @@ class _ProfileFormFields extends StatelessWidget {
     required this.onManageAccount,
     required this.locale,
     required this.fieldErrors,
+    required this.onFieldEdited,
     required this.saving,
     required this.showOnboardingIntro,
     required this.onLocaleChanged,
@@ -197,6 +212,10 @@ class _ProfileFormFields extends StatelessWidget {
   final VoidCallback onManageAccount;
   final String locale;
   final Map<String, String> fieldErrors;
+
+  /// Notifies the owning state that the named field's value changed, so a
+  /// server verdict on it can be dropped (#649).
+  final ValueChanged<String> onFieldEdited;
   final bool saving;
   final bool showOnboardingIntro;
   final ValueChanged<String> onLocaleChanged;
@@ -218,6 +237,13 @@ class _ProfileFormFields extends StatelessWidget {
           key: const Key('profile-name-field'),
           controller: nameController,
           autofocus: showOnboardingIntro,
+          // Per-field, so a blocked save's "enter your name" error clears the
+          // moment the field holds one instead of waiting for the next save
+          // (#649, FR-UX-1) — matching journey/todo. Field-level rather than
+          // on the Form, which would validate every field as soon as any one
+          // of them is touched.
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          onChanged: (_) => onFieldEdited('name'),
           decoration: InputDecoration(
             labelText: l10n.profileNameLabel,
             errorText: fieldErrors['name'],
