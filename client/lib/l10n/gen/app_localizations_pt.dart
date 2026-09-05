@@ -12,6 +12,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
+  String get appLogoLabel => 'Logótipo BeekeepingIT';
+
+  @override
   String get loginPrompt =>
       'Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.';
 
@@ -48,10 +51,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String hiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count colmeias',
+      other: '$countString colmeias',
       one: '1 colmeia',
       zero: 'Sem colmeias',
     );
@@ -60,10 +67,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String superCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count alças',
+      other: '$countString alças',
       one: '1 alça',
       zero: 'Sem alças',
     );
@@ -78,10 +89,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String emptyHiveCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count colmeias vazias',
+      other: '$countString colmeias vazias',
       one: '1 colmeia vazia',
       zero: 'Sem colmeias vazias',
     );
@@ -90,10 +105,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String swarmCountValue(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count enxames',
+      other: '$countString enxames',
       one: '1 enxame',
       zero: 'Sem enxames',
     );
@@ -365,25 +384,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get activitiesTitle => 'Atividades';
 
   @override
+  String get homeTitle => 'Início';
+
+  @override
   String get journeysTitle => 'Jornadas';
 
   @override
   String get todosTitle => 'Tarefas';
-
-  @override
-  String get assistantTitle => 'Assistente';
-
-  @override
-  String get activitiesComingSoon => 'Atividades — brevemente';
-
-  @override
-  String get journeysComingSoon => 'Jornadas — brevemente';
-
-  @override
-  String get todosComingSoon => 'Tarefas — brevemente';
-
-  @override
-  String get assistantComingSoon => 'Assistente — brevemente';
 
   @override
   String get syncStatusOnline => 'Online';
@@ -1097,6 +1104,55 @@ class AppLocalizationsPt extends AppLocalizations {
       'Deteção apenas (sem tratamento ainda)';
 
   @override
+  String get diseaseConditionVarroosisLabel => 'Varroose';
+
+  @override
+  String get diseaseConditionAmericanFoulbroodLabel => 'Loque americana';
+
+  @override
+  String get diseaseConditionEuropeanFoulbroodLabel => 'Loque europeia';
+
+  @override
+  String get diseaseConditionNosemosisLabel => 'Nosemose';
+
+  @override
+  String get diseaseConditionAcarapisosisLabel => 'Acariose';
+
+  @override
+  String get diseaseConditionSmallHiveBeetleLabel =>
+      'Aethina tumida (pequeno besouro da colmeia)';
+
+  @override
+  String get diseaseConditionTropilaelapsLabel => 'Tropilaelaps spp.';
+
+  @override
+  String get diseaseConditionOtherLabel => 'Outro';
+
+  @override
+  String get treatmentTypeApivarAmitrazLabel => 'Apivar/amitraz';
+
+  @override
+  String get treatmentTypeOxalicAcidLabel => 'Ácido oxálico';
+
+  @override
+  String get treatmentTypeThymolLabel => 'Timol';
+
+  @override
+  String get treatmentTypeOtherLabel => 'Outro';
+
+  @override
+  String get feedTypeSyrup11Label => 'Xarope 1:1';
+
+  @override
+  String get feedTypeSyrup21Label => 'Xarope 2:1';
+
+  @override
+  String get feedTypeCandiLabel => 'Candi';
+
+  @override
+  String get feedTypePollenLabel => 'Pólen';
+
+  @override
   String get newActivityTitle => 'Adicionar atividade';
 
   @override
@@ -1272,6 +1328,12 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get journeyFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get journeyFilterStatusLabel => 'Estado';
+
+  @override
+  String get journeyFilterStatusAll => 'Todos os estados';
 
   @override
   String get journeyFilterDateRangeLabel => 'Intervalo de datas';
@@ -1496,7 +1558,15 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsApiariesVisitedValue(int done, int planned) {
-    return '$done/$planned';
+    final intl.NumberFormat doneNumberFormat = intl.NumberFormat.decimalPattern(
+      localeName,
+    );
+    final String doneString = doneNumberFormat.format(done);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$doneString/$plannedString';
   }
 
   @override
@@ -1518,10 +1588,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsMissingLabel(int count) {
+    final intl.NumberFormat countNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String countString = countNumberFormat.format(count);
+
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Faltam $count apiários',
+      other: 'Faltam $countString apiários',
       one: 'Falta 1 apiário',
       zero: 'Todos os apiários planeados foram visitados',
     );
@@ -1533,7 +1607,11 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsHivesWorkedValue(int worked, String planned) {
-    return '$worked/$planned';
+    final intl.NumberFormat workedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String workedString = workedNumberFormat.format(worked);
+
+    return '$workedString/$planned';
   }
 
   @override
@@ -1607,7 +1685,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String journeyStatsDetailTreatedSummary(int treated, int planned) {
-    return '$treated/$planned apiários tratados';
+    final intl.NumberFormat treatedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String treatedString = treatedNumberFormat.format(treated);
+    final intl.NumberFormat plannedNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String plannedString = plannedNumberFormat.format(planned);
+
+    return '$treatedString/$plannedString apiários tratados';
   }
 
   @override
@@ -1954,4 +2039,153 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get notificationSyncCompleted =>
       'Todas as alterações foram sincronizadas.';
+
+  @override
+  String get homeTasksSectionTitle => 'Tarefas a tratar';
+
+  @override
+  String homeTasksCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarefas a precisar de atenção',
+      one: '1 tarefa a precisar de atenção',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTasksViewAllOverdueAction(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Ver as $count tarefas atrasadas',
+      one: 'Ver a tarefa atrasada',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d de atraso',
+      one: '1 d de atraso',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeTodoOverdueLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days dias de atraso',
+      one: '1 dia de atraso',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeTodoDueSoonBadge => 'Breve';
+
+  @override
+  String get homeTodoDueSoonLabel => 'Vence brevemente';
+
+  @override
+  String get homeJourneysSectionTitle => 'Jornadas em curso';
+
+  @override
+  String homeJourneysCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count jornadas em curso',
+      one: '1 jornada em curso',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeJourneysViewAllAction => 'Ver todas as jornadas';
+
+  @override
+  String get homeApiariesSectionTitle => 'Sem visita recente';
+
+  @override
+  String homeApiariesCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiários sem visita recente',
+      one: '1 apiário sem visita recente',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeApiaryNeverVisitedSubtitle =>
+      'Ainda sem atividades registadas';
+
+  @override
+  String get homeApiaryNeverVisitedBadge => 'Nunca';
+
+  @override
+  String homeApiaryLastVisitSubtitle(String date) {
+    return 'Última visita a $date';
+  }
+
+  @override
+  String homeApiaryStaleBadge(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days d',
+      one: '1 d',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeApiaryStaleLabel(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days dias desde a última visita',
+      one: '1 dia desde a última visita',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeFirstRunMessage =>
+      'Vamos criar o seu primeiro apiário.\n\nDepois de adicionar um apiário e começar a registar atividades, este ecrã mostra o que precisa da sua atenção.';
+
+  @override
+  String get homeFirstRunAction => 'Adicionar o primeiro apiário';
+
+  @override
+  String homeAllClearMessage(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'nos últimos $days dias',
+      one: 'no último dia',
+    );
+    return 'Nada precisa da sua atenção.\n\nNenhuma tarefa está atrasada ou a vencer, nenhuma jornada está aberta e todos os apiários foram visitados $_temp0.';
+  }
+
+  @override
+  String get homeUnavailableMessage =>
+      'Não foi possível ler os dados guardados neste dispositivo.\n\nO Início não consegue mostrar o que precisa da sua atenção até isso ser resolvido. Tente reabrir a aplicação.';
+
+  @override
+  String get homeUnavailableNotice =>
+      'Não foi possível ler alguns dados neste dispositivo, por isso isto pode estar incompleto.';
+}
+
+/// The translations for Portuguese, as used in Portugal (`pt_PT`).
+class AppLocalizationsPtPt extends AppLocalizationsPt {
+  AppLocalizationsPtPt() : super('pt_PT');
 }

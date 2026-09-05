@@ -268,6 +268,13 @@ jobs:
           flutter test
           # shellcheck disable=SC2086
           flutter build web --release --no-web-resources-cdn $DART_DEFINES
+          # Generate the app-shell precache manifest inside build/web's service
+          # worker (#619). Nothing Flutter emits is content-hashed, so this is
+          # what gives the worker a per-release cache key — without it the
+          # deployed worker is inert and the app cannot start offline. Required
+          # after EVERY `flutter build web`; scripts/check-app-shell-precache-wired.sh
+          # fails the lint gate if a build site ever loses it.
+          dart run tool/build_app_shell_cache.dart build/web
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 

@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/activities/add_activity_screen.dart';
@@ -242,17 +243,28 @@ class _FakeJourneysRepository extends JourneysRepository {
   }
 }
 
+Profile _profileWithLocale(String locale) => Profile(
+  id: 'test-user',
+  name: 'Test User',
+  email: 'test@example.com',
+  locale: locale,
+  profileComplete: true,
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
+
 class _CompleteProfileController extends ProfileController {
   @override
-  Future<Profile> build() async => Profile(
-    id: 'test-user',
-    name: 'Test User',
-    email: 'test@example.com',
-    locale: 'en',
-    profileComplete: true,
-    createdAt: DateTime.utc(2026, 1, 1),
-    updatedAt: DateTime.utc(2026, 1, 1),
-  );
+  Future<Profile> build() async => _profileWithLocale('en');
+}
+
+/// The same complete profile, in Portuguese — the app's UI locale is derived
+/// from the stored profile `locale` (`localeProvider`), so this is how a
+/// test drives the whole app in pt rather than hand-building a `MaterialApp`
+/// that bypasses the real wiring (#623, NFR-I18N-1, C-2).
+class _PortugueseProfileController extends ProfileController {
+  @override
+  Future<Profile> build() async => _profileWithLocale('pt');
 }
 
 class _ExistingOrganizationController extends OrganizationController {
@@ -285,7 +297,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   final bool throwOnGetById;
 
   @override
-  Future<Apiary?> getById(String id) async {
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
     if (throwOnGetById) throw Exception('boom-apiary-load');
     return _apiary;
   }
@@ -296,6 +308,7 @@ Widget _buildApp({
   _FakeJourneysRepository? journeysRepo,
   Apiary apiary = _apiary,
   _FakeApiariesRepository? apiariesRepo,
+  bool portuguese = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -322,7 +335,11 @@ Widget _buildApp({
       activitiesByApiaryProvider.overrideWith(
         (ref, id) => Stream.value(const <Activity>[]),
       ),
-      profileProvider.overrideWith(_CompleteProfileController.new),
+      profileProvider.overrideWith(
+        portuguese
+            ? _PortugueseProfileController.new
+            : _CompleteProfileController.new,
+      ),
       // Hermetic member-name roster (#44) — see apiary_detail_screen_test.
       memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -540,8 +557,15 @@ void main() {
           await tester.tap(diseaseField);
           await tester.pumpAndSettle();
 
-          expect(find.text('Varroose').last, findsOneWidget);
-          expect(find.text('Loque americana').last, findsOneWidget);
+          // #625 (NFR-I18N-1): the options render in the active language —
+          // the stored values ('Varroose', 'Loque americana') are keys, not
+          // display text, and must not leak into an English UI.
+          expect(find.text('Varroosis').last, findsOneWidget);
+          expect(find.text('American foulbrood').last, findsOneWidget);
+          expect(find.text('Varroose'), findsNothing);
+          expect(find.text('Loque americana'), findsNothing);
+          expect(find.text('Outro'), findsNothing);
+          expect(find.text('Other').last, findsOneWidget);
         },
       );
 
@@ -977,7 +1001,9 @@ void main() {
         // is chosen, proving detection-only doesn't require a treatment.
         await tester.tap(find.byKey(const Key('activity-disease-field')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Varroose').last);
+        // Picked by its ENGLISH label (#625) — the stored value asserted
+        // below is still the Portuguese wire value.
+        await tester.tap(find.text('Varroosis').last);
         await tester.pumpAndSettle();
 
         final saveButton = find.byKey(const Key('activity-save-button'));
@@ -2088,7 +2114,9 @@ void main() {
 
           expect(find.text('Specific disease/condition'), findsOneWidget);
           expect(find.text('Apivar/amitraz'), findsOneWidget);
-          expect(find.text('Varroose'), findsOneWidget);
+          // Prefilled from the journey's stored 'Varroose', rendered in
+          // English (#625).
+          expect(find.text('Varroosis'), findsOneWidget);
         },
       );
 
@@ -2869,7 +2897,7 @@ void main() {
     // DeleteApiaryConfirmDialog group.
     Widget hostApp() => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
@@ -2948,7 +2976,7 @@ void main() {
         MaterialApp(
           locale: const Locale('pt'),
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
+          supportedLocales: kSupportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
               body: Center(
@@ -2968,6 +2996,305 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Eliminar atividade?'), findsOneWidget);
+    });
+  });
+
+  // --- Locale-aware numeric input (#623, NFR-I18N-1, FR-AC-1, FR-OF-2,
+  // C-2, D-12) ---
+  //
+  // The regression: the numeric fields filtered keystrokes through a
+  // hard-coded `RegExp(r'[0-9.]')` (and `digitsOnly` for the integer ones),
+  // so in Portuguese — the only in-scope locale (C-2), whose phone keypad
+  // offers ONLY a comma — `40,5` lost its comma before validation ever ran
+  // and was stored as `405`. A 10x corruption of the app's headline metric,
+  // silent: no error, no highlight, nothing to notice.
+  group('locale-aware numeric input (#623)', () {
+    /// Opens the add-activity form with the app running in [portuguese]'s
+    /// language, via the real profile→`localeProvider`→`MaterialApp` chain.
+    Future<void> openForm(
+      WidgetTester tester,
+      _FakeActivitiesRepository repo, {
+      bool portuguese = false,
+    }) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildApp(repo: repo, portuguese: portuguese));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> save(WidgetTester tester) async {
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets(
+      'pt: "40,5" kg of honey is stored as 40.5, not 405 (the #623 bug)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo, portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '40,5',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['honey_kg'], 40.5);
+      },
+    );
+
+    testWidgets('en: "40.5" kg of honey still stores 40.5', (tester) async {
+      final repo = _FakeActivitiesRepository();
+      await openForm(tester, repo);
+
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-kg-field')),
+        '40.5',
+      );
+      await tester.pumpAndSettle();
+      await save(tester);
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.attributes['honey_kg'], 40.5);
+    });
+
+    testWidgets(
+      'pt: the comma survives the field\'s input filter (it used to be '
+      'stripped before validation could ever see it)',
+      (tester) async {
+        await openForm(tester, _FakeActivitiesRepository(), portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '40,5',
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-honey-kg-field')),
+              )
+              .controller!
+              .text,
+          '40,5',
+        );
+      },
+    );
+
+    testWidgets(
+      'pt: input the locale cannot parse is REJECTED visibly and blocks the '
+      'save — never silently rewritten to another number',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo, portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        // `1.234` in pt-PT: the dot is neither the locale's decimal
+        // separator nor its grouping one (European Portuguese groups with a
+        // non-breaking space — #656), and exactly three digits follow it, so
+        // it could mean 1234 or 1.234 and the locale offers no tie-breaker.
+        // Rejected — a 1000x guess is exactly what #623 exists to prevent.
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '1.234',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, isEmpty);
+        expect(find.text('Este valor não é válido'), findsWidgets);
+      },
+    );
+
+    // --- #657: the other locale's decimal separator, where it cannot mean
+    // thousands ---
+
+    testWidgets(
+      'pt: "40.5" typed with a dot is accepted as 40.5 — a lone 5 cannot be '
+      'a thousands group (#657)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo, portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '40.5',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['honey_kg'], 40.5);
+      },
+    );
+
+    testWidgets('en: "40,5" typed with a comma is accepted as 40.5 (#657)', (
+      tester,
+    ) async {
+      final repo = _FakeActivitiesRepository();
+      await openForm(tester, repo);
+
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-kg-field')),
+        '40,5',
+      );
+      await tester.pumpAndSettle();
+      await save(tester);
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.attributes['honey_kg'], 40.5);
+    });
+
+    testWidgets(
+      'en: "1,234" keeps the locale reading — grouping-shaped input is not '
+      'reinterpreted (#657)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-kg-field')),
+          '1,234',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['honey_kg'], 1234.0);
+      },
+    );
+
+    testWidgets(
+      'pt: an integer field rejects a fractional value instead of running '
+      'the digits together (digitsOnly turned "12,5" into 125)',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openForm(tester, repo, portuguese: true);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '12,5',
+        );
+        await tester.pumpAndSettle();
+        await save(tester);
+
+        expect(repo.created, isEmpty);
+        expect(find.text('Este valor não é válido'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'pt: a stored decimal round-trips into the edit form as "15,5" — text '
+      'the pt field itself accepts back',
+      (tester) async {
+        const stored = Activity(
+          id: 'act1',
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: {'honey_supers': 5, 'honey_kg': 15.5},
+        );
+        final repo = _FakeActivitiesRepository(existing: stored);
+        await tester.pumpWidget(_buildApp(repo: repo, portuguese: true));
+        await tester.pumpAndSettle();
+        final router = GoRouter.of(tester.element(find.byType(AppShell)));
+        router.go('/apiaries/a1/activities/act1/edit');
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-honey-kg-field')),
+              )
+              .controller!
+              .text,
+          '15,5',
+        );
+
+        // ...and saving it straight back preserves the value exactly (the
+        // round-trip #623 AC 2 asks for).
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(repo.updated, hasLength(1));
+        expect(repo.updated.single.attributes['honey_kg'], 15.5);
+      },
+    );
+
+    testWidgets('en: a stored decimal still prefills with a full stop', (
+      tester,
+    ) async {
+      const stored = Activity(
+        id: 'act1',
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 5, 'honey_kg': 15.5},
+      );
+      final repo = _FakeActivitiesRepository(existing: stored);
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      final router = GoRouter.of(tester.element(find.byType(AppShell)));
+      router.go('/apiaries/a1/activities/act1/edit');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const Key('activity-honey-kg-field')),
+            )
+            .controller!
+            .text,
+        '15.5',
+      );
     });
   });
 }

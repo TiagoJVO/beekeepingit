@@ -95,7 +95,9 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
+    Locale('en', 'GB'),
     Locale('pt'),
+    Locale('pt', 'PT'),
   ];
 
   /// App title, shown in the browser tab and app switcher
@@ -103,6 +105,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BeekeepingIT'**
   String get appTitle;
+
+  /// Screen-reader label for the brand mark (the Melargil bee, #686) — an image with no text of its own, so it is announced by what it stands for rather than described
+  ///
+  /// In en, this message translates to:
+  /// **'BeekeepingIT logo'**
+  String get appLogoLabel;
 
   /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
   ///
@@ -164,13 +172,13 @@ abstract class AppLocalizations {
   /// **'Actions'**
   String get actionsMenuLabel;
 
-  /// Hive count subtitle on a list row
+  /// Hive count subtitle on a list row. decimalPattern groups the number for the active locale (#624, NFR-I18N-1) — `999.999.999 colmeias` in pt, `999,999,999 hives` in en, instead of a raw run of digits in both
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
 
-  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  /// Supers counter value badge on the apiary detail screen (#346, D-20). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
@@ -188,13 +196,13 @@ abstract class AppLocalizations {
   /// **'Supers'**
   String get counterTypeSuperLabel;
 
-  /// Empty-hive counter value badge on the apiary detail screen (#392)
+  /// Empty-hive counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}'**
   String emptyHiveCountValue(int count);
 
-  /// Swarm counter value badge on the apiary detail screen (#392)
+  /// Swarm counter value badge on the apiary detail screen (#392). Locale-grouped like hiveCountValue (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}'**
@@ -686,6 +694,12 @@ abstract class AppLocalizations {
   /// **'Activities'**
   String get activitiesTitle;
 
+  /// Home tab label and screen title — the centre tab of the bottom nav, replacing the Assistant placeholder (#658, D-35, FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeTitle;
+
   /// Journeys tab label and screen title (bottom nav, #197)
   ///
   /// In en, this message translates to:
@@ -697,36 +711,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Todos'**
   String get todosTitle;
-
-  /// Assistant tab label and screen title (bottom nav, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant'**
-  String get assistantTitle;
-
-  /// Placeholder shown on the Activities tab until its real screens land (M3, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Activities — coming soon'**
-  String get activitiesComingSoon;
-
-  /// Placeholder shown on the Journeys tab until its real screens land (M4, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Journeys — coming soon'**
-  String get journeysComingSoon;
-
-  /// Placeholder shown on the Todos tab until its real screens land (M5, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Todos — coming soon'**
-  String get todosComingSoon;
-
-  /// Placeholder shown on the Assistant tab until its real screens land (M8, #197)
-  ///
-  /// In en, this message translates to:
-  /// **'Assistant — coming soon'**
-  String get assistantComingSoon;
 
   /// App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)
   ///
@@ -1856,6 +1840,102 @@ abstract class AppLocalizations {
   /// **'Detection only (no treatment yet)'**
   String get treatmentContextDetectionOnlyLabel;
 
+  /// Display label for the stored disease value 'Varroose' — render-time only, the stored/wire value is unchanged (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Varroosis'**
+  String get diseaseConditionVarroosisLabel;
+
+  /// Display label for the stored disease value 'Loque americana' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'American foulbrood'**
+  String get diseaseConditionAmericanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Loque europeia' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'European foulbrood'**
+  String get diseaseConditionEuropeanFoulbroodLabel;
+
+  /// Display label for the stored disease value 'Nosemose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Nosemosis'**
+  String get diseaseConditionNosemosisLabel;
+
+  /// Display label for the stored disease value 'Acariose' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Acarapisosis'**
+  String get diseaseConditionAcarapisosisLabel;
+
+  /// Display label for the stored disease value 'Aethina tumida (pequeno besouro da colmeia)' — the Latin name stays Latin in both languages, only its gloss is translated (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Aethina tumida (small hive beetle)'**
+  String get diseaseConditionSmallHiveBeetleLabel;
+
+  /// Display label for the stored disease value 'Tropilaelaps spp.' — a Latin name, identical in both languages (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Tropilaelaps spp.'**
+  String get diseaseConditionTropilaelapsLabel;
+
+  /// Display label for the stored disease catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get diseaseConditionOtherLabel;
+
+  /// Display label for the stored treatment-product value 'Apivar/amitraz' — a brand plus its active substance, identical in both languages (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Apivar/amitraz'**
+  String get treatmentTypeApivarAmitrazLabel;
+
+  /// Display label for the stored treatment-product value 'Ácido oxálico' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Oxalic acid'**
+  String get treatmentTypeOxalicAcidLabel;
+
+  /// Display label for the stored treatment-product value 'Timol' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Thymol'**
+  String get treatmentTypeThymolLabel;
+
+  /// Display label for the stored treatment-product catch-all value 'Outro' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get treatmentTypeOtherLabel;
+
+  /// Display label for the stored feed-type value 'Xarope 1:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'1:1 syrup'**
+  String get feedTypeSyrup11Label;
+
+  /// Display label for the stored feed-type value 'Xarope 2:1' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'2:1 syrup'**
+  String get feedTypeSyrup21Label;
+
+  /// Display label for the stored feed-type value 'Candi' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Candi (fondant)'**
+  String get feedTypeCandiLabel;
+
+  /// Display label for the stored feed-type value 'Pólen' (#625, NFR-I18N-1, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Pollen'**
+  String get feedTypePollenLabel;
+
   /// Screen header title for the add-activity form (#39, FR-AC-2)
   ///
   /// In en, this message translates to:
@@ -2162,6 +2242,18 @@ abstract class AppLocalizations {
   /// **'All types'**
   String get journeyFilterTypeAll;
 
+  /// Field label for the Journeys tab's status filter dropdown (#658, D-35) — its options are the cleared 'All statuses' plus each journey status (Open/Closed, journeyStatusOpenLabel/journeyStatusClosedLabel)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get journeyFilterStatusLabel;
+
+  /// The Journeys tab's status filter's cleared/default option — no status filter applied, so open and closed journeys both show (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'All statuses'**
+  String get journeyFilterStatusAll;
+
   /// Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)
   ///
   /// In en, this message translates to:
@@ -2180,7 +2272,7 @@ abstract class AppLocalizations {
   /// **'{start} – {end}'**
   String journeyFilterDateRangeValue(String start, String end);
 
-  /// Button that resets both the Journeys tab's type and date-range filters at once (#47)
+  /// Button that resets the Journeys tab's type, status and date-range filters at once (#47, #658)
   ///
   /// In en, this message translates to:
   /// **'Clear filters'**
@@ -2519,7 +2611,7 @@ abstract class AppLocalizations {
   /// **'Apiaries visited'**
   String get journeyStatsApiariesVisitedLabel;
 
-  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1)
+  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{done}/{planned}'**
@@ -2555,7 +2647,7 @@ abstract class AppLocalizations {
   /// **'No data yet'**
   String get journeyStatsAverageSupersNoData;
 
-  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done")
+  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done"). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
@@ -2567,7 +2659,7 @@ abstract class AppLocalizations {
   /// **'Hives worked'**
   String get journeyStatsHivesWorkedLabel;
 
-  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or a plain number by the time it reaches this template
+  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or an already-locale-formatted number by the time it reaches this template (#624). Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{worked}/{planned}'**
@@ -2705,7 +2797,7 @@ abstract class AppLocalizations {
   /// **'Total feed amount: {amount}'**
   String journeyStatsDetailFeedingSummary(String amount);
 
-  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity
+  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity. Locale-grouped via decimalPattern (#624)
   ///
   /// In en, this message translates to:
   /// **'{treated}/{planned} apiaries treated'**
@@ -3326,6 +3418,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'All your changes are synced.'**
   String get notificationSyncCompleted;
+
+  /// Home summary section header over the todos that are overdue or due soon (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks needing attention'**
+  String get homeTasksSectionTitle;
+
+  /// Screen-reader label for the Home tasks section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 task needs attention} other{{count} tasks need attention}}'**
+  String homeTasksCountLabel(int count);
+
+  /// Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}'**
+  String homeTasksViewAllOverdueAction(int count);
+
+  /// Compact trailing badge on an overdue Home task row, paired with a warning icon so it never relies on colour alone (#658, D-35, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d late} other{{days} d late}}'**
+  String homeTodoOverdueBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeTodoOverdueBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day overdue} other{{days} days overdue}}'**
+  String homeTodoOverdueLabel(int days);
+
+  /// Compact trailing badge on a Home task row that is due soon but not yet overdue (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Soon'**
+  String get homeTodoDueSoonBadge;
+
+  /// Screen-reader expansion of the abbreviated homeTodoDueSoonBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due soon'**
+  String get homeTodoDueSoonLabel;
+
+  /// Home summary section header over the journeys that are still open (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys in progress'**
+  String get homeJourneysSectionTitle;
+
+  /// Screen-reader label for the Home journeys section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 journey in progress} other{{count} journeys in progress}}'**
+  String homeJourneysCountLabel(int count);
+
+  /// Home journeys section footer link into the Journeys list (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'View all journeys'**
+  String get homeJourneysViewAllAction;
+
+  /// Home summary section header over the apiaries with no recorded activity inside the recency window (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited recently'**
+  String get homeApiariesSectionTitle;
+
+  /// Screen-reader label for the Home apiaries section's count badge, which shows the bare number visually (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 apiary not visited recently} other{{count} apiaries not visited recently}}'**
+  String homeApiariesCountLabel(int count);
+
+  /// Subtitle of a Home apiary row that has never been visited — its own state, never rendered as '0 days ago' (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'No activity recorded yet'**
+  String get homeApiaryNeverVisitedSubtitle;
+
+  /// Compact trailing badge on a Home apiary row that has never been visited (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get homeApiaryNeverVisitedBadge;
+
+  /// Subtitle of a Home apiary row showing when it was last visited, already formatted for the active locale (#658, D-35, NFR-I18N-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Last visit {date}'**
+  String homeApiaryLastVisitSubtitle(String date);
+
+  /// Compact trailing badge on a Home apiary row: whole days since its last recorded activity (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 d} other{{days} d}}'**
+  String homeApiaryStaleBadge(int days);
+
+  /// Screen-reader expansion of the abbreviated homeApiaryStaleBadge (#658, D-35, FR-AX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day since the last visit} other{{days} days since the last visit}}'**
+  String homeApiaryStaleLabel(int days);
+
+  /// Home's first-run state (#658, D-35): the org owns no records at all, so Home shows one message and one action instead of three empty sections
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s set up your first apiary.\n\nOnce you add an apiary and start recording activities, this screen shows what needs your attention.'**
+  String get homeFirstRunMessage;
+
+  /// The single action on Home's first-run state, opening the apiary create form (#658, D-35)
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first apiary'**
+  String get homeFirstRunAction;
+
+  /// Home's all-clear state (#658, D-35): the org has data but nothing matched any section. Names the recency window so the threshold is discoverable; {days} is apiaryVisitRecencyDays, never hardcoded here. Pluralized because that constant is D-35's own adjustable default — at 1 an unpluralized placeholder reads 'the last 1 days'
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing needs your attention.\n\nNo task is overdue or due soon, no journey is open, and every apiary has been visited in {days, plural, =1{the last day} other{the last {days} days}}.'**
+  String homeAllClearMessage(int days);
+
+  /// Home's data-unavailable state (#658 review, D-35): every local query failed, so Home knows nothing. Replaces the first-run state it used to settle on permanently — same notify-and-fix voice as the sync needs-fix screen, one honest sentence rather than an error dump
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the data stored on this device.\n\nHome can\'t show what needs your attention until that\'s fixed. Try reopening the app.'**
+  String get homeUnavailableMessage;
+
+  /// Notice above Home's sections when SOME local queries failed while others resolved (#658 review, D-35): the sections that loaded still show, but the screen admits the rest is missing or frozen rather than passing it off as empty
+  ///
+  /// In en, this message translates to:
+  /// **'Some data couldn\'t be read on this device, so this may be incomplete.'**
+  String get homeUnavailableNotice;
 }
 
 class _AppLocalizationsDelegate
@@ -3346,6 +3570,26 @@ class _AppLocalizationsDelegate
 }
 
 AppLocalizations lookupAppLocalizations(Locale locale) {
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'en':
+      {
+        switch (locale.countryCode) {
+          case 'GB':
+            return AppLocalizationsEnGb();
+        }
+        break;
+      }
+    case 'pt':
+      {
+        switch (locale.countryCode) {
+          case 'PT':
+            return AppLocalizationsPtPt();
+        }
+        break;
+      }
+  }
+
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
     case 'en':

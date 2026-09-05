@@ -1,5 +1,27 @@
-# Flutter intl i18n scaffold (EN default, PT stub) — NFR-I18N, coding-standards.md.
+# Flutter intl i18n scaffold — NFR-I18N-1, D-34, coding-standards.md.
 # Regenerates on `flutter gen-l10n` / automatically before `flutter run`/`build`/`test`.
+#
+# The app ships exactly two locales: British English (`en-GB`) and European
+# Portuguese (`pt-PT`) — D-34/#656. Generic `pt`/`en` resolve to BRAZILIAN and
+# AMERICAN conventions in CLDR, which is what we are getting away from.
+#
+# `gen-l10n` requires a base-language ARB behind every region variant, so the
+# ARB set is:
+#   app_en.arb    — the template; every English string lives here
+#   app_pt.arb    — every Portuguese string
+#   app_en_GB.arb — `@@locale` only; inherits app_en.arb wholesale
+#   app_pt_PT.arb — `@@locale` only; inherits app_pt.arb wholesale
+# The two region files exist for one reason: they make the generated class
+# carry `localeName = 'en_GB'` / `'pt_PT'`, which is what `intl` reads for the
+# number/date formatting inside ICU placeholders (`"format": "decimalPattern"`).
+# The app OFFERS only the two region locales — see `kSupportedLocales` in
+# lib/core/l10n/supported_locales.dart, which is what `MaterialApp` gets.
+#
+# `flutter gen-l10n` reports "en_GB/pt_PT: N untranslated message(s)" — that
+# is by construction true of both region files and is not a problem to fix
+# (there is nothing to translate between English and English). Genuinely
+# missing translations in app_pt.arb are still caught, by the ARB key-parity
+# gate in `task dart:l10n-check`.
 arb-dir: lib/l10n/arb
 template-arb-file: app_en.arb
 output-localization-file: app_localizations.dart

@@ -1305,8 +1305,8 @@ issuance. Everything is config-as-code in the blueprint
     so there is no detection signal — the one cheap control that would let a real owner notice a
     takeover in progress. Authentik already raises a `SOURCE_LINKED` **Event** when
     `PostSourceStage` persists a new connection, so the work is binding a notification rule and
-    transport to it; §8.10's SMTP path already exists. Carried in
-    [`FOLLOWUPS.md`](../../FOLLOWUPS.md). It should land **before** federation is enabled on an
+    transport to it; §8.10's SMTP path already exists. Tracked in
+    [#563](https://github.com/TiagoJVO/beekeepingit/issues/563). It should land **before** federation is enabled on an
     environment holding real user data — which today none does (D-26; and Google federation is
     inert until its credentials Secret exists at all, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).
 - **The guard evolved rather than weakened.**
@@ -1587,13 +1587,170 @@ flow-default-authentication` (the existing "Sign in" title entry, given an id an
   objects authentik's own bundled blueprints create). They are untouched here because each has a
   different blast radius and needs its own verification, not because they are safe; the
   self-signed certificate in particular comes from `authentik/crypto/apps.py` at boot rather than
-  from a blueprint, so it is a different race with a different fix. Worth an issue of its own. The
+  from a blueprint, so it is a different race with a different fix. Worth an issue of its own.
+  → **Closed by #599, [§8.17](#817-as-built-599--the-providers-cross-file-references-are-pinned-not-looked-up)**, which also
+  narrows the claim above: only `signing_key` was in fact silently null. The
+  `null=True` checked here is the **model** field, and the blueprint importer validates through the
+  **API serializer**, where the two flows are `required=True, allow_null=False` — see §8.17. The
   `!Find`s at the two `user_login` stage bindings (`flow-enrollment`, `flow-source-enrollment`) are
   the same _ordering_ dependency but on **required** FKs, so they fail loudly and self-heal; they
   were left alone to keep this change scoped to the silent one. There is also still no browser-level
   test that a direct `/if/flow/beekeepingit-source-authentication/` is denied — the gate is covered
   statically and by the probe, and the existing password-login specs would fail loudly if the new
   flow ever hijacked the default one.
+
+## 8.17 As built (#599) — the providers' cross-file references are pinned, not looked up
+
+§8.16 closed one instance of a defect class and listed three survivors, all on the OAuth2
+providers: `signing_key`, `authorization_flow`, `invalidation_flow`, each reached with
+`!Find` at an object **authentik itself** creates. This closes them (NFR-SEC-1, NFR-TST-1,
+D-7). Only
+[`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)
+and its two guards changed — no Go service, no client, no token, no requirement.
+
+- **One of the three was genuinely silent, and §8.16 over-counted — corrected here.** All three
+  FKs are `null=True` on the **model** (`core/models.py` 645/654, `providers/oauth2/models.py` 308),
+  which is what #594/#599 checked. But the blueprint importer validates through the **API
+  serializer**, and on `OAuth2ProviderSerializer` at 2026.5.4 that is where they part company —
+  measured on the deployed serializer, not read off the source:
+
+  | field                | `required` | `allow_null` | a null `!Find` therefore…                  |
+  | -------------------- | ---------- | ------------ | ------------------------------------------ |
+  | `signing_key`        | `False`    | `True`       | **validates** — silent, permanent null     |
+  | `authorization_flow` | `True`     | `False`      | is rejected: `This field may not be null.` |
+  | `invalidation_flow`  | `True`     | `False`      | is rejected: `This field may not be null.` |
+
+  So `signing_key` was the real instance of §8.16's class, and the other two were already loud —
+  by **upstream's serializer choice**, not by anything in this blueprint. They are pinned anyway:
+  `signing_key` proves upstream is willing to leave such a field nullable, and if either flow were
+  ever relaxed the `!Find` spelling would go silent with nothing here noticing.
+
+- **The blast radius of the one that was silent.** `OAuth2Provider.jwt_key` returns
+  `(client_secret, HS256)` when `signing_key` is null, and `JWKSView.get_keys` yields nothing, so
+  the endpoint serves `{}`. A provider in that state looks configured in the admin UI and issues
+  tokens happily — but every relying party that verifies signatures against the JWKS (the shared Go
+  middleware §4, PowerSync, the admin app) is broken, permanently, with a `BlueprintInstance` row
+  reporting `successful`. Reproduced exactly that way on the local cluster (below).
+
+- **The fix is a PIN, not ownership — because these three cannot be owned.** #594 could copy the
+  flow it needed. Here:
+  - the certificate is created by `authentik/crypto/apps.py` at **boot** (`self_signed`, a
+    `reconcile_tenant` hook), never by a blueprint. Owning it would mean committing a **private
+    key** into a file that renders into a namespace-readable ConfigMap (NFR-SEC-1 forbids it —
+    the same reason the federation credentials arrive via `!Env`), and generating one per Helm
+    render would rotate the JWKS on every upgrade, invalidating every live token;
+  - a second `designation: invalidation` flow would **re-arm §8.16's own second-order trap**:
+    `ToDefaultFlow.get_flow` falls back to scanning that designation **ordered by slug** when the
+    brand field is null, upstream's `default-brand.yaml` sets `flow_invalidation` with its own racy
+    `!Find` under `state: created`, and any `beekeepingit-*` slug sorts ahead of
+    `default-invalidation-flow`. Pinning adds **no flow**, so no designation's slug ordering
+    changes and no new brand pin is needed — checked deliberately, because that is exactly the
+    trap #594 hit;
+  - copying the authorization flow would fork upstream's consent behaviour for no gain.
+
+  The blueprint therefore carries three **identifiers-only** entries —
+  `flow-default-provider-authorization`, `flow-default-provider-invalidation`,
+  `cert-authentik-self-signed` — that declare nothing, and both providers reference them with
+  `!KeyOf`. Same shape as `flow-default-authentication`, which #594 introduced for the brand pin.
+
+- **Why an entry with no `attrs` is the loud spelling.** `Importer._validate_single` attaches the
+  serializer to an **existing** row with `partial=True` — with no attrs, a no-op update — and
+  otherwise validates a **create** in full. With no attrs a create can never validate:
+  `FlowSerializer` requires name/title/designation, `CertificateKeyPairSerializer` requires
+  `certificate_data`. A missing target is therefore `EntryInvalidError` →
+  `BlueprintInstanceStatus.ERROR` → **no `last_applied_hash`** → retried on the next discovery
+  pass, where `!Find` wrote a null once and never looked again. `Importer.apply()` is atomic, so
+  nothing half-wired is committed in between. **The absence of `attrs` is load-bearing**, and the
+  guard asserts it (along with the absence of `state:` — `absent` would _delete_ authentik's
+  certificate, and `signing_key` is `on_delete=SET_NULL`); on the certificate the empty entry is also
+  what keeps a private key out of the ConfigMap. That makes the two serializers' **required** fields
+  a version-bump dependency in their own right: if either started defaulting them, a pin would invent
+  the object rather than raise. Recorded on the watch-list in
+  [oidc-integration.md §8](oidc-integration.md) next to the nullability table.
+
+- **What "retried" costs, and why it is not a new bring-up risk.** `blueprints_discovery` is
+  scheduled hourly (`ScheduleSpec(crontab=f"{fqdn_rand('blueprints_v1_discover')} * * * *")`) with
+  `send_on_startup=True`, and a watchdog `Observer` watches the blueprint directory — so an ERRORed
+  file is re-applied on the next hour, on the next worker start, or the moment the ConfigMap content
+  changes. It does mean a file that references a not-yet-created object does not apply at all until
+  it exists. That is **not** new: both flows were already `required=True`, so a lost race against
+  authentik's bundled blueprints already failed the whole file (verified below, on the pre-fix
+  spelling). The only behaviour this change alters is the certificate's — from "apply, silently
+  broken, forever" to "fail, retry, correct". And the certificate is the least racy of the three: it
+  comes from a `reconcile_tenant` hook that runs in-process at app-ready, ahead of the startup
+  discovery task the worker picks up.
+
+- **A second-order benefit, now structural.** Both providers reference **one** pin entry for the
+  signing key. [oidc-integration.md §8](oidc-integration.md) records that the shared key is
+  load-bearing — the admin app overrides `iss` to the beekeepingit issuer, so its tokens only
+  verify against the beekeepingit JWKS — and that was previously two independent `!Find`s happening
+  to agree. The probe now asserts both providers advertise the **same `kid`**.
+
+- **How it was proven, on the cluster, with the race forced.** Against the local k3d cluster, by
+  renaming the target away in the database and nulling the field — i.e. the state a cluster reaches
+  when our file wins the apply race — driven through byte-for-byte the handling `apply_blueprint`
+  performs (`blueprints/v1/tasks.py` 204–238), on the **rendered** ConfigMap content of both the
+  pre-fix and post-fix blueprint:
+  1. **Defect reproduced.** Certificate hidden, pre-fix file applied: `valid=True`,
+     `applied=True`, status `successful`, `last_applied_hash` **stored** (so authentik would never
+     re-apply it) — and `signing_key` null on both providers, `jwt_key` → `HS256`, and the live
+     `JWKSView` for `/application/o/beekeepingit/` returning **`{}`**.
+  2. **Fix verified in that identical state.** The post-fix file records
+     `BlueprintInstanceStatus.ERROR` with **no** `last_applied_hash`, on
+     `Serializer errors {'certificate_data': ['This field is required.']}` — the pin refusing to
+     invent a certificate — and commits nothing.
+  3. **Both flows checked separately**, with them hidden too: the pre-fix spelling was already loud
+     there (the serializer's `may not be null`), and the post-fix one is loud on the **missing
+     object itself**.
+  4. **The retry an ERROR buys.** With the targets back, the post-fix file applies cleanly, and all
+     six references resolve: both providers on the boot-created certificate, RS256, one RS256 `sig`
+     key in each JWKS, **same `kid`**.
+  5. **Loudness proven for each pin**, by pointing each `!KeyOf` at an entry id that is not in the
+     file: `EntryInvalidError`, ERROR recorded, no hash, nothing committed — three for three.
+  6. **The full federation probe passes** — 92 assertions, `PROBE OK` (79 before this change).
+- **Both guard layers extended, and mutation-tested rather than assumed.**
+  [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+  now requires every OAuth2 provider entry to reach all three by `!KeyOf` at the pins **and to
+  declare each of the three exactly once** (PyYAML takes the last of a duplicate key with no error,
+  so `signing_key: !KeyOf …` followed by `signing_key: null` would otherwise pass while shipping the
+  null); requires each pin to exist exactly once, identify the right object **inside its
+  `identifiers:` block**, and carry no `attrs` and no `state:` (`absent` would _delete_ authentik's
+  certificate, and `signing_key` is `on_delete=SET_NULL`); requires the pins to sit **above** the
+  providers, since `!KeyOf` resolves backwards only; fails on any `!Find` reaching a pinned object;
+  and fails on any `certificate_data`/`key_data` literal. The two `!Find` bans and the literal ban
+  were widened after review: the former now match the **joined entry body** (this file already wraps
+  long `!Find [` calls across lines, which a line-scoped rule read as clean) and the latter tolerates
+  a quoted or flow-mapping key. A second security pass added two STRUCTURAL bans, both of which
+  had let an entry evade the guard entirely rather than fail one assertion: an entry whose first key
+  is not `model:` (YAML mapping keys are unordered, so `- id: … / model: …` is a valid entry
+  authentik applies normally, and this guard — which splits on `^  - model:` — folded it into the
+  previous entry and skipped it), and a mixed-case model name (`apps.get_model()` lowercases it, so
+  `authentik_providers_oauth2.OAuth2Provider` applies normally while matching none of the
+  `model ~ /^authentik_…$/` tests). Both `!Find` bans are now case-insensitive for the same reason,
+  and the certificate pin — identified by a `name`, not a slug — must match up to its closing quote,
+  since a bare boundary accepted `authentik Self-signed Certificate 2`. **45 drifts, 45 caught** —
+  #599's 33 (each field reverted to `!Find` on either provider, in both the one-line and wrapped
+  spellings; each pin deleted, duplicated, repointed or given attrs, including a private-key literal
+  and a quoted one; `signing_key` dropped, mistyped, pointed at the wrong pin, shadowed by the longer
+  key `jwt_signing_key:` — what `keyof()`'s new **left** boundary rejects — and overridden by a
+  duplicate `signing_key: null`; `state: absent` on a pin; the pins moved below the providers; a
+  provider and a source hidden behind an `id:`-first entry; a Django-cased model with a Django-cased
+  `!Find`; the certificate pin repointed at a longer name) **plus #594's original 12 re-run**,
+  because `keyof()` and the entry split both changed here and had to be shown not to weaken any
+  assertion they already carried.
+  [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py) asserts
+  the same properties **live** on both deployed providers — the certificate's identity, `RS256`
+  (not the HS256 fallback), both flow slugs, exactly one RS256 `sig` key per JWKS, and the shared
+  `kid` — and those assertions were themselves verified non-vacuous: with `signing_key` nulled on
+  the cluster, **7 of them fail**; restored, they pass.
+- **A wrinkle worth knowing on a version bump.** When an entry that contains a `!KeyOf` tag fails
+  validation, the `EntryInvalidError` that surfaces names the **first** `!KeyOf` in that entry, not
+  the one that failed: `_apply_models` logs the failing entry, structlog renders it, and
+  `YAMLTag.__repr__` resolves the tag against an **empty** `Blueprint()` — which raises. Observed
+  three times here (renaming any one pin id produced the same
+  `KeyOf: failed to find entry with 'id' of 'flow-default-provider-authorization'`). It costs
+  nothing operationally — the file is still recorded ERROR and retried — but read such a message as
+  "an entry failed", not as "that specific reference is missing".
 
 ## 9. Acceptance-criteria traceability (#109)
 

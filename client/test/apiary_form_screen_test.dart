@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
@@ -89,7 +90,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   bool deleteCalled = false;
 
   @override
-  Future<Apiary?> getById(String id) async {
+  Future<Apiary?> getById(String id, {required String? organizationId}) async {
     if (throwOnGetById) throw Exception('boom-load');
     return existing;
   }
@@ -1557,10 +1558,16 @@ void main() {
         ProviderScope(
           overrides: [
             apiariesRepositoryProvider.overrideWith((ref) async => repo),
+            // The edit prefill is org-scoped (#658, FR-TEN-2), so it awaits
+            // organizationProvider — left un-overridden it never resolves
+            // (its logged-out gate) and the form would sit on its spinner.
+            organizationProvider.overrideWith(
+              _ExistingOrganizationController.new,
+            ),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: ValueListenableBuilder<bool>(
               valueListenable: showForm,
               builder: (context, show, _) => Scaffold(
@@ -1610,7 +1617,7 @@ void main() {
     // dialog's own behavior, independent of the screen that opens it.
     Widget hostApp() => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
@@ -1745,7 +1752,7 @@ void main() {
         MaterialApp(
           locale: const Locale('pt'),
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
+          supportedLocales: kSupportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
               body: Center(

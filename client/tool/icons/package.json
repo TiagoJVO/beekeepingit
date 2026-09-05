@@ -1,0 +1,15 @@
+{
+  "name": "beekeepingit-app-icons",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Regenerates the branded PWA icon set in client/web/ from the committed Melargil vector master (#682, FR-PL-1).",
+  "scripts": {
+    "generate": "node generate-app-icons.mjs",
+    "check": "node generate-app-icons.mjs --check"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.0.8",
+    "pdfjs-dist": "3.11.174"
+  }
+}

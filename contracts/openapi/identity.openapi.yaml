@@ -118,7 +118,13 @@ components:
                 flows gate on this, never on the stored profile row (#170).
             locale:
               type: string
-              description: BCP 47 language tag used for i18n (EN/PT today).
+              description: >-
+                BCP 47 language tag used for i18n — always `en-GB` or `pt-PT`. The app
+                ships British English and European Portuguese only (D-34, #656):
+                generic `en`/`pt` resolve to American/Brazilian conventions in CLDR, so
+                they are neither returned nor stored (identity migration 00005 rewrote
+                the rows that held them). Left as a plain string rather than an `enum`
+                so that adding a locale is not a spec-breaking change.
             profile_complete:
               type: boolean
               readOnly: true
@@ -135,4 +141,9 @@ components:
           maxLength: 200
         locale:
           type: string
+          description: >-
+            A supported BCP 47 tag (`en-GB` or `pt-PT`). A legacy or regional value of
+            a supported LANGUAGE (`en`, `pt`, `pt-BR`, …) is accepted and normalized to
+            the supported tag, so a client older than #656 keeps working; an
+            unsupported language is a 422 with `locale`/`unsupported`.
       minProperties: 1

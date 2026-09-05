@@ -1,18 +1,19 @@
 ---
 name: milestone-orchestration
 description: >-
-  How to run a fully autonomous multi-agent team against a BeekeepingIT milestone (or D-14 phase)
-  from a single milestone URL — research, plan, TDD, review, and merge to completion without
+  How to run a fully autonomous multi-agent team against a BeekeepingIT milestone from a single
+  milestone URL — research, plan, TDD, review, and merge to completion without
   stopping except for genuine requirement/decision conflicts. Use when asked to drive a milestone
   link to completion, spin up a team of agents for an M<n>, or otherwise run autonomous multi-issue
   execution across this backlog. Captures the non-obvious parts: dependencies are native (sub-issues
-  + blocked-by), never inferred from prose or re-declared in a body; cross-milestone parallelism is
-  already decided in D-14's phase plan and tagged in each milestone's description; the shared local
+  + blocked-by), never inferred from prose or re-declared in a body; sequencing — within a milestone
+  and across milestones alike — comes only from those native links, never from a milestone
+  description; the shared local
   cluster is coordinated via infra/cluster/with-lock.sh, not a bespoke "one owner" scheme; and
-  claiming/coordination must stay on native GitHub fields (assignee) — do NOT invoke ECC's
-  /epic-claim, /epic-sync, or the orch-add-feature/orch-change-feature aliases that trigger them,
-  since they write a custom coordination block + coordination:* labels into the issue body, which is
-  exactly the prose-duplication backlog-management forbids.
+  claiming/coordination must stay on native GitHub fields (assignee) — drive execution through this
+  repo's own /orch-* commands and agents, never ECC's /epic-* commands or /projects, which write a
+  custom coordination block + coordination:* labels into the issue body, exactly the prose
+  duplication backlog-management forbids.
 ---
 
 # Autonomous milestone execution (multi-agent team)
@@ -20,9 +21,9 @@ description: >-
 Given only a milestone URL, run a main orchestrating agent that spins up a team of implementer
 agents, sequences them by real dependency, keeps the shared dev cluster from colliding, and merges
 finished work — stopping only when a genuine requirement or decision question comes up. This
-operationalizes **D-14**'s "Recommended build phasing," which names this pattern directly: _"This
-phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow; each
-milestone's GitHub description carries a short phase tag for the same reason."_
+operationalizes **D-14**'s delivery model: milestones are thin, independently pickable per-feature
+slices, and whatever ordering actually binds is expressed as native `blocked-by` links between
+specific stories — _"sequencing is between stories, not epic→epic."_
 
 ## Non-obvious conventions
 
@@ -30,22 +31,31 @@ milestone's GitHub description carries a short phase tag for the same reason."_
   epic→children `sub-issues` are the source of truth (D-14: _"sequencing is between stories, not
   epic→epic"_). Don't scan issue-body prose for "depends on #N" — per **backlog-management**, that
   text is deliberately not there; it lives in the Relationships panel / sub-issues panel instead.
-- **Cross-milestone parallelism is already decided — don't re-derive it from scratch.** D-14's
-  Phase 1–6 plan and each milestone's `description` (a short "Phase N — ..." tag) tell you what
-  else can run alongside the milestone you were pointed at. A run scoped to one milestone link
-  under-uses this — see Step 1.
+- **There is no phase plan — sequencing is native, full stop.** D-14 used to carry a "Recommended
+  build phasing" (Phases 1–6) mirrored as a `Phase N — …` tag in each milestone's `description`;
+  both were **retired 2026-09-03** because the milestones are now largely independent and the
+  static plan had gone stale. Do **not** look for a phase anywhere. Ordering — within a milestone
+  and between milestones alike — comes only from `blocked-by` and sub-issues. A milestone with no
+  open `blocked-by` edges into it is runnable now, whatever its number. If you conclude two
+  milestones genuinely must be ordered, that belongs in a `blocked-by` between the two specific
+  issues that carry the constraint — propose it, don't write it as prose in a description.
 - **The shared local cluster already has a lock.** `infra/cluster/with-lock.sh` (flock-based, keyed
   by cluster name so it's shared across every git worktree) serializes any cluster-mutating command
   automatically. There is no need to invent a single "infra owner" agent — every implementer just
   wraps mutating commands with it. See
   [`infra/README.md`](../../../infra/README.md#sharing-the-local-cluster-across-concurrent-sessions).
-- **Do not use ECC's `/epic-claim` / `/epic-sync`** (or `/orch-add-feature` / `/orch-change-feature`,
-  which alias to them). Those scripts write a custom coordination block into the issue body and
-  `coordination:*` labels — this repo already rejected exactly that shape of duplication (see
-  **backlog-management**'s "don't duplicate a native field" rule). "Claiming" an issue here means
-  setting the native **assignee** field; drive implementation via the underlying agents
-  (`planner`/`architect`, `tdd-guide`, `code-reviewer`, `security-reviewer`) directly, not through
-  the `orch-*` wrapper commands.
+- **Drive implementation with this repo's own `/orch-*` commands** (`/orch-add-feature`,
+  `/orch-change-feature`, `/orch-fix-defect`, `/orch-refine-code`, `/orch-review`), which delegate
+  each phase to the project agents: `planner` and `code-architect` to plan, `tdd-guide` to
+  implement test-first, `code-reviewer` on every diff, `security-reviewer` when it touches
+  auth/input/DB/crypto/secrets, and the specialist reviewer for the paths changed —
+  `go-reviewer` (`services/**`), `flutter-reviewer` (`client/**`), `react-reviewer` (`admin/**`),
+  `contracts-reviewer` (`contracts/**`), `infra-reviewer` (`infra/**`, `.github/workflows/**`),
+  `database-reviewer` (migrations and schema). See
+  [`.claude/agents/README.md`](../../agents/README.md) for the full roster.
+- **Never invoke ECC's `/epic-*` commands or `/projects`.** They write a custom coordination block
+  and `coordination:*` labels into the issue body — exactly the duplication of native fields
+  **backlog-management** forbids. "Claiming" an issue here is the native **assignee** field.
 
 ## Input
 
@@ -55,8 +65,8 @@ One milestone URL (or `owner/repo` + milestone number). Nothing else — everyth
 
 ```bash
 # resolve milestone number from the URL, then pull it + every issue in it
-gh api repos/OWNER/REPO/milestones/<n> --jq '{number, title, description}'
-gh api "repos/OWNER/REPO/issues?milestone=<n>&state=all" --jq '.[] | {number,title,state,body}'
+gh api repos/TiagoJVO/beekeepingit/milestones/<n> --jq '{number, title, description}'
+gh api "repos/TiagoJVO/beekeepingit/issues?milestone=<n>&state=all" --jq '.[] | {number,title,state,body}'
 ```
 
 Read, in this order: `CLAUDE.md`, the **requirements-folder** skill's targets (`decisions.md`,
@@ -68,36 +78,27 @@ stories/tasks — an epic's own body has no "Stories" checklist; its children ar
 
 ```bash
 # epic -> children
-gh api repos/OWNER/REPO/issues/<epic#>/sub_issues --jq '.[] | {number,title,state}'
+gh api repos/TiagoJVO/beekeepingit/issues/<epic#>/sub_issues --jq '.[] | {number,title,state}'
 # story-level blockers
-gh api repos/OWNER/REPO/issues/<n>/dependencies/blocked_by --jq '.[] | {number,title,state}'
+gh api repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by --jq '.[] | {number,title,state}'
 ```
 
-Then check every **open** milestone's `description` for its phase tag — D-14's plan (revised
-2026-07-16) already sequenced the whole roadmap. Snapshot at time of writing:
+Run `blocked_by` for every issue in the milestone, and follow each blocker out — a blocker may
+live in another milestone, which is the only way a cross-milestone constraint is ever expressed.
+A milestone `description` says what the milestone _is_; it never says when to build it, so don't
+mine it for sequencing:
 
-| Milestone                     | #   | Phase       | Unblocked by                     |
-| ----------------------------- | --- | ----------- | -------------------------------- |
-| M3 · Activities               | 10  | 1           | — (build `#38` first internally) |
-| M5 · Todos                    | 12  | 1           | —                                |
-| M7 · Admin App                | 14  | 1           | —                                |
-| M8 groundwork (`#297`, `#90`) | 15  | 1 (partial) | —                                |
-| M4 · Journeys                 | 11  | 2           | M3's `#38`/`#39`                 |
-| M6 · Export                   | 13  | 2           | M3's `#38` + M4's `#45`          |
-| M9 · Settings & Notifications | 16  | 3           | M5's `#50`                       |
-| M8 · AI Assistant (core)      | 15  | 4           | M3 + M4 + M5 far enough along    |
-| M10 · Android                 | 17  | 5           | — (deliberately last, D-10)      |
-| M11 · iOS & on-device AI      | 18  | 5           | M10                              |
-| M12 · Import (Apiaries)       | 19  | 6           | deferred to the very end (D-25)  |
+```bash
+gh api repos/TiagoJVO/beekeepingit/milestones --jq '.[] | {number,title,description}'
+```
 
-Treat the live milestone `description` as the source of truth, not this table — it will drift.
-Combine both graphs (native blocked-by within a milestone, phase tag across milestones) into one
-topological ordering of waves.
+Topologically order the issues from those native edges alone. An issue whose `blocked_by` list is
+empty (or fully closed) is runnable now, regardless of milestone number.
 
-**Scope discipline:** default to executing only the milestone you were given. If its phase has
-runnable siblings per the table above, say so once in your Step-2 plan log as an offer, but don't
-silently expand scope to other milestones without the user asking — that's a scope decision, not an
-implementation detail.
+**Scope discipline:** default to executing only the milestone you were given. If neighbouring
+milestones are also unblocked and could run alongside it, say so once in your Step-2 plan log as an
+offer, but don't silently expand scope to other milestones without the user asking — that's a scope
+decision, not an implementation detail.
 
 ## 2. Stage waves and execute
 
@@ -132,7 +133,7 @@ never bypass hooks or CI, never edit a `D-*`/requirement without the user confir
 `mandatory-workflow.md` requires.
 
 After merging, close the issue and re-check Section 1's graph — some unblocks are cross-milestone
-(phase tags), not just same-epic.
+(a `blocked-by` edge pointing out of this milestone), not just same-epic.
 
 ## 5. When to actually stop and ask
 

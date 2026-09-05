@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/config/app_config.dart';
+import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -27,7 +28,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  String _locale = 'en';
+  String _locale = kDefaultLocaleTag;
   bool _saving = false;
   bool _initialized = false;
   Map<String, String> _fieldErrors = {};
@@ -42,7 +43,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _locale = profile.locale;
+    // See account_screen.dart — a legacy `pt`/`en` is mapped onto a
+    // supported tag before it reaches the dropdown (#656/D-34).
+    _locale = canonicalLocaleTag(profile.locale) ?? kDefaultLocaleTag;
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -77,10 +80,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ref.invalidate(organizationProvider);
         // Next onboarding step: the router's own redirect (app_router.dart)
         // sends a profile-complete, no-organization user to
-        // /organization/new (FR-ONB-2, #26) and everyone else to the Tasks
-        // home (/todos, D-29/#427), so a plain '/todos' navigation here always
-        // lands wherever the router's gates currently require.
-        context.go('/todos');
+        // /organization/new (FR-ONB-2, #26) and everyone else to the app home
+        // (/home, #658/D-35, amending D-29's Tasks landing), so a plain
+        // '/home' navigation here always lands wherever the router's gates
+        // currently require.
+        context.go('/home');
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -260,9 +264,14 @@ class _ProfileFormFields extends StatelessWidget {
           key: const Key('profile-locale-field'),
           initialValue: locale,
           decoration: InputDecoration(labelText: l10n.profileLocaleLabel),
+          // Endonyms with the supported BCP 47 tags as values (D-34) —
+          // `en-GB`/`pt-PT`, never the generic `en`/`pt`.
           items: const [
-            DropdownMenuItem(value: 'en', child: Text('English')),
-            DropdownMenuItem(value: 'pt', child: Text('Português')),
+            DropdownMenuItem(value: kDefaultLocaleTag, child: Text('English')),
+            DropdownMenuItem(
+              value: kPortugueseLocaleTag,
+              child: Text('Português'),
+            ),
           ],
           onChanged: (v) {
             if (v != null) onLocaleChanged(v);

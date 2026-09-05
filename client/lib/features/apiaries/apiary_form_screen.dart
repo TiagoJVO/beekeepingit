@@ -9,9 +9,11 @@ import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../organization/organization_repository.dart';
 import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
 import 'apiary_location_picker_screen.dart';
+import 'map_tile_sources.dart';
 
 /// Default map-picker center/zoom when no location is set yet — same
 /// mainland-Portugal default as apiary_map_screen.dart's `_fallbackCenter`
@@ -210,7 +212,14 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     // already suspended and resumed.
     try {
       final repo = await ref.read(apiariesRepositoryProvider.future);
-      final existing = await repo.getById(widget.apiaryId!);
+      // Org-scoped like every other apiary read (#658, FR-TEN-2): editing a
+      // stale deep link into another org's apiary must find nothing, exactly
+      // as the list and the detail screen do.
+      final org = await ref.read(organizationProvider.future);
+      final existing = await repo.getById(
+        widget.apiaryId!,
+        organizationId: org?.id,
+      );
       if (!mounted) return;
       if (existing != null) {
         _nameController.text = existing.name;
@@ -829,10 +838,10 @@ class _LocationPicker extends StatelessWidget {
                 children: [
                   TileLayer(
                     key: const Key('apiary-location-picker-tile-layer'),
-                    urlTemplate:
-                        'https://server.arcgisonline.com/ArcGIS/rest/services/'
-                        'World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    userAgentPackageName: 'com.beekeepingit.client',
+                    // map_tile_sources.dart, not a literal: nginx.conf's CSP
+                    // `connect-src` has to name this host (#671).
+                    urlTemplate: satelliteTileUrlTemplate,
+                    userAgentPackageName: mapTileUserAgentPackageName,
                   ),
                   if (location != null)
                     MarkerLayer(

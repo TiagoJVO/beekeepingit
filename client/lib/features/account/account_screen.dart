@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -55,7 +56,7 @@ class AccountScreen extends ConsumerStatefulWidget {
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  String _locale = 'en';
+  String _locale = kDefaultLocaleTag;
   bool _saving = false;
   bool _initialized = false;
   Map<String, String> _fieldErrors = {};
@@ -70,7 +71,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _locale = profile.locale;
+    // A stored `pt`/`en` (or anything else the picker doesn't offer) is
+    // mapped onto a supported tag before it reaches the dropdown — #656/D-34.
+    // Without this the field's value wouldn't match any item, which is a
+    // Flutter assertion failure, not a graceful fallback.
+    _locale = canonicalLocaleTag(profile.locale) ?? kDefaultLocaleTag;
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -152,8 +157,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           key: const Key('account-back-button'),
           icon: const Icon(Icons.arrow_back),
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-          // Back to the app home, which is the Tasks tab now (D-29, #427).
-          onPressed: () => context.go('/todos'),
+          // Back to the app home, which is the Home tab now (#658, D-35,
+          // amending D-29's Tasks landing).
+          onPressed: () => context.go('/home'),
         ),
         title: Text(l10n.accountTitle),
       ),
@@ -197,13 +203,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             decoration: InputDecoration(
                               labelText: l10n.profileLocaleLabel,
                             ),
+                            // Endonyms, deliberately untranslated: each
+                            // option must read correctly to a speaker of the
+                            // language it selects. The values are the
+                            // supported BCP 47 tags (D-34) — `en-GB`/`pt-PT`,
+                            // never the generic `en`/`pt`.
                             items: const [
                               DropdownMenuItem(
-                                value: 'en',
+                                value: kDefaultLocaleTag,
                                 child: Text('English'),
                               ),
                               DropdownMenuItem(
-                                value: 'pt',
+                                value: kPortugueseLocaleTag,
                                 child: Text('Português'),
                               ),
                             ],
@@ -405,10 +416,12 @@ class _SyncSection extends ConsumerWidget {
         const SizedBox(height: 8),
         // Auto-sync setting (FR-ST-1, FR-OF-3, #81): honored by the EPIC-06
         // sync layer's connection-quality gate (`core/sync/powersync_service
-        // .dart`'s `applyAutoSyncSetting`). Turning it off never disables
-        // "Sync now" above — the manual override always works regardless
-        // (sync.md §7.1) — so there is no invalid combination to prevent
-        // between these two controls.
+        // .dart`'s `applySyncPreconditions`). Turning it off never disables
+        // "Sync now" above — the manual override works regardless of this
+        // setting (sync.md §7.1) — so there is no invalid combination to
+        // prevent between these two controls. (The override's one
+        // precondition, a membership, is not reachable from this screen: a
+        // caller without one is held in onboarding and never sees it, #622.)
         SwitchListTile(
           key: const Key('settings-auto-sync-toggle'),
           contentPadding: EdgeInsets.zero,

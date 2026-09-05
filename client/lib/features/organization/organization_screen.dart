@@ -53,9 +53,11 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.organizationSaveSuccess)));
-      // Onboarding complete → the app's home, which is the Tasks tab now
-      // (D-29, #427), not the apiaries list.
-      context.go('/todos');
+      // Onboarding complete → the app's home, which is the Home tab now
+      // (#658, D-35, amending D-29's Tasks landing) — and a brand-new
+      // organization is exactly the case a task list can't answer: it has no
+      // tasks yet, so Home's first-run state greets it instead.
+      context.go('/home');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

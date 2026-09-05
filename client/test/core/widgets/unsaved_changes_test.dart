@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/widgets/unsaved_changes.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +37,7 @@ Widget _host({Locale? locale}) {
     child: MaterialApp(
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
@@ -63,7 +64,7 @@ void main() {
         const ProviderScope(
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: Scaffold(body: DiscardChangesDialog()),
           ),
         ),
@@ -97,7 +98,7 @@ void main() {
           child: MaterialApp(
             locale: Locale('pt'),
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: Scaffold(body: DiscardChangesDialog()),
           ),
         ),
@@ -174,7 +175,7 @@ void main() {
           container: container,
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             home: Builder(
               builder: (context) => Scaffold(
                 body: Center(

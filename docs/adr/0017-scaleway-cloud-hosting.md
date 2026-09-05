@@ -83,7 +83,8 @@ which reads config from runtime env vars. CI never passed any `--dart-define`s, 
 published `latest` image only ever had dev's URLs baked in. `build-publish.yml`'s `detect` job now
 builds a distinct tagged variant per environment (`client-dev`, `client-staging`) instead of one —
 closes the immediate gap, but the PWA still can't do "build once, promote the same artifact across
-environments" the way the Go services can; see `FOLLOWUPS.md` for that longer-term option.
+environments" the way the Go services can — that would mean moving these URLs to runtime config,
+which is out of scope here.
 
 ## Consequences
 

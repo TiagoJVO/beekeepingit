@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/activities/activity_types.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats_section.dart';
@@ -25,7 +26,7 @@ Widget _buildSection({
     child: MaterialApp(
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: Scaffold(
         body: JourneyStatsSection(
           journeyId: journeyId,
@@ -75,7 +76,7 @@ Widget _buildSectionWithRouter({
     child: MaterialApp.router(
       routerConfig: router,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
     ),
   );
 }
@@ -182,6 +183,57 @@ void main() {
         find.text('Todos os apiários planeados foram visitados'),
         findsOneWidget,
       );
+    });
+
+    // #624: the stats card was already the reference implementation for a
+    // locale-formatted DECIMAL (`0,0 kg`), but its integer tiles still
+    // interpolated raw ints — identical digits in both languages, no
+    // grouping. Every number on the card now goes through `intl`.
+    testWidgets('groups large integer stats for the active locale (#624)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildSection(
+          journeyId: 'j1',
+          locale: const Locale('pt'),
+          stats: Stream.value(
+            _sampleStats(
+              apiariesPlanned: 2,
+              apiariesVisited: 2,
+              hivesHarvested: 1234567,
+              honeyCollectedKg: 12,
+              averageSupersPerHive: 2,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // European Portuguese groups thousands with a NON-BREAKING SPACE, not
+      // the Brazilian full stop the generic `pt` locale used (#656, D-34).
+      expect(find.text('1\u00A0234\u00A0567'), findsOneWidget);
+      expect(find.text('1234567'), findsNothing);
+    });
+
+    testWidgets('groups the same integer with en separators in English '
+        '(#624)', (tester) async {
+      await tester.pumpWidget(
+        _buildSection(
+          journeyId: 'j1',
+          stats: Stream.value(
+            _sampleStats(
+              apiariesPlanned: 2,
+              apiariesVisited: 2,
+              hivesHarvested: 1234567,
+              honeyCollectedKg: 12,
+              averageSupersPerHive: 2,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1,234,567'), findsOneWidget);
     });
 
     testWidgets('renders the average-supers-per-hive label in English when the '

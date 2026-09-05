@@ -37,6 +37,28 @@ export default defineConfig({
     baseURL,
     // Dev cluster uses a self-signed cert.
     ignoreHTTPSErrors: true,
+    // Service workers OFF by default; offline-boot.spec.ts opts back in with
+    // `test.use({ serviceWorkers: "allow" })` (#619).
+    //
+    // Since #619 the app registers an app-shell worker that precaches ~6.6 MB
+    // and then answers every request for a bundle path out of the Cache API.
+    // Two consequences, neither of them wanted by the other specs:
+    //
+    //  1. It would quietly hollow out cache-headers.spec.ts. That spec probes
+    //     with `fetch(path, { cache: "no-store" })`, which is an HTTP-cache
+    //     directive and does NOT bypass a service worker — so most of its
+    //     probes would be answered from Cache Storage. They would still PASS
+    //     (a cached response keeps the headers it was stored with), which is
+    //     worse than failing: the spec's whole claim is that it measured what
+    //     nginx put on the wire, and its `add_header` inheritance canary would
+    //     silently stop guarding nginx.conf.
+    //  2. Every spec gets a fresh context, so every spec would pay for a full
+    //     precache through the gateway on a k3d runner — new cost and a new
+    //     flake source in tests that have nothing to do with offline.
+    //
+    // Blocking here rather than per-spec keeps the default honest: a spec that
+    // wants the worker says so.
+    serviceWorkers: "block",
     // Location is mandatory on the apiary form (#341, FR-AP-7), and the form's
     // "use current location" action goes through `geolocator` →
     // `navigator.geolocation`. Granting the permission up front (and pinning a

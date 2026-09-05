@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/config/app_config.dart';
+import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/platform/external_link_platform.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -116,7 +117,7 @@ Widget _buildScreen(
     ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: kSupportedLocales,
       home: ProfileScreen(),
     ),
   );
@@ -262,7 +263,11 @@ void main() {
         initialLocation: '/profile',
         routes: [
           GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
-          GoRoute(path: '/todos', builder: (_, _) => const SizedBox.shrink()),
+          // The screen's post-save hand-off target (#658, D-35: the app home
+          // is /home now, not the Tasks list) — a stand-in, since this test
+          // is about the org re-fetch, not about where it lands. Where it
+          // lands is pinned end-to-end in app_router_test.dart.
+          GoRoute(path: '/home', builder: (_, _) => const SizedBox.shrink()),
         ],
       );
       addTearDown(router.dispose);
@@ -277,7 +282,7 @@ void main() {
           ],
           child: MaterialApp.router(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
+            supportedLocales: kSupportedLocales,
             routerConfig: router,
           ),
         ),
@@ -427,7 +432,7 @@ void main() {
               ApiFieldError(
                 field: 'locale',
                 code: 'unsupported',
-                message: 'locale must be "en" or "pt"',
+                message: 'locale must be one of: en-GB, pt-PT',
               ),
             ],
           );
@@ -451,7 +456,9 @@ void main() {
       // snackbar was suppressed because `_fieldErrors` was non-empty). It
       // must still be visibly surfaced, via the snackbar.
       expect(
-        find.text('Could not save your profile: locale must be "en" or "pt"'),
+        find.text(
+          'Could not save your profile: locale must be one of: en-GB, pt-PT',
+        ),
         findsOneWidget,
       );
     },

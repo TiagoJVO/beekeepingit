@@ -534,7 +534,11 @@ void main() {
       );
       await goToEditForm(tester, repo);
 
-      expect(find.text('Xarope 1:1'), findsOneWidget);
+      // The stored value is 'Xarope 1:1'; English renders '1:1 syrup'
+      // (#625, NFR-I18N-1). The resubmit test below pins that the STORED
+      // value is unaffected.
+      expect(find.text('1:1 syrup'), findsOneWidget);
+      expect(find.text('Xarope 1:1'), findsNothing);
     });
 
     testWidgets('an edit that resubmits the name unchanged still resubmits the '

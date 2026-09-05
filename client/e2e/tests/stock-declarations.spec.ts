@@ -172,12 +172,12 @@ async function typeInto(page: Page, field: ReturnType<Page["getByRole"]>, value:
 
 async function login(page: Page) {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
-  // After login the app lands on the Tasks tab (D-29, #427), not the apiaries
+  // After login the app lands on the Home tab (D-35, #658), not the apiaries
   // list. The OIDC callback is a full page load that re-bootstraps Flutter plus
   // the token exchange, so allow generously for a cold stack.
-  await page.waitForURL(/\/todos/, { timeout: 60_000 });
+  await page.waitForURL(/\/home/, { timeout: 60_000 });
   await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 30_000 });
 }
 
 /**
@@ -221,9 +221,10 @@ async function backToAccount(page: Page) {
  * straight to a route does not work, and that is app behaviour worth knowing
  * rather than a test quirk: on a hard page load the session has not been
  * restored yet, so `isAuthenticatedProvider` is briefly false, the router sends
- * /route → /login, and once auth resolves /login → /todos (app_router.dart's
- * redirect). The original destination is dropped. A CI run proved it against
- * the old single screen: waitForURL passed, then the app landed on Todos.
+ * /route → /login, and once auth resolves /login → /home (app_router.dart's
+ * redirect, D-35/#658). The original destination is dropped. A CI run proved it
+ * against the old single screen: waitForURL passed, then the app landed on the
+ * post-login tab instead.
  * Flagged on the PR — a bookmark to any in-app route has the same problem,
  * which is not this PR's to fix. The same applies to [openStockDeclarations].
  *

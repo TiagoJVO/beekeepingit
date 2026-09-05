@@ -24,8 +24,8 @@ Postgres+PostGIS, the OIDC IdP, MinIO and the gateway landed with `#84` (see bel
 **Keycloak** at `#84` and was later **replaced by Authentik** (D-7 revised,
 [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)). PowerSync's
 _infra_ (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
-placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector exist yet
-(see `FOLLOWUPS.md`). The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
+placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector existed yet.
+The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
 Sync Rules + connector land with `#23`/`#106`. All deploy through the umbrella chart below rather
 than standing up their own release.
 
@@ -170,13 +170,12 @@ Platform Overview" — collector accepted spans/logs/metric-points per second + 
 targets up) is added via Grafana's values-driven `dashboards`/`dashboardProviders`
 keys, no hand-written ConfigMap template.
 
-Since no service emits real telemetry yet (`#23`, the walking-skeleton services, is
-still pending), [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)
+The services now emit real telemetry through the shared template (`#23`), but the observability
+stack is not yet deployed alongside them, so [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)
 fires one correlated trace+log+metric through the collector (via OTel's `telemetrygen`)
 as a stand-in, to prove the pipeline and the trace↔log correlation end-to-end now. The
 literal "walking-skeleton traces visible" AC gets closed for real once `#23` ships and
-wires its Go service's OTel SDK to `otel-collector:4317` (tracked in
-[`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
+wires its Go service's OTel SDK to `otel-collector:4317` (tracked in `#610`).
 
 [`infra/grafana-open.sh`](../../infra/grafana-open.sh) is a dev convenience for reaching
 Grafana itself: it reads the chart-generated admin password out of the
@@ -233,6 +232,9 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
 - GitOps-manifest validation (`kubeconform` against the Flux CRD schemas) moved to the
   `beekeepingit-gitops` repo's own `gitops-ci.yml` when the manifests were split out (D-27/ADR-0018).
+  That workflow's `chart-pin` job also asserts, on every gitops PR, that the staging and prod
+  `beekeepingit` `GitRepository` is pinned to a release `tag:` (dev opts out by annotation) and
+  that the umbrella `HelmRelease` sources its chart from it (`#611`).
 
 Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
 tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,
@@ -273,8 +275,8 @@ certManager.enabled`, cert-manager + Let's Encrypt, ADR-0017) and live on `stagi
   still uses the self-signed cert, since a local k3d cluster has no public endpoint for an ACME
   challenge to reach.
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
-  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
-  `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
+  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap since
+  `apiaries`/`organizations` don't exist until `#23`/`#106`.
 - End-to-end **release→deploy** — the release-triggered PR-based promotion (D-27,
   [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) is designed but **not yet exercised
   end-to-end**: `release-deploy.yml`'s tag-bump-PR step and the `beekeepingit-gitops` repo split are

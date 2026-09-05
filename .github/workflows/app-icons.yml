@@ -1,0 +1,54 @@
+# Guards the branded PWA icon set (#233/#681) against drifting from the vector master
+# and the generator that produces it (#682).
+#
+# Deliberately its OWN workflow rather than a step in `ci`: the check needs an npm
+# install carrying a native Skia binary (`@napi-rs/canvas`), which the repo-wide
+# `task lint` should not pay for on every run. Path-filtered, so it only runs when the
+# artwork, the master or the generator actually change.
+#
+# It compares PIXELS, not bytes. Verified on both Windows x64 and Linux x86_64: the
+# same master renders pixel-identical artwork on both, while the PNG encoder emits
+# 1-2 bytes of difference. A byte gate would fail here for artwork that is correct —
+# which is exactly the risk #687 was opened to settle before wiring this up.
+name: app icons
+
+on:
+  pull_request:
+    paths:
+      - "client/web/icons/**"
+      - "client/web/favicon.png"
+      - "client/tool/icons/**"
+      - ".github/workflows/app-icons.yml"
+  push:
+    branches: [main]
+    paths:
+      - "client/web/icons/**"
+      - "client/web/favicon.png"
+      - "client/tool/icons/**"
+      - ".github/workflows/app-icons.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  icons-check:
+    name: icons match the vector master
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: client/tool/icons/package-lock.json
+      # Plain `npm ci`, NOT `--omit=optional`: @napi-rs/canvas ships its per-platform
+      # Skia binaries as optionalDependencies, so omitting them removes the very
+      # binding this generator renders through (MODULE_NOT_FOUND at import). The
+      # unused node-canvas that pdfjs-dist also drags in optionally is harmless here
+      # — both packages are devDependencies, which Trivy's npm analyzer skips.
+      - name: Install the generator's dependencies
+        working-directory: client/tool/icons
+        run: npm ci
+      - name: Regenerate and compare against the committed icons
+        working-directory: client/tool/icons
+        run: npm run check

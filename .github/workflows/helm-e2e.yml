@@ -54,6 +54,24 @@ jobs:
     # Bumped 50 -> 60 (#366): the registration spec adds three ordered tests
     # (five registrations/verifications plus ~six full OIDC logins and two
     # in-app onboardings) on top of the existing suite.
+    # Held at 60 for #619's offline-boot spec: it logs nobody in (the expensive
+    # part of every other spec), and its one test is a boot, a ~6.6 MB precache
+    # and an offline reload — measured at ~6s against a warm bundle, budgeted at
+    # 420s for a cold cluster. The suite-wide `serviceWorkers: "block"` keeps
+    # that precache out of every OTHER spec's context, so the job does not pay
+    # for it eight times.
+    # Held at 60 again for #670's compression spec: it also logs nobody in, and
+    # its one test is a boot plus one no-store re-fetch of eleven bundle paths
+    # — eight until #688 added a second font face, `assets/NOTICES` and a
+    # `.frag` shader (the `.ttf` was already probed; #688 flipped its role, it
+    # did not add it). That includes the 4.4 MB app and the 5.8 MB engine, but
+    # compressed, so ~4.2 MB. Budgeted at 180s in the spec itself.
+    # Held at 60 once more for #671's map-tile CSP spec: it logs nobody in
+    # either, and its one test is a boot, one same-origin read of `main.dart.js`
+    # (~1.4 MB at this file's gzip_comp_level 2 — see the measured table in
+    # client/nginx.conf) and three stubbed probe fetches against a document
+    # Playwright fulfills itself, so no third-party request leaves the runner.
+    # Budgeted at 180s in the spec itself, like the compression one.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -164,11 +182,29 @@ jobs:
           owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           echo "repository=ghcr.io/${owner}/beekeepingit/client" >> "$GITHUB_OUTPUT"
           echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          # `build_app_shell_cache` generates the app-shell precache manifest
+          # inside build/web's service worker (#619). Nothing Flutter emits is
+          # content-hashed, so that manifest is what gives the worker a
+          # per-release cache key; without it the worker is inert and
+          # offline-boot.spec.ts fails. Required after EVERY `flutter build web`
+          # — scripts/check-app-shell-precache-wired.sh fails the lint gate if a
+          # build site ever loses it.
           ( cd client \
             && flutter pub get \
             && dart run powersync:setup_web \
-            && flutter build web --release --no-web-resources-cdn )
+            && flutter build web --release --no-web-resources-cdn \
+            && dart run tool/build_app_shell_cache.dart build/web )
           docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
+          # Parse client/nginx.conf in the real base image, in the real `http {}`
+          # context, before anything is deployed (#688). Without this a plain
+          # syntax error in that file surfaces tens of minutes later as a pod
+          # that never binds :80 — read as a deploy failure rather than a config
+          # one. It is also where a "duplicate extension" WARNING would appear if
+          # a future base image starts mapping `.ttf`/`.otf` itself. Costs a
+          # second. `--entrypoint` because the stock entrypoint would launch the
+          # server instead of validating.
+          docker run --rm --entrypoint nginx \
+            "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" -t
 
       # Build the admin image from THIS checkout (#449), same rationale as the PWA
       # step above: the admin subchart defaults to `admin:latest` (published only on
@@ -194,6 +230,17 @@ jobs:
                VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
                npm run build )
           docker build -t "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" admin
+          # Parse admin/nginx.conf in the real base image, in the real `http {}`
+          # context, before anything is deployed — the same one-second gate the
+          # client image gets above (#688), and it earns its place here as of
+          # #677: that file now carries an http-level `map` (its first directive
+          # OUTSIDE `server {}`), and a context mistake there is exactly the class
+          # of error that would otherwise surface tens of minutes later as an
+          # admin pod that never binds :80, read as a deploy failure rather than a
+          # config one. `--entrypoint` because the stock entrypoint would launch
+          # the server instead of validating.
+          docker run --rm --entrypoint nginx \
+            "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" -t
 
       # Build the Go SERVICE images from THIS checkout (#245) — the generalization
       # of the PWA step above to the domain services (identity, organizations,
@@ -569,7 +616,7 @@ jobs:
             ak shell -c "$(cat infra/ci/authentik-federation-probe.py)"
 
       # Node itself already came from "Set up toolchains from mise.toml" above
-      # (mise.toml pins node = 22, the same toolchain local dev uses) — no
+      # (mise.toml pins the node major, the same toolchain local dev uses) — no
       # separate actions/setup-node needed.
       - name: Install e2e dependencies
         if: steps.changes.outputs.e2e == 'true'
@@ -666,6 +713,12 @@ jobs:
           # iss/aud override. Absent locally → the spec self-skips. The admin
           # host is warmed above and mapped to loopback in playwright.config.ts.
           E2E_ADMIN_ORIGIN: https://admin.beekeepingit.local:8443
+          # The IdP's own origin. Only same-origin-boot.spec.ts (#620) reads it,
+          # to allow-list the one first-party host that is not the app origin
+          # while it fails the boot on any third party. Set explicitly rather
+          # than left to the spec's default so this host is configured, not
+          # assumed, alongside the other two above.
+          E2E_AUTH_ORIGIN: https://auth.beekeepingit.local:8443
         run: npm test
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:

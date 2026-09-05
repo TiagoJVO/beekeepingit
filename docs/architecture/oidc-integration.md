@@ -419,6 +419,23 @@ optional.
     static pin is `scripts/check-federation-source-posture.sh` (`task repo:lint`), which asserts
     `username_link` **and** that the resolver mapping is attached by `!KeyOf` and is the source's
     only one.
+  - **A null FK's loudness is the SERIALIZER's choice, not the model's** (#599,
+    [auth.md §8.17](auth.md)). All three of the providers' cross-file references are `null=True` on
+    the model, but `OAuth2ProviderSerializer` has `authorization_flow`/`invalidation_flow`
+    `required=True, allow_null=False` and `signing_key` `required=False, allow_null=True` — so only
+    `signing_key` could be silently nulled by an `!Find` that lost its race (no RS256 key → HS256
+    fallback → **empty JWKS**). All three are now reached by `!KeyOf` at identifiers-only pin
+    entries, whose lack of `attrs` is what makes a missing target raise. **Two** upstream properties
+    must hold on a bump, not one: that nullability table (a relaxation on either flow would make the
+    old spelling silent again), **and** that an identifiers-only create still cannot validate — i.e.
+    `FlowSerializer` still requires `name`/`title`/`designation` and `CertificateKeyPairSerializer`
+    still requires `certificate_data`. If either serializer started defaulting those, a pin would
+    _invent_ the object instead of raising: a stage-less authorization flow (which authentik
+    auto-completes — a silent consent skip) or a keypair with no key. Static
+    pin: `scripts/check-federation-source-posture.sh`; live pin:
+    `infra/ci/authentik-federation-probe.py`, which also asserts both providers advertise the **same
+    `kid`** — the shared-signing-key property this section calls load-bearing, now structural
+    (one pin entry) rather than two lookups agreeing.
   - **`attributes.known_emails`** is the per-account known-email history (#364). Its **only** writer
     is the `beekeepingit-mark-email-verified` expression policy (#361's stamp, same restored
     flow-token gate); entries are lowercase by construction because the resolver's JSONB `@>`
@@ -455,7 +472,7 @@ unit tests, docs, backlog) needs **no** token.
 | **B — Backend**      | `services/**`                                           | ❌                 |
 | **C — Client**       | `client/**`                                             | e2e ✅ (semaphore) |
 | **D — Docs**         | `docs/**`, `README.md`, `CLAUDE.md`, requirements sweep | ❌                 |
-| **E — Backlog**      | GitHub Issues, `FOLLOWUPS.md` (coordinator-run)         | ❌                 |
+| **E — Backlog**      | GitHub Issues + the session ledger (coordinator-run)    | ❌                 |
 
 Shared files are single-owner to avoid conflicts: `README.md`/`CLAUDE.md`/all `docs/**` → **WS-D**;
-`FOLLOWUPS.md` + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.
+the session ledger + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.

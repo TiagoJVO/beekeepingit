@@ -357,9 +357,10 @@ Core technology decisions (2026-06-27). Detail and rationale in
   - **Revised 2026-07-16 (D-25):** M6 was "Import/Export"; Import is split out into its own
     milestone (**M12**), scheduled last, and narrowed to apiaries-only. M6 keeps Export
     (apiaries + activities + journeys, unchanged scope).
-  - **Revised 2026-07-27 (D-33):** M6 is reprioritized out of Phase 2 to **Phase 6, paired with
-    M12** — story-ready but judged non-critical, so it now sits behind the native rollout
-    alongside Import instead of ahead of it.
+  - **Revised 2026-07-27 (D-33):** M6 is reprioritized to sit **behind the native rollout, paired
+    with M12** — story-ready but judged non-critical, so it now sits behind the native rollout
+    alongside Import instead of ahead of it. (Originally worded as "out of Phase 2 into Phase 6";
+    the phase labels are retired per the 2026-09-03 revision below, the substance is unchanged.)
 - **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
   **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
   **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
@@ -379,32 +380,31 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
 
-- **Recommended build phasing (added 2026-07-16, from the story-level dependency graph):** the
-  milestone numbering is a naming order, not a strict build order — the story-level `blocked-by`
-  graph (itself a product of this same 2026-07-16 backlog reorg) supports real parallelism. The
-  actual buildable sequence:
-  - **Phase 1 (start immediately, parallel):** **M3** Activities (build `#38` activity-type model
-    first — nearly everything downstream needs it) ∥ **M5** Todos (no dependency on M3/M4, only
-    needs the already-shipped Apiaries) ∥ **M7** Admin App (a separate web app, zero dependency
-    on M3–M6) ∥ **M8**'s groundwork — the AI provider research spike and EPIC-14's GDPR framework
-    have no code prerequisites and have their own lead time, worth starting early.
-  - **Phase 2 (once M3's `#38`/`#39` land):** **M4** Journeys (`#46`, the journey picker, needs
-    the Activities model).
-  - **Phase 3 (once M5 lands):** **M9** Settings & Notifications (`#82` needs the Todos due-date
-    field).
-  - **Phase 4 (once M3+M4+M5 are far enough along):** **M8**'s core query/write features (need
-    Activities' `#38`, Todos' `#50`/`#51`, and Journeys' `#46`/`#48` for full context-scope
-    coverage).
-  - **Phase 5 (native rollout, deliberately last per D-10):** **M10** Android, then **M11** iOS &
-    on-device AI — no code dependency on M3–M9, but D-10's own rationale ("native only when a
-    feature needs it") argues against front-loading this.
-  - **Phase 6 (explicitly deferred to the very end, D-25; M6 rejoins here per D-33):** **M12**
-    Import (Apiaries) paired with **M6** Export — Export was originally Phase 2 (story-ready as
-    soon as M3/M4 landed) but D-33 reprioritizes it behind the native rollout as non-critical;
-    only its GDPR consent/privacy-policy scope was pulled forward (split from `#90` into `#487`,
-    Phase-1/4 groundwork feeding M8's consent story `#66` directly).
-  - This phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow;
-    each milestone's GitHub description carries a short phase tag for the same reason.
+- **Revised 2026-09-03 (user) — the "Recommended build phasing" guidance is RETIRED.** Until today
+  this decision carried a **"Recommended build phasing"** block (added 2026-07-16): Phases 1–6
+  grouping the milestones into build waves, with each milestone's GitHub description carrying a
+  matching `Phase N — …` tag. **The Phase 1–6 listing is removed from this decision, and the tags
+  are stripped from the milestone descriptions.** Nothing should send a reader to look up a
+  "phase" any more.
+  - **Why it goes:** the phasing was written while the app was being built up from nothing, when
+    the milestones genuinely did have ordering constraints between them. That is no longer the
+    case — the remaining work is largely independent. A static, hand-maintained wave plan
+    therefore stopped describing reality: it keeps asserting gates long after the stories that
+    created them closed, which makes it **stale guidance rather than help**.
+  - **What replaces it:** nothing prose-shaped. Sequencing is derived **solely** from native
+    GitHub **`blocked-by`** relationships between issues, plus the **epic → children sub-issues**
+    panel. That is exactly the **"Dependencies at leaf level"** principle above, now applied
+    without exception. If two milestones genuinely must be ordered, express it as a `blocked-by`
+    between the specific issues that carry the constraint — never as prose in a milestone
+    description, an issue body, or here.
+  - **What is unaffected:** the per-feature milestone model, the cross-cutting **streams**, the
+    `Q-*` scope-gating rule, **D-10**'s PWA → Android → iOS rollout order and **D-4**'s deferrals
+    all stand — those are product/platform decisions, not a dependency graph. Earlier revision
+    notes keep their substance; only their phase _labels_ are dropped (D-33's "Phase 2 → Phase 6"
+    now reads as "behind the native rollout, paired with M12", which is what it always meant).
+  - **Touches:** D-26 and D-33 (both cited the phase plan), the `milestone-orchestration` skill
+    (which read phase tags off milestone descriptions), and the M6/M8/M10/M11/M12 milestone
+    descriptions on GitHub.
 
 ## D-15 — Apiary distance: straight-line (haversine), offline
 
@@ -711,7 +711,7 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   later" already anticipated.
 - **Scope — this decision is the hosting provider only.** It does **not** resolve **Q-DR**
   (backup/DR targets — still open) or **#90** (GDPR data export/erasure UI), both scheduled at
-  **M6 · Export** in the D-14 phase plan. Standing up a Scaleway cluster **ahead of that work**
+  **M6 · Export** (D-14). Standing up a Scaleway cluster **ahead of that work**
   means the first real deployment should be **staging-grade** (the already-scaffolded, currently
   unused `environments/staging.yaml`) — not a `prod` environment holding real user data — until
   DR and GDPR export/erasure land. Also not yet covered: production-grade TLS (currently
@@ -748,8 +748,8 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   chart (`infra/helm/beekeepingit/`) stays in this repo. Now that the mechanism is PR-based (not
   direct-push) this is pure structural hygiene, not a security trade-off — Flux sources the chart
   from this repo and the release-manifests from the new one (a supported split). `release-deploy.yml`
-  opens its tag-bump PR against the new repo, which needs a scoped token or a small GitHub App
-  (tracked in `FOLLOWUPS.md`).
+  opens its tag-bump PR against the new repo, which needs a scoped token or a small GitHub App —
+  the fine-grained `GITOPS_PR_TOKEN` PAT.
 - **Supersedes:** [ADR-0014](../docs/adr/0014-cicd-pipeline.md)'s decision #4 (deploy via Flux
   image-automation). The image-reflector/image-automation controllers, the `ImageRepository`/
   `ImagePolicy`/`ImageUpdateAutomation` objects, and every `$imagepolicy` setter marker are removed;
@@ -800,8 +800,15 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   field-testing feedback (#427).
 - **Rationale:** the daily field workflow starts from "what do I need to do today", not the
   apiary list.
+- **Amended (product owner, 2026-09-03, #658):** the landing screen is **no longer the Tasks
+  list** — it is a **Home summary** of what needs attention (overdue/due-soon tasks, open
+  journeys, apiaries not visited recently). The **rationale above is unchanged and is the reason
+  for the amendment**: a raw task list answers "what do I need to do today" for one tab only, and
+  answers nothing at all for a new organization. The rest of this decision **still stands** — when
+  the Tasks list _is_ opened it still defaults to open tasks sorted by priority. The tab set
+  itself changed with the amendment; that is recorded in [D-35](#d-35--bottom-nav-tab-set-home-replaces-the-assistant-placeholder-at-the-centre).
 - No prior decision governed the app's initial screen; this records it. **Touches:**
-  `area/todos`, #427, EPIC-17 (#430).
+  `area/todos`, #427, EPIC-17 (#430), #658, D-35.
 
 ---
 
@@ -873,9 +880,9 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ## D-33 — M6 Export reprioritized to pair with M12 Import; GDPR consent/privacy-policy split out
 
-- **Decision (user, 2026-07-27):** **M6 Export** moves out of **Phase 2** (D-14's original build
-  phasing) into **Phase 6**, scheduled alongside **M12 Import** at the very end of the rollout,
-  behind the native phase (M10/M11). All of M6's story-level blockers were already closed —
+- **Decision (user, 2026-07-27):** **M6 Export** moves from "as soon as M3/M4 land" to the **very
+  end of the rollout**, scheduled alongside **M12 Import**, behind the native rollout (M10/M11).
+  All of M6's story-level blockers were already closed —
   this is a **priority call, not a dependency gate**: Export is judged non-critical relative to
   Settings/Notifications (M9), the AI Assistant (M8), and the native rollout.
 - **GDPR split (the ripple this reprioritization would otherwise cause):** `#90` ("GDPR:
@@ -893,12 +900,134 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Also deferred with M6 (per the same call):** `#69` (CSV/JSON export), `#71` (GDPR
   data-export tie-in), `#92` (disaster recovery), `#294` (honey-lot export field) — none of these
   block M8, M9, or the native rollout.
-- **Supersedes:** none. **Refines:** D-14's recommended build phasing (Phase 2/6) and its
+- **Supersedes:** none. **Refines:** D-14's milestone ordering for M6 and its
   milestone-of-first-need assignment for `#90`. Does not touch D-25 (Import stays split out into
   its own milestone, still last).
+  - _Note (2026-09-03):_ this decision was originally written in terms of D-14's "Phase 2" →
+    "Phase 6" build phasing, which is now **retired** (see D-14's 2026-09-03 revision). The
+    substance is unchanged and stands: M6 sits at the end of the rollout, paired with M12, behind
+    the native rollout. Any ordering that still genuinely binds belongs in a `blocked-by` link
+    between the specific issues, not in prose.
 - **Touches:** D-14, D-25, D-26 (production-readiness still waits on DR + GDPR export/erasure,
   now later), EPIC-09 (#10), EPIC-14 (#15), EPIC-08 (#9), `#66`, `#69`, `#71`, `#90`, `#92`, `#294`,
   `#487`.
+
+## D-34 — Supported locales are European Portuguese (`pt-PT`) and British English (`en-GB`); units are metric
+
+- **Decision (product owner, 2026-09-03):** the app supports exactly **two** locales —
+  **European Portuguese (`pt-PT`)** and **British English (`en-GB`)**. The generic `pt` and `en`
+  it shipped until now are **no longer offered, stored or resolvable**. Measurement units are
+  **metric** (kg, L, km, °C) for both, fixed by the domain rather than derived from the locale.
+- **Why the country code is the decision and not a detail.** `pt` and `en` are not neutral
+  identifiers: CLDR (via `intl`) resolves them to **Brazilian** and **American** conventions. The
+  app was therefore rendering `Sep 3, 2026` (American ordering) to its English readers and
+  `1.234,5` (Brazilian grouping) to its Portuguese ones — the wrong conventions for **both** of its
+  intended audiences, in a product whose only market is Portugal (C-2). The ambiguity was already
+  costing work: `#624` was filed asserting a space thousands separator, correct for `pt-PT` and
+  wrong for the `pt` actually shipped, and its acceptance criterion had to be corrected. Naming the
+  region makes the intended conventions checkable instead of arguable.
+- **What this means concretely** (as built in `#656`): `pt-PT` groups thousands with a
+  **non-breaking space** (`1 234,5`); `en-GB` keeps `1,234.5`. Both put the day first in dates.
+- **One deliberate override of CLDR: dates always name the month** (product owner,
+  2026-09-03). CLDR's medium date for `pt-PT` is the numeric `d/MM/y`, so following the locale
+  default would have rendered `3/09/2026`. The app instead **pins the pattern `d MMM y` for both
+  locales** — `3 set. 2026` (pt-PT) / `3 Sept 2026` (en-GB) — in
+  `client/lib/core/l10n/locale_formatting.dart`. Rationale: on a field app read one-handed in
+  gloves, a wholly numeric date is the one form a reader can genuinely get wrong (`3/09` and
+  `09/03` are the same characters reordered), while a named month cannot be misread. Readability
+  of a date a beekeeper acts on outweighs matching the locale's default here.
+  - Only the **pattern** is pinned, never the symbols: the month name stays fully localized,
+    including European Portuguese's trailing dot (`set.`, `jan.`, `dez.`).
+  - It also pins the field **order** (day first), which is right for both locales shipped today.
+    A future locale that orders differently means revisiting this line, not inheriting it.
+  - This is the **only** place the app departs from the active locale's own conventions; numbers
+    follow CLDR unchanged.
+- **Existing profiles are migrated, not stranded.** Every stored `pt`/`en` becomes `pt-PT`/`en-GB`
+  — in the database (identity migration `00005`), in the API (a submitted legacy or regional tag is
+  normalized before it is stored, so a client running an older cached bundle keeps working), and in
+  the client on read. Language choice is preserved; nobody is left on a value the app cannot
+  render, and an unsupported **language** is refused rather than silently answered in English.
+- **Adding a third locale stays easy** (`NFR-I18N-1`'s "designed to add more languages easily
+  later"): a new locale is a new region-qualified ARB pair plus one entry in each of the supported
+  sets. It is deliberately an explicit edit — which locales the product supports is a decision.
+- **Supersedes:** the **"Units & formats"** open question (`open-questions.md`, Tier 4 — a Tier 4
+  clarification that never carried a `Q-*` ID), which asked to confirm metric units and the
+  Portuguese locale defaults for dates/numbers. Both halves are answered here; the entry is
+  removed.
+- **Touches:** `NFR-I18N-1`, Context `C-2`, `FR-ST-1`, `#656`, `#623`/`#624` (whose
+  locale-aware input and display now run under the region locales), `#340`, ADR-0003 (the
+  identity contract's `locale` field), `client/lib/core/l10n/`, `services/identity`.
+
+---
+
+## D-35 — Bottom-nav tab set: Home replaces the Assistant placeholder at the centre
+
+- **Decision (product owner, 2026-09-03):** the bottom navigation is **apiaries · activities ·
+  home · journeys · todos**, with **Home at the centre**. Home is the app's landing screen and the
+  post-login and post-onboarding redirect target (amending [D-29](#d-29--default-landing-screen-tasks-tarefas-open-tasks-sorted-by-priority)).
+  Still five tabs — the **Assistant tab is removed**, not added to.
+- **Why Assistant goes:** the tab renders a "coming soon" placeholder; the feature itself is M8
+  (`FR-AI-*`, D-8/D-11). A tab that leads nowhere costs a permanent fifth of the field-app's
+  primary navigation. **The AI assistant remains a roadmap item** — this decision removes the
+  _tab_, not the feature; it returns when M8 ships.
+- **What Home shows:** tasks **overdue or due soon**, **open journeys**, and **apiaries not
+  visited recently** — each a count plus the most relevant few, every item tapping through to the
+  record or to that list screen filtered to the same set. Plus a genuine **first-run** state (one
+  action: add your first apiary) and an **all-clear** state, rather than several empty sections.
+- **Explicitly out of scope for the summary:** **sync state** (already in the app-shell header)
+  and **pending stock declarations** — [D-19](#d-19--pteu-beekeeping--honey-traceability-obligations-scoped-hipaa-dropped)
+  makes the declaration log a record only, deriving no deadlines, so "pending" has no definition
+  to surface. This resolves the "what else belongs on it" note in #658 rather than leaving it open.
+- **"Not visited recently" = 30 days** with no recorded activity, from the most recent activity
+  per apiary; apiaries never visited are included and sort first. No prior requirement fixed this
+  number — it is this decision's deliberate default, owned as one constant in the client's
+  apiaries feature so other surfaces reuse it rather than re-deriving it.
+- **No FAB on Home:** FR-UX-2's quick-add is contextual to the active area, and Home's area is
+  every area — no single create action is the right one.
+- **Supersedes:** #658's own "this does not change the bottom navigation" note, overridden by the
+  product owner on 2026-09-03. **Touches:** FR-UX-1, FR-UX-2, FR-TD-1, FR-JO-1, FR-AP-2, FR-AX-1,
+  D-18, D-19, D-29, #658, EPIC-20 (#618).
+
+## D-36 — Third-party map tiles: the location disclosure is accepted and disclosed, not gated
+
+- **Decision (user, 2026-09-05):** the app keeps fetching map tiles directly from the
+  third-party providers `D-16` chose (Esri World Imagery as the satellite default, OSM as the
+  streets alternative), and **discloses that in the privacy notice** rather than adding a consent
+  gate or proxying the requests. This is an explicit acceptance of a known disclosure, replacing
+  the previous state in which nobody had decided it.
+- **What is actually disclosed**, so the notice can be written accurately and so a future
+  revisit starts from facts rather than a re-derivation:
+  - A tile URL's `{z}/{x}/{y}` **is** the coordinate. Opening a map tells the provider which
+    patch of the world is being viewed — i.e. roughly where an organization's apiaries are — plus
+    the requesting user's IP address.
+  - It is **not limited to saved apiaries**: the location picker fetches tiles too, so candidate
+    sites a user pans over while siting a new apiary are disclosed the same way.
+  - Our shipped `Referrer-Policy: strict-origin-when-cross-origin` sends the **deployment's own
+    origin** as `Referer` on each tile request, which is what links the traffic to this product
+    rather than leaving it anonymous.
+  - **Esri is a US company**, so this is a transfer outside the EU/EEA and the notice must say so
+    (`NFR-CMP-1`).
+- **Why this was defensible to accept:** a Portugal-first, pre-production, single-tenant
+  deployment, with the alternatives each carrying a cost disproportionate to the exposure — a
+  consent gate buys transparency but not privacy and still needs UI/i18n/a11y work; a gateway
+  proxy removes the per-user IP but not the coordinates, costs a service plus bandwidth, and
+  **may breach OSM's tile usage policy**, which restricts proxied/bulk use; self-hosting solves
+  everything but has no free redistributable global **satellite** basemap, which is precisely the
+  layer `D-16` made the default because field users read terrain.
+- **Where the text lands:** `#487` (M8) already owns privacy-policy versioning and surfacing per
+  `D-33`. The wording above is the input to it; this decision does not create a separate story.
+- **What this does NOT settle.** `Q-MAP` stays open on the **production-traffic tile provider**
+  (the public Esri/OSM demo endpoints are not meant for production load) and on **offline-tile
+  caching**. If that question is later answered with a gateway proxy or a self-hosted provider,
+  the disclosure shrinks or disappears as a side effect — at which point this decision should be
+  revisited rather than treated as a commitment to the current shape.
+  - One licensing fact for that decision, surfaced while fixing `#671`: `flutter_map`'s
+    `userAgentPackageName` **cannot work on web** — `User-Agent` is a forbidden header name for
+    XHR — so OSM's usage-policy requirement for an identifiable User-Agent is **not satisfied by
+    the PWA today**. That is a provider-choice problem, not a privacy one.
+- **Supersedes:** none. **Narrows:** `Q-MAP` (its GDPR/consent dimension is settled here; its
+  licensing and production-load dimensions stay open). **Touches:** `D-16`, `D-33` (`#487`),
+  `NFR-CMP-1`, `NFR-SEC-1`, `FR-AP-3`, Context `C-2`, `#671`, `#487`.
 
 ---
 

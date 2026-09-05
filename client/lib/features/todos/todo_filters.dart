@@ -222,10 +222,10 @@ class TodosViewModel {
 /// journey_filters.dart's own un-scoped convention: there is only ever one
 /// Todos tab, no embedded/per-apiary variant, so per-instance scoping has no
 /// second consumer to serve yet (YAGNI).
-// Defaults to `open` (non-closed tasks) rather than `all` (#427, D-29): the
-// app now lands on this tab as its home screen, and the field workflow starts
-// from "what's still to do", so done/closed tasks are hidden until the user
-// deliberately widens the filter.
+// Defaults to `open` (non-closed tasks) rather than `all` (#427, D-29,
+// unchanged by D-35/#658 — the landing screen moved to Home, this tab's own
+// default did not): the field workflow starts from "what's still to do", so
+// done/closed tasks are hidden until the user deliberately widens the filter.
 final todoStatusFilterProvider = StateProvider.autoDispose<TodoStatusFilter>(
   (ref) => TodoStatusFilter.open,
 );
@@ -239,8 +239,8 @@ final todoDueFilterProvider = StateProvider.autoDispose<TodoDueFilter>(
 );
 
 // Defaults to `priority` (most urgent first, via that field's own descending
-// default direction below) rather than `dueDate` (#427, D-29) — the home
-// screen surfaces the highest-priority open tasks at the top.
+// default direction below) rather than `dueDate` (#427, D-29, likewise kept by
+// D-35/#658) — the list surfaces the highest-priority open tasks at the top.
 final todoSortFieldProvider = StateProvider.autoDispose<TodoSortField>(
   (ref) => TodoSortField.priority,
 );
@@ -288,3 +288,30 @@ final todosViewModelProvider = Provider.autoDispose<AsyncValue<TodosViewModel>>(
     });
   },
 );
+
+/// Parses a [TodoStatusFilter] out of the `?status=` query parameter the
+/// Todos route carries (#658, D-35: Home's "view all" lands on the list
+/// "filtered to the same set"), matching on the enum's own [Enum.name].
+///
+/// Returns null for an absent, unknown or malformed value — a deep link, a
+/// bookmark or a hand-typed URL must never crash the tab or strand it on an
+/// undefined filter; the screen keeps its own default instead. Same
+/// graceful-degradation convention as `todoPriorityLabel`'s unknown-value
+/// fallback.
+TodoStatusFilter? todoStatusFilterFromName(String? name) {
+  if (name == null) return null;
+  for (final value in TodoStatusFilter.values) {
+    if (value.name == name) return value;
+  }
+  return null;
+}
+
+/// The [TodoDueFilter] counterpart of [todoStatusFilterFromName], for the
+/// `?due=` query parameter — same null-on-unknown contract.
+TodoDueFilter? todoDueFilterFromName(String? name) {
+  if (name == null) return null;
+  for (final value in TodoDueFilter.values) {
+    if (value.name == name) return value;
+  }
+  return null;
+}
