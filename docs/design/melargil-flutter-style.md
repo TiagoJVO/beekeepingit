@@ -47,6 +47,19 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   `SnackBarBehavior.floating` to get the same gap: with a FAB on screen Flutter
   anchors a floating bar above the _FAB_, which is 194px up into the content.
 
+  That gutter is **permanent, not toast-only** — it has to be, because the
+  `Scaffold` computes its bottom-chrome height once, not per toast. It costs
+  14px of body height on every tab. On a screen whose content sits on the
+  scaffold background the band is the same colour as the content above it and
+  is invisible; on a **full-bleed** screen it is not. `apiary_map_screen.dart`
+  fills the tab body with a `Stack`, so the map ends 14px above the plum
+  navigation bar with a cream strip between them, permanently. That is an
+  accepted trade (`#631`): the toast is the app's only "your save worked"
+  signal, and separating it from the navigation bar was judged worth a thin
+  band on one tab. Weigh it before adding another full-bleed tab — and do not
+  "fix" it by painting the gutter the navigation bar's colour, which restores
+  exactly the two-dark-bars-read-as-one-block symptom `#631` set out to remove.
+
 ## Widgets (`brand_widgets.dart`) — compose these
 
 - **`BrandMark({size, borderRadius})`** — the app's **one** brand mark: the
