@@ -183,42 +183,47 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          TextFormField(
-                            key: const Key('account-name-field'),
-                            controller: _nameController,
-                            decoration: InputDecoration(
-                              labelText: l10n.profileNameLabel,
-                              errorText: _fieldErrors['name'],
+                          // One label pattern throughout (#629, FR-UX-1):
+                          // every label sits ABOVE its field, never animated
+                          // into the box border.
+                          LabeledField(
+                            label: l10n.profileNameLabel,
+                            child: TextFormField(
+                              key: const Key('account-name-field'),
+                              controller: _nameController,
+                              decoration: InputDecoration(
+                                errorText: _fieldErrors['name'],
+                              ),
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? l10n.profileNameRequired
+                                  : null,
                             ),
-                            validator: (v) => (v == null || v.trim().isEmpty)
-                                ? l10n.profileNameRequired
-                                : null,
                           ),
                           const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            key: const Key('account-locale-field'),
-                            initialValue: _locale,
-                            decoration: InputDecoration(
-                              labelText: l10n.profileLocaleLabel,
+                          LabeledField(
+                            label: l10n.profileLocaleLabel,
+                            child: DropdownButtonFormField<String>(
+                              key: const Key('account-locale-field'),
+                              initialValue: _locale,
+                              // Endonyms, deliberately untranslated: each
+                              // option must read correctly to a speaker of
+                              // the language it selects. The values are the
+                              // supported BCP 47 tags (D-34) —
+                              // `en-GB`/`pt-PT`, never the generic `en`/`pt`.
+                              items: const [
+                                DropdownMenuItem(
+                                  value: kDefaultLocaleTag,
+                                  child: Text('English'),
+                                ),
+                                DropdownMenuItem(
+                                  value: kPortugueseLocaleTag,
+                                  child: Text('Português'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) setState(() => _locale = v);
+                              },
                             ),
-                            // Endonyms, deliberately untranslated: each
-                            // option must read correctly to a speaker of the
-                            // language it selects. The values are the
-                            // supported BCP 47 tags (D-34) — `en-GB`/`pt-PT`,
-                            // never the generic `en`/`pt`.
-                            items: const [
-                              DropdownMenuItem(
-                                value: kDefaultLocaleTag,
-                                child: Text('English'),
-                              ),
-                              DropdownMenuItem(
-                                value: kPortugueseLocaleTag,
-                                child: Text('Português'),
-                              ),
-                            ],
-                            onChanged: (v) {
-                              if (v != null) setState(() => _locale = v);
-                            },
                           ),
                           const SizedBox(height: 24),
                           PrimaryActionButton(

@@ -49,6 +49,9 @@ class TodoAssigneePickerField extends ConsumerWidget {
 
     return LabeledField(
       label: l10n.todoAssigneeFieldLabel,
+      // A GROUP, not one control: a roster of selectable rows that each
+      // announce their own member name (#629).
+      labelsChild: false,
       child: memberNamesAsync.when(
         loading: () => const Padding(
           padding: EdgeInsets.all(16),

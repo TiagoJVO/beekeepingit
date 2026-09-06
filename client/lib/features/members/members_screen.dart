@@ -152,18 +152,19 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
             children: [
               Form(
                 key: _formKey,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
+                    // One label pattern app-wide (#629, FR-UX-1): the label
+                    // sits ABOVE the field, never animated into its box
+                    // border.
+                    LabeledField(
+                      label: l10n.membersInviteEmailLabel,
                       child: TextFormField(
                         key: const Key('invite-email-field'),
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          labelText: l10n.membersInviteEmailLabel,
-                          errorText: _emailError,
-                        ),
+                        decoration: InputDecoration(errorText: _emailError),
                         validator: (v) {
                           final value = (v ?? '').trim();
                           if (value.isEmpty) {
@@ -176,19 +177,26 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    // Not full-width (unlike the other screens' primary
-                    // actions): this button shares its row with the email
-                    // field rather than owning the whole form width. Still
-                    // gets the same 44+ tap-target height (#79/#80) — this
-                    // previously had no explicit minimumSize at all, silently
-                    // sized to Material 3's 40px default.
-                    PrimaryActionButton(
-                      key: const Key('invite-submit-button'),
-                      label: l10n.membersInviteButton,
-                      busy: _inviting,
-                      fullWidth: false,
-                      onPressed: () => _invite(l10n),
+                    const SizedBox(height: 12),
+                    // Under the field rather than beside it (#629). A label
+                    // above the field cannot share a row with the button
+                    // that submits it: aligned to the row's top the button
+                    // rides up level with the LABEL, and any fixed nudge to
+                    // push it back down is a guess that breaks the moment
+                    // the OS text scale grows the label — the exact
+                    // large-text case this milestone is about (FR-AX-1).
+                    // Still not full-width (unlike a whole form's primary
+                    // action): it submits one field, and keeps the shared
+                    // 44+ tap-target height (#79/#80).
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: PrimaryActionButton(
+                        key: const Key('invite-submit-button'),
+                        label: l10n.membersInviteButton,
+                        busy: _inviting,
+                        fullWidth: false,
+                        onPressed: () => _invite(l10n),
+                      ),
                     ),
                   ],
                 ),

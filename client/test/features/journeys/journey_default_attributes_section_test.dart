@@ -2,8 +2,11 @@ import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/activities/activity_types.dart';
 import 'package:beekeepingit_client/features/journeys/journey_default_attributes_section.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/a11y_matchers.dart';
 
 /// The controlled vocabularies render in the ACTIVE language while the value
 /// the section builds stays the stored/wire string (#625, NFR-I18N-1,
@@ -27,6 +30,58 @@ void main() {
       ),
     ),
   );
+
+  // #629 (FR-UX-1, FR-AX-1): this section renders INSIDE the journey form,
+  // whose own fields already wear their labels above — so its floating
+  // labels were a mixed pattern within one screen.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    for (final entry in const {
+      activityTypeTreatment: [
+        'journey-default-treatment-context-field',
+        'journey-default-treatment-type-field',
+      ],
+      activityTypeFeeding: ['journey-default-feed-type-field'],
+      activityTypeHarvest: ['journey-default-lot-batch-field'],
+    }.entries) {
+      testWidgets('no ${entry.key} default paints a floating Material label', (
+        tester,
+      ) async {
+        final controller = JourneyDefaultAttributesController();
+        addTearDown(controller.dispose);
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          host(
+            type: entry.key,
+            controller: controller,
+            locale: const Locale('en'),
+          ),
+        );
+
+        expectNoFloatingFieldLabels(
+          tester,
+          find.byType(JourneyDefaultAttributesSection),
+        );
+        // Each label above its field, and still the field's own accessible
+        // name (FR-AX-1).
+        for (final key in entry.value) {
+          expect(
+            find.ancestor(
+              of: find.byKey(Key(key)),
+              matching: find.byType(LabeledField),
+            ),
+            findsOneWidget,
+            reason: '$key must sit under a LabeledField',
+          );
+          expect(
+            tester.getSemantics(find.byKey(Key(key))).label.trim(),
+            isNotEmpty,
+            reason: '$key lost its accessible name',
+          );
+        }
+        handle.dispose();
+      });
+    }
+  });
 
   testWidgets('English renders English treatment-product options (#625)', (
     tester,
