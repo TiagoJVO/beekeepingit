@@ -8,6 +8,7 @@ import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import 'profile_repository.dart';
@@ -167,7 +168,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                // The bottom gutter is the chrome band, not a gutter (#789):
+                // at the 200% text scale FR-AX-1 supports this form scrolls,
+                // and the "Profile saved." toast it raises then landed on the
+                // Save button it was reporting on. No FAB and no bottom
+                // navigation here — the route is declared outside the shell —
+                // so the band is the toast's own height, which out here
+                // includes the home-indicator inset the toast's bar carries;
+                // `scrollBottomInsetOf` adds it.
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  24,
+                  24,
+                  BrandDimens.scrollBottomInsetOf(context),
+                ),
                 child: Form(
                   key: _formKey,
                   child: _ProfileFormFields(
