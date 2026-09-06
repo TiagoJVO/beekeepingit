@@ -622,4 +622,64 @@ void main() {
       );
     },
   );
+
+  group('layout at 375x812 (#630, FR-UX-1)', () {
+    // The form used to hang off a plain `Center`, which splits the leftover
+    // vertical space into equal bands above and below it — ~345px of dead
+    // space under the header on a 375x812 phone, unlike every other list and
+    // form screen in the app, which starts its content just under the header.
+    testWidgets('the form starts immediately under the header', (tester) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(find.byType(SingleChildScrollView)).top;
+
+      expect(
+        contentTop - headerBottom,
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the profile form must start just under the header like every '
+            'other form screen; it started ${contentTop - headerBottom}px '
+            'below it',
+      );
+    });
+
+    // A FORWARD guard, not a reproduction: the centred layout already put
+    // Save at y≈612, on screen and in the lower two thirds, so this passes
+    // against the old layout too. What it protects against is the opposite
+    // failure — top-aligning a short form so hard the primary action floats
+    // up into the top third. The reported bug is carried entirely by the
+    // "starts immediately under the header" test above.
+    testWidgets('Save profile stays within comfortable thumb reach', (
+      tester,
+    ) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expectWithinThumbReach(
+        tester,
+        find.byKey(const Key('profile-save-button')),
+        label: 'Save profile',
+      );
+    });
+  });
 }

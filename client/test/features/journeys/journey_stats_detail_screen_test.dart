@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../support/a11y_matchers.dart';
+
 /// Widget tests for the #391 "More stats" per-apiary breakdown screen
 /// (`/journeys/:id/stats`) — mirrors journey_detail_screen_test.dart's own
 /// house style: a real `BeekeepingitApp`/`GoRouter`, hand-written fakes, full
@@ -442,6 +444,50 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('1/2 apiaries treated'), findsOneWidget);
+    });
+  });
+
+  group('JourneyStatsDetailScreen — layout at 375x812 (#630, FR-UX-1)', () {
+    // A scrolling breakdown wrapped in a plain `Center` floats in the middle
+    // of the viewport while it is short and only creeps up to the top as the
+    // list grows. Content that scrolls has to start at the top, like every
+    // other list screen in the app.
+    testWidgets('the breakdown starts at the top of the content area', (
+      tester,
+    ) async {
+      useViewport(tester);
+
+      await _openStats(tester, plannedApiaryIds: const ['a1']);
+
+      final filterBar = find.byKey(const Key('journey-stats-filter-bar'));
+      expect(filterBar, findsOneWidget);
+      final scroll = find.ancestor(
+        of: filterBar,
+        matching: find.byType(SingleChildScrollView),
+      );
+      // Guarded before getRect, so a second wrapping scroll view fails with
+      // this line rather than an opaque "matched N widgets" from getRect.
+      expect(scroll, findsOneWidget);
+      // Anchored on the navigation shell, not the header: this screen has no
+      // AppBar of its own, and the app shell stacks the offline/needs-fix
+      // banners between its header and the route's content area. The shell is
+      // the region this screen is actually handed, so the assertion keeps
+      // meaning something if a banner is ever showing.
+      final contentTop = tester
+          .getRect(find.byType(StatefulNavigationShell))
+          .top;
+      final scrollTop = tester.getRect(scroll).top;
+
+      // Bounded at BOTH ends: the upper bound catches the dead band this
+      // issue is about, the lower bound catches content rendering up out of
+      // its own content area.
+      expect(
+        scrollTop - contentTop,
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the per-apiary breakdown must start at the top of the content '
+            'area; it started ${scrollTop - contentTop}px below it',
+      );
     });
   });
 }

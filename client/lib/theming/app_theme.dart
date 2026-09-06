@@ -39,8 +39,10 @@ import 'brand_tokens.dart';
 ///
 /// Typography is bundled (offline-first, no runtime font fetching): **Archivo**
 /// is the app-wide default (`fontFamily`) for all UI/body; **Playfair Display**
-/// is applied to the display/headline/title styles for screen titles + brand,
-/// matching the prototype. Both are declared under `flutter: fonts:` in
+/// is applied to the display/headline tiers and `titleLarge` — screen titles +
+/// brand — matching the prototype. `titleMedium` stays on Archivo because
+/// Material resolves it for *form controls*, not titles (#628; see
+/// [_themeFrom]). Both families are declared under `flutter: fonts:` in
 /// `pubspec.yaml`.
 abstract final class AppTheme {
   /// Family name for body/UI text — matches the `fonts:` family in pubspec.
@@ -131,8 +133,9 @@ abstract final class AppTheme {
   static ThemeData dark() => _themeFrom(darkScheme);
 
   /// Builds a [ThemeData] from a brand [ColorScheme]: Archivo as the app-wide
-  /// default text family, Playfair Display on the display/headline/title text
-  /// styles (screen titles + brand, per the prototype).
+  /// default text family, Playfair Display on the display/headline tiers and
+  /// `titleLarge` (screen titles + brand, per the prototype). `titleMedium`
+  /// stays on Archivo — see the typography block below (#628).
   static ThemeData _themeFrom(ColorScheme scheme) {
     final base = ThemeData(
       useMaterial3: true,
@@ -140,9 +143,32 @@ abstract final class AppTheme {
       fontFamily: bodyFontFamily,
     );
 
-    // Apply the display serif to title-tier styles only, leaving body/label
-    // styles on Archivo (inherited from `fontFamily` above). textTheme is
-    // resolved against the scheme's brightness first so colors stay correct.
+    // Apply the display serif to the display/headline tiers and `titleLarge`
+    // — the screen-title/brand tiers — leaving every other style on Archivo
+    // (inherited from `fontFamily` above). textTheme is resolved against the
+    // scheme's brightness first so colors stay correct.
+    //
+    // `titleMedium` is deliberately *not* in this list (#628). Despite the
+    // name, the one thing that actually resolves it here is a form control:
+    // `DropdownButton` reads it for its selected value and its menu items
+    // (`dropdown.dart`, unconditionally — no M3 branch, and no theme hook
+    // either, since `DropdownMenuThemeData` targets the unrelated M3
+    // `DropdownMenu` this app does not use). Serif there put a Playfair word
+    // inside every sans-serif form, against the prototype's "Archivo — all
+    // UI, labels, inputs, buttons, body" (docs/design/prototype.md
+    // §Typography).
+    //
+    // Be careful with the folklore that `PopupMenuButton` items, `AlertDialog`
+    // content and `SnackBar` content also ride `titleMedium`: that is the
+    // Material 2 default set, and this theme sets `useMaterial3: true` (below).
+    // Under M3 they resolve `labelLarge`, `bodyMedium` and `bodyMedium`
+    // respectively, so they were never serif and are not affected by this
+    // change — check `_PopupMenuDefaultsM3` / `_DialogDefaultsM3` /
+    // `_SnackBarDefaultsM3` before assuming otherwise.
+    //
+    // Section headers keep the serif without this tier: [SectionHeader]
+    // (theming/brand_widgets.dart) pins [displayFontFamily] itself, and it is
+    // the app's one section-header mechanism.
     final display = base.textTheme.apply(fontFamily: displayFontFamily);
     final textTheme = base.textTheme.copyWith(
       displayLarge: display.displayLarge,
@@ -152,7 +178,6 @@ abstract final class AppTheme {
       headlineMedium: display.headlineMedium,
       headlineSmall: display.headlineSmall,
       titleLarge: display.titleLarge,
-      titleMedium: display.titleMedium,
     );
 
     // Prototype header is a plum bar (docs/design/prototype.md: "Plum 700 —

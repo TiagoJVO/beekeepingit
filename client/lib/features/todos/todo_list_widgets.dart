@@ -371,7 +371,14 @@ class _TodoTile extends StatelessWidget {
     // a per-row text decoration.
     return BrandCard(
       key: Key('todo-${todo.id}'),
-      semanticLabel: '${todo.title}. $dueText · $priorityLabel',
+      // The row's WHOLE announcement (#662, FR-AX-1): [BrandCard] excludes
+      // its child's semantics, so the status — the meaning behind the
+      // leading tile's icon/colour and the overdue badge, and the only
+      // signal that a row is done or late — has to be spelled out here
+      // rather than left on the widgets that draw it (WCAG 2.2 AA 1.1.1).
+      semanticLabel:
+          '${todo.title}. $dueText · $priorityLabel. '
+          '${l10n.todoStatusSemanticLabel(statusWord)}',
       // Tapping a row opens the read-focused detail screen (#293), not the
       // edit form directly — mirrors _ActivityTile/journey list row's own
       // tap-to-detail convention (activity_list_widgets.dart,
@@ -381,17 +388,15 @@ class _TodoTile extends StatelessWidget {
         children: [
           // The leading icon is the ONLY status signal for an open,
           // non-overdue row (no visible badge — that's reserved for
-          // overdue/done, this file's own doc comment) — the wrapping
-          // `Semantics` label gives screen readers a text alternative (WCAG
-          // 2.2 AA 1.1.1), never relying on the icon shape/colour alone.
-          Semantics(
-            label: l10n.todoStatusSemanticLabel(statusWord),
-            child: LeadingIconTile(
-              icon: statusIcon,
-              color: statusVisual.color,
-              tint: statusVisual.tint,
-              size: BrandDimens.sizeLeadingTileSmall,
-            ),
+          // overdue/done, this file's own doc comment). Its text alternative
+          // (WCAG 2.2 AA 1.1.1) lives in the card's `semanticLabel` above,
+          // not in a `Semantics` wrapper here: the card speaks as one node
+          // and excludes its children (#662).
+          LeadingIconTile(
+            icon: statusIcon,
+            color: statusVisual.color,
+            tint: statusVisual.tint,
+            size: BrandDimens.sizeLeadingTileSmall,
           ),
           const SizedBox(width: 14),
           Expanded(

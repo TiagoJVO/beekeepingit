@@ -171,6 +171,80 @@ void main() {
     expect(tapped, isTrue);
   });
 
+  // #662 (FR-AX-1): a row card speaks as ONE node. The three tests below pin
+  // the contract `BrandCard`'s own doc comment states, at the level where it
+  // lives — the screen-level sweep in `test/a11y_field_ux_test.dart` proves it
+  // holds on every list screen, these prove the widget itself is why.
+  testWidgets('BrandRowCard announces title, subtitle and trailing label '
+      'exactly once', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        BrandRowCard(
+          key: const Key('row'),
+          title: 'Barragem Norte',
+          subtitle: '30 hives · 5.4 km away',
+          trailing: const Text('40d'),
+          trailingSemanticLabel: '40 days since the last visit',
+          leading: const LeadingIconTile(
+            icon: Icons.hive,
+            color: Colors.brown,
+            tint: Color(0xFFF4EDDB),
+          ),
+          onTap: () {},
+        ),
+      ),
+    );
+
+    // The WHOLE label, not a `contains`: the visible "40d" and the title/
+    // subtitle `Text`s must not merge in on top of it.
+    expect(
+      tester.getSemantics(find.byKey(const Key('row'))).label,
+      'Barragem Norte. 30 hives · 5.4 km away. 40 days since the last visit',
+    );
+  });
+
+  testWidgets('BrandRowCard stays activatable through the semantics tree', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    var tapped = false;
+    await tester.pumpWidget(
+      _host(
+        BrandRowCard(
+          key: const Key('row'),
+          title: 'Barragem Norte',
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
+
+    // Not `tester.tap` — that is a pointer event and would pass even if the
+    // semantics tree had lost the action. This is the screen-reader gesture,
+    // driven through the semantics tree itself, and it throws if the node
+    // does not actually carry `SemanticsAction.tap`.
+    tester.semantics.tap(find.semantics.byLabel('Barragem Norte'));
+    expect(tapped, isTrue);
+    handle.dispose();
+  });
+
+  testWidgets('BrandCard without a semanticLabel keeps its children\'s '
+      'semantics', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        const BrandCard(
+          key: Key('panel'),
+          child: Column(children: [Text('Attributes'), Text('Honey: 12 kg')]),
+        ),
+      ),
+    );
+
+    // Detail-screen panels and menu cards rely on this: the exclusion is tied
+    // to composing a label, so a card that composes none must still announce
+    // what it contains.
+    expect(find.bySemanticsLabel('Attributes'), findsOneWidget);
+    expect(find.bySemanticsLabel('Honey: 12 kg'), findsOneWidget);
+  });
+
   testWidgets('EmptyState renders its message and optional icon', (
     tester,
   ) async {
