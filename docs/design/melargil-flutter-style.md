@@ -31,6 +31,12 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
   `120` at the bottom to clear the FAB (`BrandDimens.scrollBottomInset`).
+  That inset is for screens a FAB actually floats over — a tab root, or a
+  pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
+  full-screen **form** is a pushed route with no FAB at all (the shell hides
+  its own on any pushed route), and its pinned action bar sits outside the
+  scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
+  the bar do the clearing.
 
 ## Widgets (`brand_widgets.dart`) — compose these
 

@@ -76,6 +76,13 @@ are recorded.
 - [ ] **One clear primary action per screen**, visually distinct (the app's honey/amber accent
       is reserved for it — see `docs/design/prototype.md`'s "Honey is the only primary action"
       rule) and full-width/56px tall via `PrimaryActionButton`.
+- [ ] **That primary action is pinned, never scrolled to** — on a full-screen form it (and any
+      destructive action beside it) sits in a bar OUTSIDE the scroll view, so it is in the same
+      place at every scroll offset, viewport height and text scale. A bounded inner scrollable
+      (an embedded map picker, an apiary/assignee list) swallows the drag that would otherwise
+      bring a trailing action into view, which on a short viewport strands the user on a fully
+      valid form (`#341`, `#357`). Reference implementation:
+      `client/lib/features/apiaries/apiary_form_screen.dart`'s `build`.
 - [ ] **Minimal steps** for field-critical flows (e.g. logging an activity) — don't add a
       confirmation screen/dialog for routine saves; reserve interruption for destructive or
       hard-to-undo actions (delete, logout).

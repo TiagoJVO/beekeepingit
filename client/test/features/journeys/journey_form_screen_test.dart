@@ -226,11 +226,15 @@ Future<void> _openNewJourneyForm(
   await tester.pumpAndSettle();
 }
 
-/// The journey form's content (name + type dropdown + apiary picker +
-/// save/close/delete) exceeds the default 800x600 test viewport, which
-/// would otherwise leave the close/delete buttons off-screen for tap() —
-/// mirrors add_activity_screen_test.dart's own fix for its similarly-tall
-/// Treatment form. Called at the start of every test in this file.
+/// The journey form's fields (name + type dropdown + defaults section +
+/// apiary picker) exceed the default 800x600 test viewport, which would
+/// otherwise leave the lower ones off-screen for tap() — mirrors
+/// add_activity_screen_test.dart's own fix for its similarly-tall Treatment
+/// form. Called at the start of every test in this file.
+///
+/// The ACTIONS need no such help since #357 pinned them outside the scroll
+/// view; `_pinnedActionTests` below deliberately uses a short viewport
+/// instead, which is where that matters.
 void _useTallViewport(WidgetTester tester) {
   tester.view.physicalSize = const Size(1200, 2400);
   tester.view.devicePixelRatio = 1.0;
@@ -850,5 +854,249 @@ void main() {
       expect(repo.created, hasLength(1));
       expect(repo.created.single.name, 'Colheita de Primavera');
     });
+  });
+
+  _pinnedActionTests();
+}
+
+/// Opens the create form at an explicit [viewport] rather than
+/// [_useTallViewport]'s — the pinning tests below need the form laid out at
+/// a height a real phone in the field actually has.
+Future<void> _openNewJourneyFormAt(
+  WidgetTester tester,
+  Size viewport, {
+  required _FakeJourneysRepository repo,
+}) async {
+  tester.view.physicalSize = viewport;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(_buildApp(repo: repo));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-journeys')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-fab')));
+  await tester.pumpAndSettle();
+}
+
+/// #357 — the actions live in a bar pinned OUTSIDE the scroll view, so they
+/// are on screen at every scroll offset. The hazard here is the milder
+/// sibling of #341's: this form embeds no gesture-swallowing map, but its
+/// apiary multi-select is a bounded, inner-scrollable list that traps a drag
+/// started over it, so an action parked at the end of the outer scrollable
+/// is a fight to reach on a short viewport (FR-UX-1, FR-AX-1, D-18).
+void _pinnedActionTests() {
+  group('the primary action stays pinned at a short viewport '
+      '(FR-UX-1, FR-AX-1, D-18, #357)', () {
+    // A 400x640 phone held at arm's length in a bee suit — shorter than this
+    // form's content, which is exactly the case the pinning exists for.
+    const shortViewport = Size(400, 640);
+
+    testWidgets(
+      'Save is on-screen and actually creates the journey without scrolling',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyFormAt(tester, shortViewport, repo: repo);
+
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        await tester.pump();
+
+        // Deliberately NO ensureVisible before any of this — that is the
+        // whole point of a pinned action bar.
+        final save = find.byKey(const Key('journey-save-button'));
+        expectFullyOnScreen(
+          tester,
+          save,
+          reason: 'Save must be fully on-screen on a short viewport',
+        );
+        expectMinTapTarget(tester, save);
+        expectHasSemanticsLabel(tester, const Key('journey-save-button'));
+
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+
+        expect(
+          repo.created,
+          hasLength(1),
+          reason:
+              'tapping the pinned Save must create the journey, not silently '
+              'no-op',
+        );
+        expect(repo.created.single.name, 'Colheita de Primavera');
+      },
+    );
+
+    testWidgets(
+      'Save stays on-screen mid-scroll, with the drag that would reach it '
+      'swallowed by the apiary multi-select',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyFormAt(tester, shortViewport, repo: repo);
+
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        await tester.pump();
+
+        // Park the form mid-scroll, then keep dragging — but over the
+        // multi-select's own bounded list, which consumes the gesture
+        // instead of passing it to the form. That is the trap: the user
+        // swipes up and the form does not move, so a trailing action never
+        // arrives.
+        //
+        // The pre-scroll is measured, not a fixed offset, and it scrolls the
+        // MINIMUM that still sets the trap: just far enough to bring a sliver
+        // of the picker in from the bottom edge. Two things have to hold at
+        // once and they pull against each other — the picker must be visible
+        // enough to start a drag on, while Save must still be below the fold,
+        // because a Save already scrolled into view would let this test pass
+        // against the very layout it exists to reject. A hardcoded offset
+        // cannot hold both: it encodes today's field heights, and the first
+        // field added above the picker slides the window past one or other
+        // end of it.
+        final apiaryList = find.byKey(const Key('journey-apiaries-list'));
+        final formScrollView = find
+            .ancestor(
+              of: apiaryList,
+              matching: find.byType(SingleChildScrollView),
+            )
+            .first;
+        const exposedPickerSliver = 60.0;
+        await tester.drag(
+          find.byKey(const Key('journey-name-field')),
+          Offset(
+            0,
+            tester.getRect(formScrollView).bottom -
+                exposedPickerSliver -
+                tester.getRect(apiaryList).top,
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The drag has to genuinely START over the picker, on the part of it
+        // actually visible inside the form's scroll view. `tester.drag` would
+        // aim at the picker's geometric centre, which may sit below the
+        // visible area — the gesture would miss the trap entirely and this
+        // test would pass for the wrong reason.
+        final visiblePicker = tester
+            .getRect(apiaryList)
+            .intersect(tester.getRect(formScrollView));
+        expect(
+          visiblePicker.height,
+          greaterThan(24),
+          reason:
+              'the picker must be visibly on screen for this drag to be the '
+              'one a user would actually make',
+        );
+        await tester.dragFrom(visiblePicker.center, const Offset(0, -400));
+        await tester.pumpAndSettle();
+
+        final save = find.byKey(const Key('journey-save-button'));
+        expectFullyOnScreen(
+          tester,
+          save,
+          reason:
+              'Save must stay on-screen when the drag that would reach it is '
+              'swallowed by the inner picker',
+        );
+        expectMinTapTarget(tester, save);
+
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+
+        expect(repo.created, hasLength(1));
+      },
+    );
+
+    testWidgets('the edit form pins Close and Delete alongside Save', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository(
+        existing: const Journey(
+          id: 'j1',
+          name: 'Existing Journey',
+          mainActivityType: 'feeding',
+          status: journeyStatusOpen,
+          apiaryIds: ['a1'],
+        ),
+      );
+      tester.view.physicalSize = shortViewport;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      GoRouter.of(tester.element(find.byType(AppShell)))
+          .go('/journeys/j1/edit');
+      await tester.pumpAndSettle();
+
+      for (final key in const [
+        Key('journey-save-button'),
+        Key('journey-close-button'),
+        Key('journey-delete-button'),
+      ]) {
+        final finder = find.byKey(key);
+        expectFullyOnScreen(
+          tester,
+          finder,
+          reason: '$key must be pinned on-screen on a short viewport',
+        );
+        expectMinTapTarget(tester, finder);
+      }
+    });
+
+    testWidgets(
+      'the three-action edit bar fits a short landscape body instead of '
+      'overflowing and clipping Delete',
+      (tester) async {
+        // A handset in landscape leaves the shell body shorter than the
+        // edit-mode bar's own height. A fixed-height bar in a Column would
+        // hand the scroll view 0px, overflow the Column, and paint the
+        // destructive Delete clipped under the navigation bar — below the
+        // 44x44 floor (D-18) this very pinning is meant to protect.
+        final repo = _FakeJourneysRepository(
+          existing: const Journey(
+            id: 'j1',
+            name: 'Existing Journey',
+            mainActivityType: 'feeding',
+            status: journeyStatusOpen,
+            apiaryIds: ['a1'],
+          ),
+        );
+        tester.view.physicalSize = const Size(740, 360);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        GoRouter.of(tester.element(find.byType(AppShell)))
+            .go('/journeys/j1/edit');
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'the pinned bar must not overflow its Column',
+        );
+
+        // Save is what the user came for — it stays reachable without
+        // scrolling even here.
+        expectFullyOnScreen(
+          tester,
+          find.byKey(const Key('journey-save-button')),
+          reason: 'Save must stay on-screen in a short landscape body',
+        );
+        for (final key in const [
+          Key('journey-save-button'),
+          Key('journey-close-button'),
+          Key('journey-delete-button'),
+        ]) {
+          expectMinTapTarget(tester, find.byKey(key));
+        }
+      },
+    );
   });
 }
