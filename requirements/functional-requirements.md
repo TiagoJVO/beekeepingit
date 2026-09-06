@@ -379,6 +379,9 @@ harvest, which requires visiting all apiaries).
     until the AI assistant itself ships (M8, FR-AI-\*); it is not a primary area
     while it is a placeholder. Home carries **no FAB** — quick-add is contextual to
     an area, and home spans them all.
+  - _Per #650:_ at expanded window widths (>=840, FR-PL-1) the same primary areas
+    render as a navigation rail beside the content; the tab set, order and Home's
+    centre position are unchanged (D-35).
   - _Prototype:_ Melargil app shell (see
     [`docs/design/prototype.md`](../docs/design/prototype.md)).
 

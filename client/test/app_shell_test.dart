@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
@@ -19,12 +20,15 @@ import 'package:beekeepingit_client/features/settings/notification_settings_repo
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
+import 'package:beekeepingit_client/theming/brand_dimens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'support/a11y_matchers.dart';
 import 'widget_test.dart' show FakeDeviceLocationService;
 
 /// A test-controlled stand-in for the real, PowerSync-backed
@@ -46,6 +50,27 @@ class _CompleteProfileController extends ProfileController {
     name: 'Test User',
     email: 'test@example.com',
     locale: 'en',
+    profileComplete: true,
+    createdAt: DateTime.utc(2026, 1, 1),
+    updatedAt: DateTime.utc(2026, 1, 1),
+  );
+}
+
+/// The same complete profile, in Portuguese — the app's UI locale is derived
+/// from the stored profile `locale` (`localeProvider`), so this is how a test
+/// drives the whole app in pt rather than hand-building a `MaterialApp` that
+/// bypasses the real wiring (matches `add_activity_screen_test.dart`'s own
+/// `_PortugueseProfileController`). Used by the desktop-rail group below
+/// (#650): PT labels are longer than EN, and `NavigationRailLabelType.all` is
+/// where a longer label costs the most room — see that group's own doc on
+/// exactly what running both locales does and does not catch.
+class _PortugueseProfileController extends ProfileController {
+  @override
+  Future<Profile> build() async => Profile(
+    id: 'test-user',
+    name: 'Test User',
+    email: 'test@example.com',
+    locale: 'pt',
     profileComplete: true,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
@@ -165,6 +190,9 @@ Widget _buildShellApp({
   NotificationPreferencesRepository? notificationPreferences,
   LocalPrefs? notificationDedupPrefs,
   NotificationSettingsRepository? notificationSettings,
+  // #650: drives the whole app in Portuguese via [_PortugueseProfileController]
+  // for the desktop-rail group's EN/PT parity check.
+  bool portuguese = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -221,7 +249,11 @@ Widget _buildShellApp({
       // fetch, matching todo_form_screen_test.dart's/
       // apiary_detail_screen_test.dart's own convention.
       memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
-      profileProvider.overrideWith(_CompleteProfileController.new),
+      profileProvider.overrideWith(
+        portuguese
+            ? _PortugueseProfileController.new
+            : _CompleteProfileController.new,
+      ),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       syncStatusProvider.overrideWithValue(
         syncStatus ??
@@ -1396,4 +1428,333 @@ void main() {
       expect(find.text('Sync error'), findsOneWidget);
     },
   );
+
+  group('desktop navigation rail (#650, FR-UX-2)', () {
+    // Each destination's KEYED widget under the rail is the label
+    // (KeyedSubtree), not the destination itself — [NavigationRailDestination]
+    // takes no `key` param at all. Rendered under `labelType.all`, the label
+    // is stable across selection (unlike `icon`, which the destination swaps
+    // for `selectedIcon`), and it sits inside the destination's own ink well,
+    // so `tester.tap` on it still selects the destination.
+    for (final (locale, portuguese, labels) in const [
+      (
+        Locale('en'),
+        false,
+        (
+          apiaries: 'Apiaries',
+          activities: 'Activities',
+          home: 'Home',
+          journeys: 'Journeys',
+          todos: 'Todos',
+        ),
+      ),
+      // PT labels are longer than EN — run the same group in both locales.
+      // This does NOT assert against silent ellipsis clipping (Flutter's
+      // default `Text` under `labelType.all` softWraps rather than
+      // truncating — navigation_rail.dart sets no `overflow`/`maxLines`, and
+      // neither does this app's theme, so there is no ellipsis mechanism
+      // active today to silently swallow part of a label). What this DOES
+      // catch: `pumpAndSettle` fails loudly on a `RenderFlex` overflow
+      // (yellow/black stripes) if a longer PT label ever needed more room
+      // than the destination reserves, and `find.text(label)` pins the exact
+      // full string once rendered, catching a build-side truncation (e.g. a
+      // future explicit `overflow: ellipsis`) at the WIDGET level. Neither
+      // check would catch clipping introduced purely at the RENDER/paint
+      // level (a genuine `TextOverflow.ellipsis` visually shortening an
+      // otherwise-intact widget) — that would need a `RenderParagraph`-level
+      // assertion this test does not make.
+      (
+        Locale('pt'),
+        true,
+        (
+          apiaries: 'Apiários',
+          activities: 'Atividades',
+          home: 'Início',
+          journeys: 'Jornadas',
+          todos: 'Tarefas',
+        ),
+      ),
+    ]) {
+      group('in ${locale.languageCode}', () {
+        testWidgets(
+          'the rail renders beside the content at 1280 wide, and the bottom '
+          'nav does not',
+          (tester) async {
+            useViewport(tester, size: kDesktopViewport);
+            await tester.pumpWidget(_buildShellApp(portuguese: portuguese));
+            await tester.pumpAndSettle();
+
+            expect(find.byKey(const Key('shell-nav-rail')), findsOneWidget);
+            expect(find.byKey(const Key('shell-bottom-nav')), findsNothing);
+            expect(find.byType(NavigationBar), findsNothing);
+          },
+        );
+
+        testWidgets(
+          'presents all five D-35 destinations in order, Home at index 2',
+          (tester) async {
+            useViewport(tester, size: kDesktopViewport);
+            await tester.pumpWidget(_buildShellApp(portuguese: portuguese));
+            await tester.pumpAndSettle();
+
+            final rail = tester.widget<NavigationRail>(
+              find.byKey(const Key('shell-nav-rail')),
+            );
+            expect(
+              rail.destinations
+                  .map((destination) => (destination.label as KeyedSubtree).key)
+                  .toList(),
+              const [
+                Key('shell-tab-apiaries'),
+                Key('shell-tab-activities'),
+                Key('shell-tab-home'),
+                Key('shell-tab-journeys'),
+                Key('shell-tab-todos'),
+              ],
+            );
+            expect(rail.selectedIndex, 2);
+          },
+        );
+
+        testWidgets(
+          'tapping shell-tab-journeys switches the branch and the header '
+          'title',
+          (tester) async {
+            useViewport(tester, size: kDesktopViewport);
+            await tester.pumpWidget(_buildShellApp(portuguese: portuguese));
+            await tester.pumpAndSettle();
+
+            await tester.tap(find.byKey(const Key('shell-tab-journeys')));
+            await tester.pumpAndSettle();
+
+            final rail = tester.widget<NavigationRail>(
+              find.byKey(const Key('shell-nav-rail')),
+            );
+            expect(rail.selectedIndex, 3);
+            expect(find.text(labels.journeys), findsWidgets);
+          },
+        );
+
+        testWidgets(
+          'every rail destination meets the 44x44 minimum tap target (D-18)',
+          (tester) async {
+            useViewport(tester, size: kDesktopViewport);
+            await tester.pumpWidget(_buildShellApp(portuguese: portuguese));
+            await tester.pumpAndSettle();
+
+            for (final route in const [
+              'apiaries',
+              'activities',
+              'home',
+              'journeys',
+              'todos',
+            ]) {
+              // NavigationRail wraps each destination's tap area in its own
+              // private `_IndicatorInkWell` (an unexported InkResponse
+              // subtype), so `find.byType(InkResponse)` — an exact-type
+              // match — finds nothing; `is InkResponse` matches the subtype.
+              expectMinTapTarget(
+                tester,
+                find.ancestor(
+                  of: find.byKey(Key('shell-tab-$route')),
+                  matching: find.byWidgetPredicate(
+                    (widget) => widget is InkResponse,
+                  ),
+                ),
+              );
+            }
+          },
+        );
+
+        testWidgets('each destination announces its label and selected state', (
+          tester,
+        ) async {
+          useViewport(tester, size: kDesktopViewport);
+          await tester.pumpWidget(_buildShellApp(portuguese: portuguese));
+          await tester.pumpAndSettle();
+
+          // Live-semantics assertion on the COMPILED tree — this is the
+          // rail's first live-semantics coverage, matching the bottom bar's
+          // own equivalent test below. It was NOT always possible: a
+          // confirmed, reproducible Flutter framework defect
+          // (https://github.com/flutter/flutter/issues/55758, tracked for
+          // this repo as #800) drops the ENTIRE compiled `SemanticsNode`
+          // subtree of a widget sharing a `Row` with a sibling `Navigator`
+          // when painted before it — exactly the rail's original arrangement
+          // here. `AppShell.build`'s own doc comment on this Row explains the
+          // fix (`Semantics(container: true, ...)` around the content) this
+          // test now depends on; do not remove that wrap.
+          for (final entry in <String, (String, bool)>{
+            'apiaries': (labels.apiaries, false),
+            'activities': (labels.activities, false),
+            'home': (labels.home, true),
+            'journeys': (labels.journeys, false),
+            'todos': (labels.todos, false),
+          }.entries) {
+            final (label, selected) = entry.value;
+            final semantics = tester.getSemantics(
+              find.byKey(Key('shell-tab-${entry.key}')),
+            );
+            expect(
+              semantics.label,
+              startsWith(label),
+              reason:
+                  'shell-tab-${entry.key} label was "${semantics.label}" '
+                  '(NavigationRailDestination appends its own "Tab X of Y" '
+                  'suffix, localization-dependent — only the label prefix is '
+                  'pinned here)',
+            );
+            expect(
+              semantics.getSemanticsData().flagsCollection.isSelected ==
+                  Tristate.isTrue,
+              selected,
+              reason: 'shell-tab-${entry.key} selected flag',
+            );
+          }
+        });
+      });
+    }
+
+    testWidgets('keyboard Tab order reaches every rail destination, grouped '
+        'contiguously, and the semantics workaround does not disturb it '
+        '(#650)', (tester) async {
+      useViewport(tester, size: kDesktopViewport);
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      // This is the coordinator's stated open risk on the
+      // `Semantics(container: true, ...)` workaround (AppShell.build's own
+      // doc on this Row): a rail reachable by screen reader but
+      // unreachable — or scrambled — by keyboard would not be an
+      // improvement. It is not, empirically: `Semantics` annotations and
+      // `FocusTraversalPolicy` are separate subsystems (one drives the
+      // accessibility tree, the other drives `FocusNode` traversal), and
+      // removing the wrap and re-running this exact test reproduces an
+      // IDENTICAL region sequence to the one asserted below — the
+      // workaround changes what screen readers see, nothing about what
+      // Tab visits or in what order.
+      final railRect = tester.getRect(find.byKey(const Key('shell-nav-rail')));
+      final headerBottom = tester
+          .getRect(find.byKey(const Key('shell-sync-pill')))
+          .bottom;
+
+      String classify(Rect rect) {
+        if (rect.top < headerBottom) return 'header';
+        if (rect.left < railRect.right) return 'rail';
+        return 'content';
+      }
+
+      // Walk one full traversal cycle (generously bounded so a genuine
+      // scramble/loop fails loudly instead of hanging).
+      final regions = <String>[];
+      Rect? firstRect;
+      for (var i = 0; i < 20; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        final renderObject = FocusManager.instance.primaryFocus?.context
+            ?.findRenderObject();
+        if (renderObject is! RenderBox || !renderObject.attached) continue;
+        final rect =
+            renderObject.localToGlobal(Offset.zero) & renderObject.size;
+        if (firstRect == null) {
+          firstRect = rect;
+        } else if (rect == firstRect) {
+          break; // back to the start — one full cycle done.
+        }
+        regions.add(classify(rect));
+      }
+
+      // The core requirement: the rail must be reachable by keyboard at
+      // all, not just by screen reader.
+      final railCount = regions.where((region) => region == 'rail').length;
+      expect(
+        railCount,
+        5,
+        reason:
+            'expected all 5 rail destinations to receive keyboard focus '
+            'in one Tab cycle; got regions: $regions',
+      );
+
+      // And grouped together, not interleaved with header/content — an
+      // interleaved order would mean Tab bounces in and out of the rail,
+      // which is confusing to navigate even if every destination is
+      // technically reachable.
+      final firstRailIndex = regions.indexOf('rail');
+      final lastRailIndex = regions.lastIndexOf('rail');
+      expect(
+        lastRailIndex - firstRailIndex + 1,
+        railCount,
+        reason:
+            'rail destinations must be contiguous in Tab order, not '
+            'interleaved with other chrome: $regions',
+      );
+    });
+
+    testWidgets('the bottom nav renders at 800x600 and the rail does not — the '
+        'boundary guard that keeps the rest of the suite honest below '
+        '${BrandDimens.breakpointExpanded} (BrandDimens.breakpointExpanded)', (
+      tester,
+    ) async {
+      expect(
+        800,
+        lessThan(BrandDimens.breakpointExpanded),
+        reason:
+            'this guard only proves anything if 800x600 (the default '
+            'widget-test surface every other shell test implicitly uses) '
+            'is genuinely below the breakpoint',
+      );
+
+      useViewport(tester, size: const Size(800, 600));
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
+      expect(find.byKey(const Key('shell-nav-rail')), findsNothing);
+      expect(find.byType(NavigationRail), findsNothing);
+    });
+
+    testWidgets(
+      'the bottom nav destinations announce their label and selected state '
+      'at 800x600 (D-18) — this shell had no live-semantics coverage at all '
+      "before #650; confirmed NOT affected by the rail's Row/Navigator "
+      'defect above, since Scaffold composites bottomNavigationBar after '
+      'body rather than as a Row sibling of it',
+      (tester) async {
+        useViewport(tester, size: const Size(800, 600));
+        await tester.pumpWidget(_buildShellApp());
+        await tester.pumpAndSettle();
+
+        for (final entry in <String, (String, bool)>{
+          'apiaries': ('Apiaries', false),
+          'activities': ('Activities', false),
+          'home': ('Home', true),
+          'journeys': ('Journeys', false),
+          'todos': ('Todos', false),
+        }.entries) {
+          final (label, selected) = entry.value;
+          // getSemantics on the COMPILED tree (not the widget config) — the
+          // point of this test is that it actually works here, unlike the
+          // rail's equivalent above.
+          final semantics = tester.getSemantics(
+            find.byKey(Key('shell-tab-${entry.key}')),
+          );
+          expect(
+            semantics.label,
+            startsWith(label),
+            reason:
+                'shell-tab-${entry.key} label was "${semantics.label}" '
+                '(NavigationDestination appends its own "Tab X of Y" suffix, '
+                'localization-dependent — only the label prefix is pinned '
+                'here)',
+          );
+          expect(
+            semantics.getSemanticsData().flagsCollection.isSelected ==
+                Tristate.isTrue,
+            selected,
+            reason: 'shell-tab-${entry.key} selected flag',
+          );
+        }
+      },
+    );
+  });
 }

@@ -53,6 +53,14 @@ void expectMinTapTarget(
 /// the app targets.
 const Size kHandsetViewport = Size(375, 812);
 
+/// The reference desktop/expanded-window viewport (#650) — 1280x800, above
+/// [BrandDimens.breakpointExpanded] (840), for tests that need to pin the
+/// shell's [NavigationRail] chrome rather than its default `NavigationBar`.
+/// Also matches Playwright's `devices["Desktop Chrome"]` (1280x720) closely
+/// enough to exercise the same "above the breakpoint" behaviour the e2e
+/// suite hits in CI.
+const Size kDesktopViewport = Size(1280, 800);
+
 /// Sizes the test view to [size] at a 1:1 device pixel ratio and restores it
 /// afterwards, so a layout assertion reads in logical pixels that match the
 /// viewport the issue/checklist talks about.
