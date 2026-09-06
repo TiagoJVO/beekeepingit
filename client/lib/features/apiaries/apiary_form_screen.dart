@@ -9,6 +9,7 @@ import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_tokens.dart';
 import '../organization/organization_repository.dart';
 import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
@@ -850,9 +851,14 @@ class _LocationPicker extends StatelessWidget {
                           point: location!,
                           width: 44,
                           height: 44,
-                          child: Icon(
+                          // Honey by name, not via `colorScheme.primary`: a
+                          // pin is a highlight over map imagery, the role
+                          // honey keeps now that `primary` is the accent that
+                          // has to read on a light surface (#627). Matches
+                          // apiary_map_screen.dart's own pins.
+                          child: const Icon(
                             Icons.location_on,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: BrandTokens.honey,
                             size: 36,
                           ),
                         ),

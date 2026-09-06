@@ -42,7 +42,10 @@ fail CI, not wait for a human pass.
       `tester.sendKeyEvent(LogicalKeyboardKey.tab)` and asserting `FocusManager.instance.primaryFocus`
       moves between the expected widgets in order.
 - [ ] **Contrast ≥ 4.5:1** for body text against its background, for every color pair the theme
-      defines (`client/lib/theming/app_theme.dart`, light and dark). Checked against the actual
+      defines (`client/lib/theming/app_theme.dart`, light and dark), and **≥ 3:1** for a control's
+      own boundary (SC 1.4.11) — that includes the roles Material draws _on_ the surface rather
+      than as an `on*` pair: `surface`/`primary` (outlined- and text-button labels, accent icons)
+      and `surface`/`outline` (button, input and chip borders). Checked against the actual
       `ColorScheme` values in `client/test/theming/app_theme_contrast_test.dart` — a palette
       change that regresses contrast fails that test, not just a manual look.
 - [ ] **Usable at increased text scale.** Widgets should not clip/overflow when
