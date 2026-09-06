@@ -37,7 +37,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiariesEmpty =>
-      'Ainda não há apiários. Toque em “Adicionar apiário” para criar um.';
+      'Ainda não há apiários. Crie o seu primeiro apiário para começar.';
 
   @override
   String apiariesError(String error) {

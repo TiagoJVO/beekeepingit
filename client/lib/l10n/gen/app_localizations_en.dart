@@ -37,7 +37,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiariesEmpty =>
-      'No apiaries yet. Tap “Add apiary” to create one.';
+      'No apiaries yet. Create your first apiary to get started.';
 
   @override
   String apiariesError(String error) {

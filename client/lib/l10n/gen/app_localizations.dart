@@ -148,10 +148,10 @@ abstract class AppLocalizations {
   /// **'Apiaries'**
   String get apiariesTitle;
 
-  /// Empty state on the apiaries list
+  /// Empty state on the apiaries list. Describes the action instead of naming a control (#636, FR-UX-1): the Apiaries tab has two quick actions (#52), so the shell collapses them behind the “Actions” speed dial (#347) — “Add apiary” is not a label the user can see until that toggle is expanded.
   ///
   /// In en, this message translates to:
-  /// **'No apiaries yet. Tap “Add apiary” to create one.'**
+  /// **'No apiaries yet. Create your first apiary to get started.'**
   String get apiariesEmpty;
 
   /// Error state on the apiaries list

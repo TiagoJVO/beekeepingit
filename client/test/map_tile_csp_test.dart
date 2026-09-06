@@ -154,8 +154,10 @@ void main() {
           source,
           contains('urlTemplate:'),
           reason:
-              '$path no longer renders a TileLayer — if the map moved, move '
-              'this guard with it rather than deleting it',
+              '$path no longer names a tile URL — whether it built the '
+              'TileLayer itself or went through map_chrome.dart\'s '
+              'mapTileLayer(), the template is passed HERE, so if the map '
+              'moved, move this guard with it rather than deleting it',
         );
         expect(
           RegExp(r"import\s+'map_tile_sources\.dart'").hasMatch(source),
