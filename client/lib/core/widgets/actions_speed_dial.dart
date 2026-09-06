@@ -69,14 +69,12 @@ class _ActionsSpeedDialState extends State<ActionsSpeedDial> {
     final colorScheme = Theme.of(context).colorScheme;
 
     // Single action: render it directly as the primary honey FAB (no toggle).
+    // The honey comes from the FAB theme (AppTheme pins it there, since the
+    // scheme's `primary` is the accent that has to stay legible *on* a light
+    // surface, which honey isn't — #627), so this passes no colors.
     if (widget.actions.length == 1) {
       final action = widget.actions.single;
-      return _ActionFab(
-        action: action,
-        onPressed: action.onPressed,
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-      );
+      return _ActionFab(action: action, onPressed: action.onPressed);
     }
 
     return Column(
@@ -138,18 +136,16 @@ class _ActionsToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Semantics(
       button: true,
       expanded: expanded,
       label: label,
       onTap: onPressed,
       child: ExcludeSemantics(
+        // Honey + on-honey come from the theme's FAB colors (#627).
         child: FloatingActionButton.extended(
           key: const Key('actions-speed-dial-toggle'),
           heroTag: 'actions-speed-dial-toggle',
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
           onPressed: onPressed,
           icon: Icon(expanded ? Icons.close : Icons.bolt),
           label: Text(label),
@@ -166,14 +162,17 @@ class _ActionFab extends StatelessWidget {
   const _ActionFab({
     required this.action,
     required this.onPressed,
-    required this.backgroundColor,
-    required this.foregroundColor,
+    this.backgroundColor,
+    this.foregroundColor,
   });
 
   final SpeedDialAction action;
   final VoidCallback onPressed;
-  final Color backgroundColor;
-  final Color foregroundColor;
+
+  /// Null for the primary (honey) FAB, which takes the theme's FAB colors;
+  /// set for the lower-emphasis options revealed by the expanded dial.
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {

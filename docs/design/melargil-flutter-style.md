@@ -18,7 +18,7 @@
 | `brand_widgets.dart` | The shared building blocks screens compose (see below).                                                                                                                          |
 
 Field-action buttons live in `core/widgets/field_action_button.dart`
-(`PrimaryActionButton` = honey 60px; `SecondaryActionButton` = outlined 56px,
+(`PrimaryActionButton` = honey 60px; `SecondaryActionButton` = outlined plum 56px,
 `destructive:` for delete/logout). Tap-target floor: `core/widgets/tap_target.dart`.
 
 ## The scale (from the prototype)
@@ -66,9 +66,23 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 
 ## Rules
 
-- **One honey primary action per screen** — `PrimaryActionButton` (or a
-  `FilledButton`, which inherits the honey shape). Secondary = outlined plum;
-  destructive = `SecondaryActionButton(destructive: true)`.
+- **One honey primary action per screen** — `PrimaryActionButton` or the FAB.
+  Those two pin the honey fill themselves; a bare `FilledButton` inherits the
+  brand shape/height but takes the scheme's accent, not honey. Secondary =
+  outlined plum (`SecondaryActionButton`); destructive =
+  `SecondaryActionButton(destructive: true)`.
+- **Honey is a fill, never a foreground on a light ground** — honey text or
+  icons on cream measure 1.84:1. So `colorScheme.primary` is **plum** in light
+  mode (the accent Material draws as a foreground: outlined/text-button
+  labels, chevrons, selection tints) and honey only appears as a background
+  paired with `BrandTokens.onHoney`, or as a highlight on a plum ground / map
+  imagery. In dark mode plum is the ground, so `primary` is honey there
+  (8.02:1 on plum 950) and the secondary button's label is cream (`#627`).
+- **Selection state is the accent, not honey** — a selected view-toggle
+  segment, a switched-on `Switch`, a selected chip and a focus ring all draw
+  `primary`, so in light mode they are plum-filled with a white on-colour
+  (9.62:1) rather than honey-filled. That is the point: honey marks the one
+  action to take, so it can't also mark every "this one is selected".
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.

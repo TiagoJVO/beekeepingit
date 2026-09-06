@@ -10,6 +10,7 @@ import '../../core/geo/haversine.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_tokens.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_info_sheet.dart';
 import 'map_chrome.dart';
@@ -540,9 +541,11 @@ class _ApiaryPin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = selected
-        ? theme.colorScheme.secondary
-        : theme.colorScheme.primary;
+    // Honey by name, not via `colorScheme.primary`: a pin is a highlight over
+    // map imagery ("the primary action + highlights", prototype §Design
+    // tokens), which is a role honey keeps — unlike the surface-legible accent
+    // `primary` now carries (#627). Selection stays the plum secondary.
+    final color = selected ? theme.colorScheme.secondary : BrandTokens.honey;
     return Semantics(
       button: true,
       label: '${apiary.name}, ${apiary.hiveCount}',
