@@ -33,8 +33,9 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   destinations and the `tabs[currentIndex]` active-tab lookup, so **tab position IS branch
   position** — the branch order below must match that list exactly. Tab order is
   apiaries · activities · home · journeys · todos, Home at the centre in the slot the
-  retired Assistant placeholder held. Home and Activities have no `_fabConfigByTab` entry,
-  so the shell renders no FAB on them.
+  retired Assistant placeholder held. Home is the only tab with no `_fabConfigByTab` entry,
+  so the shell renders no FAB on it (its area is every area); Activities gained one in #634
+  ("Add activity" → /activities/new, the branch's own two-step create flow).
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
@@ -66,7 +67,17 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │                                     routes to /todos/new?apiaryId=..., pre-selecting this
   │                                     apiary in the full form's own picker
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
-  │                        activity list, same filters + apiary label per row)
+  │   │                    activity list, same filters + apiary label per row)
+  │   └ new                NewActivityFlowScreen features/activities (#634, FR-UX-2/FR-AC-2;
+  │       │                the tab's OWN create flow, in THIS branch so Back returns to the
+  │       │                Activities list and the tab never switches under the user. Step 1
+  │       │                asks WHICH apiary — but only when there is a choice: 0 apiaries →
+  │       │                an explain-and-create-one state routing to /apiaries/new (never a
+  │       │                dead end), exactly 1 → the picker is skipped and the form renders
+  │       │                directly, 2+ → the searchable picker)
+  │       └ :apiaryId      NewActivityFlowScreen(apiaryId:) → AddActivityScreen under a banner
+  │                        naming the chosen apiary, with `returnLocation: '/activities'` so a
+  │                        save lands back on this tab instead of the apiary detail page
   ├ /home                  HomeScreen             features/home       ◄ live (#658, D-35/D-29
   │                        amended; THE LANDING SCREEN — initialLocation + the post-login and
   │                        post-onboarding redirect target. Summary of what needs attention:

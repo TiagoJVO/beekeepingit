@@ -288,6 +288,19 @@ class ActivityListView extends ConsumerWidget {
   }
 }
 
+/// Below this ROW width an activity renders in its compact, three-line phone
+/// form; at or above it the wide layout is preserved verbatim (#632).
+///
+/// 600 is Material 3's own compact/medium window boundary, and this app has no
+/// reason to draw a different line. The number is compared against the row's
+/// own constraints rather than the viewport, so a full-bleed list flips a
+/// little below a 640px viewport (the tile's 20px gutters) and the apiary
+/// detail's embedded card — which is narrower than the page it sits on —
+/// flips a little later still. That is the intended reading: what the row can
+/// fit depends on the room the row actually has, not on the size of the
+/// screen behind it.
+const double _kCompactRowBelowWidth = 600;
+
 class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
     required this.activity,
@@ -309,7 +322,6 @@ class _ActivityTile extends StatelessWidget {
     final dateText = LocaleFormatting.of(context).date(activity.occurredAtDate);
     final typeLabel = activityTypeLabel(l10n, activity.type) ?? activity.type;
     final title = apiaryName == null ? typeLabel : '$apiaryName · $typeLabel';
-    final subtitle = '$dateText · ${activitySummaryLine(l10n, activity)}';
     final attribution = activityAttributionText(
       l10n,
       activity,
@@ -318,40 +330,141 @@ class _ActivityTile extends StatelessWidget {
     );
     final typeVisual = activityTypeVisual(context, activity.type);
 
-    return ListTile(
-      key: Key('activity-${activity.id}'),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both the
-      // per-apiary section (apiary detail) and the main all-apiaries tab use
-      // this shared tile, so this single onTap wires both list surfaces. The
-      // detail route lives under the apiaries branch (app_router.dart) — where
-      // every activity view/edit/delete surface lives — so a tap from the
-      // Activities tab crosses into that branch's stack (Back returns to the
-      // apiary context), consistent with where edit/delete already live.
-      // [detailLocationBuilder] (#384) overrides this for a caller embedding
-      // this tile in a different branch's own stack (journey_detail_screen.
-      // dart) — see ActivityListView's own doc comment.
-      onTap: () => context.go(
-        detailLocationBuilder?.call(activity) ??
-            '/apiaries/${activity.apiaryId}/activities/${activity.id}',
-      ),
-      leading: LeadingIconTile(
-        icon: activityTypeIcon(activity.type),
-        color: typeVisual.color,
-        tint: typeVisual.tint,
-        size: BrandDimens.sizeLeadingTileSmall,
-      ),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: Semantics(
-        label: l10n.activityPerformedBySemanticLabel(attribution),
-        child: ExcludeSemantics(
-          child: Chip(
-            key: const Key('activity-attribution'),
-            visualDensity: VisualDensity.compact,
-            avatar: const Icon(Icons.person_outline, size: 16),
-            label: Text(attribution),
+    // Measured on the ROW's own width, not the screen's (#632): the same tile
+    // renders full-bleed on the Activities tab AND inside the apiary detail's
+    // padded card, which is narrower than the viewport it sits in — the case
+    // where the defect was worst. `MediaQuery.sizeOf` would have called both
+    // "wide" at the same viewport.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < _kCompactRowBelowWidth;
+        // Compact: the date plus this type's headline metric(s) only — the
+        // rest is one tap away on the detail screen. Wide: every attribute,
+        // exactly as before, because at that width it still lands on one line.
+        final String summary;
+        if (compact) {
+          final headline = activityHeadlineLine(l10n, activity);
+          summary = headline.isEmpty ? dateText : '$dateText · $headline';
+        } else {
+          summary = '$dateText · ${activitySummaryLine(l10n, activity)}';
+        }
+
+        return ListTile(
+          key: Key('activity-${activity.id}'),
+          // No extra vertical padding in the compact form: [ListTile]'s own
+          // three-line minimum (88px, comfortably above the 44px gloves floor,
+          // D-18) already sizes the row, and adding 16px on top of it cost a
+          // whole activity per phone screen for nothing.
+          contentPadding: compact
+              ? const EdgeInsets.symmetric(horizontal: 20)
+              : const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          // The compact row is three lines (type · date+headline · actor), so
+          // the leading tile aligns to the top of them rather than floating in
+          // the middle of a tall row.
+          isThreeLine: compact,
+          // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both
+          // the per-apiary section (apiary detail) and the main all-apiaries
+          // tab use this shared tile, so this single onTap wires both list
+          // surfaces. The detail route lives under the apiaries branch
+          // (app_router.dart) — where every activity view/edit/delete surface
+          // lives — so a tap from the Activities tab crosses into that
+          // branch's stack (Back returns to the apiary context), consistent
+          // with where edit/delete already live. [detailLocationBuilder]
+          // (#384) overrides this for a caller embedding this tile in a
+          // different branch's own stack (journey_detail_screen.dart) — see
+          // ActivityListView's own doc comment.
+          onTap: () => context.go(
+            detailLocationBuilder?.call(activity) ??
+                '/apiaries/${activity.apiaryId}/activities/${activity.id}',
           ),
+          leading: LeadingIconTile(
+            icon: activityTypeIcon(activity.type),
+            color: typeVisual.color,
+            tint: typeVisual.tint,
+            size: BrandDimens.sizeLeadingTileSmall,
+          ),
+          // Capped + ellipsized at both widths (#632 AC: long values truncate
+          // at a sensible boundary, never mid-token) — an uncapped `Text` soft-
+          // wrapped a long apiary name or lot/batch id mid-word instead.
+          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    // The actor moves BENEATH the text at this width instead of
+                    // reserving a chip beside it: the fixed-width chip was what
+                    // squeezed the subtitle into roughly a 145px column on a
+                    // 375px screen. Still one line, still per-row (FR-TEN-2),
+                    // still labelled for screen readers (D-18).
+                    _AttributionLine(attribution: attribution),
+                  ],
+                )
+              : Text(summary, maxLines: 2, overflow: TextOverflow.ellipsis),
+          trailing: compact
+              ? null
+              : Semantics(
+                  label: l10n.activityPerformedBySemanticLabel(attribution),
+                  child: ExcludeSemantics(
+                    child: Chip(
+                      key: const Key('activity-attribution'),
+                      visualDensity: VisualDensity.compact,
+                      avatar: const Icon(Icons.person_outline, size: 16),
+                      label: Text(
+                        attribution,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// The compact row's third line: who performed the activity (#44, FR-TEN-2),
+/// as an icon + muted text rather than the wide layout's trailing [Chip].
+///
+/// Carries the same [AppLocalizations.activityPerformedBySemanticLabel]
+/// wrapper the chip does, so the announcement a screen reader makes does not
+/// change with the viewport (D-18, WCAG 2.2 AA).
+class _AttributionLine extends StatelessWidget {
+  const _AttributionLine({required this.attribution});
+
+  final String attribution;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Semantics(
+      label: l10n.activityPerformedBySemanticLabel(attribution),
+      child: ExcludeSemantics(
+        child: Row(
+          key: const Key('activity-attribution'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.person_outline,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                attribution,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

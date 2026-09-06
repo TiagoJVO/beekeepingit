@@ -2062,11 +2062,29 @@ abstract class AppLocalizations {
   /// **'View all {count} activities'**
   String apiaryActivitiesViewAll(int count);
 
-  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
+  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6). Points at the tab's quick-add (#634) by describing the action and where it sits, NOT by naming a control: the shell renders a scope's single action as a direct FAB and two or more behind an “Actions” toggle (#347), so any hard-coded control label goes stale the moment the scope gains a second action (the same lesson as #636).
   ///
   /// In en, this message translates to:
-  /// **'No activities yet.'**
+  /// **'No activities yet. Record your first activity with the button below.'**
   String get activitiesEmpty;
+
+  /// Header title and heading of the first step of the Activities tab's quick-add (#634, FR-AC-2): choosing which apiary the activity belongs to, before its type and fields
+  ///
+  /// In en, this message translates to:
+  /// **'Which apiary?'**
+  String get newActivityApiaryTitle;
+
+  /// Instruction under the heading of the new-activity apiary step (#634)
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the apiary this activity belongs to.'**
+  String get newActivityApiaryPrompt;
+
+  /// Shown instead of the apiary step when the organization has no apiaries at all (#634): explains why the flow cannot continue and is paired with an action that opens the new-apiary form, so it is never a dead end
+  ///
+  /// In en, this message translates to:
+  /// **'An activity is always recorded at an apiary, and you have none yet. Create your first apiary to get started.'**
+  String get newActivityNoApiaries;
 
   /// Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)
   ///
@@ -2145,6 +2163,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No additional details'**
   String get activityNoAttributesSummary;
+
+  /// Deliberately short label for the honey-supers count in the COMPACT (phone) activity row headline (#632). The long form the add/edit form and the detail screen use is activityHoneySupersLabel; at 375px that label alone fills the line.
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get activityHeadlineSupersLabel;
+
+  /// Compact activity-row headline for a harvest that recorded kilograms but no supers count (#632) — the unit carries the meaning, so no label is needed
+  ///
+  /// In en, this message translates to:
+  /// **'{value} kg'**
+  String activityHeadlineHoneyKgValue(String value);
+
+  /// Deliberately short label for the feed amount in the COMPACT (phone) activity row headline (#632). The long form is activityFeedAmountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get activityHeadlineFeedAmountLabel;
 
   /// Error toast when loading an existing activity for editing throws (#40)
   ///

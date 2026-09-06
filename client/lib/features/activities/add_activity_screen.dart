@@ -41,12 +41,33 @@ import 'activity_types.dart';
 /// from the caller's token once the queued write reconciles, not from
 /// anything this screen sends.
 class AddActivityScreen extends ConsumerStatefulWidget {
-  const AddActivityScreen({required this.apiaryId, this.activityId, super.key});
+  const AddActivityScreen({
+    required this.apiaryId,
+    this.activityId,
+    this.returnLocation,
+    super.key,
+  });
 
   final String apiaryId;
 
   /// Null for add (#39); the activity being edited/deleted for edit (#40/#41).
   final String? activityId;
+
+  /// Where a successful save (or, in edit mode, delete) lands the user.
+  /// Defaults to the apiary detail page — right for every entry point under
+  /// the apiaries branch, where that page is exactly where the user came
+  /// from. The Activities tab's own quick-add (#634,
+  /// new_activity_flow_screen.dart) passes `/activities` instead: the user
+  /// started on that tab, so sending them to a different one on save would
+  /// switch the tab under them — the cross-branch trap app_router.dart
+  /// documents. Only the create flow reaches this screen with a non-default
+  /// value today; the delete path honours it too rather than encoding the
+  /// asymmetry.
+  final String? returnLocation;
+
+  /// The post-save/post-delete destination — [returnLocation] when given,
+  /// the apiary detail page otherwise.
+  String get effectiveReturnLocation => returnLocation ?? '/apiaries/$apiaryId';
 
   bool get isEdit => activityId != null;
 
@@ -778,7 +799,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       }
       if (!mounted) return;
       clearUnsavedChanges();
-      context.go('/apiaries/${widget.apiaryId}');
+      context.go(widget.effectiveReturnLocation);
       messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveSuccess)));
     } catch (e) {
       if (!mounted) return;
@@ -812,7 +833,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       await repo.delete(widget.activityId!);
       if (!mounted) return;
       clearUnsavedChanges();
-      context.go('/apiaries/${widget.apiaryId}');
+      context.go(widget.effectiveReturnLocation);
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.activityDeleteSuccess)),
       );

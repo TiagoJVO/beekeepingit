@@ -8,6 +8,7 @@ import '../features/account/account_screen.dart';
 import '../features/activities/activities_list_screen.dart';
 import '../features/activities/activity_detail_screen.dart';
 import '../features/activities/add_activity_screen.dart';
+import '../features/activities/new_activity_flow_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
@@ -321,6 +322,34 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/activities',
                 name: 'activities',
                 builder: (context, state) => const ActivitiesListScreen(),
+                routes: [
+                  // The Activities tab's own create flow (#634, FR-UX-2,
+                  // FR-AC-2). It lives HERE, in the activities branch,
+                  // rather than reusing `/apiaries/:id/activities/new`,
+                  // precisely so the tab never switches under the user and
+                  // Back returns to the Activities list — the same
+                  // branch-ownership rule `journeyActivityDetail` below
+                  // follows. `/activities/new` is the apiary step; picking
+                  // an apiary navigates to the `:apiaryId` child, which
+                  // go_router stacks under the picker page, so the choice is
+                  // a real navigation step the user can Back out of to
+                  // change (with exactly one apiary, or none, the parent
+                  // handles it directly — see NewActivityFlowScreen).
+                  GoRoute(
+                    path: 'new',
+                    name: 'activityNewChooseApiary',
+                    builder: (context, state) => const NewActivityFlowScreen(),
+                    routes: [
+                      GoRoute(
+                        path: ':apiaryId',
+                        name: 'activityNewForApiary',
+                        builder: (context, state) => NewActivityFlowScreen(
+                          apiaryId: state.pathParameters['apiaryId'],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
