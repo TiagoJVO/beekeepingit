@@ -34,6 +34,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// Mirrors todo_filter_bar_test.dart's conventions: real fonts loaded (text
 /// metrics are the whole subject here) and the widget wrapped directly rather
 /// than booting the whole app.
+///
+/// The last group covers the same compact row under an increased system text
+/// size (#759, FR-AX-1, D-18, WCAG 2.2 AA SC 1.4.4) — the case every other
+/// case here leaves at the platform default, and the one where a deliberately
+/// tight `maxLines: 1` layout is most likely to clip.
 
 /// The narrowest phone width the PWA targets, and the width #632 reproduces
 /// at.
@@ -50,6 +55,44 @@ const _threeLineHeightBudget = 100.0;
 /// The vertical budget for the preserved WIDE row: title + a single subtitle
 /// line, with the actor beside them rather than beneath.
 const _wideHeightBudget = 96.0;
+
+/// A realistic increased system text size (#759): the middle of the ~1.3x–2x
+/// band `docs/design/accessibility-field-ux-checklist.md` asks every widget to
+/// survive, and roughly where Android's "Large" font-size step and the larger
+/// iOS Dynamic Type steps land. This is the setting a beekeeper reading a
+/// phone at arm's length in the sun actually picks.
+const _increasedTextScale = TextScaler.linear(1.5);
+
+/// The outer end of that band — WCAG 2.2 AA's 200% resize obligation (SC
+/// 1.4.4, D-18). Covered as well as 1.5x because the compact row's whole
+/// design is `maxLines: 1`, so the failure mode at 2x is more truncation, not
+/// unbounded growth: if it holds at 1.5x there is no reason to stop there.
+const _maxTextScale = TextScaler.linear(2.0);
+
+/// The rows-per-phone-screen floor at each scale, measured rather than
+/// assumed (#759 AC 2).
+///
+/// Deliberately NOT the default scale's eight: a row whose three text lines
+/// are taller is a taller row, and fewer of them fit. Restating the number
+/// honestly per scale is the point — carrying eight forward unchanged would
+/// have been either a false claim or a vacuous assertion.
+///
+/// The measured heights at 375x812 are 88px at the default scale (nine rows),
+/// 108px at 1.5x and 138px at 2x. 88 is [ListTile]'s own three-line minimum,
+/// so the default row has slack: text grows 50% while the row grows 23%,
+/// which is why the count degrades gently rather than halving. These floors
+/// exist so a change that inflates the scaled row — extra padding, a fourth
+/// line, an uncapped `Text` — fails here instead of quietly shortening the
+/// list for exactly the users who most need it.
+///
+/// Headroom, so a future font or engine-metrics bump is read correctly rather
+/// than shrugged at: 1.5x has the thinner margin (108px against the 116px at
+/// which seven rows would become six, ~8%); 2x has ~18%. If the 1.5x floor
+/// ever trips, the row got taller — check that before relaxing the number.
+const _scaledRowsPerScreen = <(TextScaler, int)>[
+  (_increasedTextScale, 7),
+  (_maxTextScale, 5),
+];
 
 /// Loads the app's real text fonts into the test binding.
 ///
@@ -120,6 +163,7 @@ Widget _buildList({
   required List<Activity> activities,
   String? Function(String apiaryId)? apiaryNameOf,
   double? rowWidth,
+  TextScaler textScaler = TextScaler.noScaling,
 }) {
   final list = ActivityListView(
     viewModel: AsyncValue.data(
@@ -139,6 +183,13 @@ Widget _buildList({
       theme: AppTheme.light(),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: kSupportedLocales,
+      // The system text-size setting, injected the same way a11y_field_ux_test
+      // .dart does it: above `home` so every descendant inherits it, and via
+      // `copyWith` so the view's real size/padding are preserved (#759).
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      ),
       home: Scaffold(
         body: rowWidth == null
             ? list
@@ -187,6 +238,63 @@ void _expectEveryLineSingleAndEllipsized(WidgetTester tester, String id) {
       reason:
           '"${paragraph.text.toPlainText()}" must ellipsize rather than '
           'break mid-token',
+    );
+  }
+}
+
+/// Fails when laying the row out at this text scale reported anything.
+///
+/// A `RenderFlex overflowed` is not thrown: it goes through
+/// [FlutterError.reportError], which the binding records and re-raises at the
+/// end of the test. Taking it explicitly makes "the row does not overflow"
+/// the stated subject of the assertion (#759 AC 1) rather than an incidental
+/// crash in the run log. It takes ANY recorded exception, not only an
+/// overflow — an overflow is merely the shape a failure is expected to take
+/// here, and a different one is no less a failure.
+void _expectNoOverflow(WidgetTester tester) {
+  expect(
+    tester.takeException(),
+    isNull,
+    reason:
+        'the compact row must lay out at this text scale with nothing '
+        'reported — a RenderFlex overflow is the expected shape of a '
+        'failure here',
+  );
+}
+
+/// Fails when any of the row's rendered text sits outside the row's own box.
+///
+/// The complement to [_expectNoOverflow]: a [ListTile] that stops growing
+/// with its content clips rather than reporting an overflow, so a
+/// scale-induced regression can be silent. All four edges are checked (the
+/// vertical ones are where scaled text actually escapes; the horizontal pair
+/// is cheap and keeps the check exhaustive rather than assuming an LTR
+/// layout). Compared with a half-pixel tolerance because layout arithmetic is
+/// not exact.
+void _expectTextWithinRow(WidgetTester tester, String id) {
+  final rowRect = tester.getRect(_row(id));
+  final texts = find.descendant(of: _row(id), matching: find.byType(RichText));
+  for (var i = 0; i < texts.evaluate().length; i++) {
+    final rect = tester.getRect(texts.at(i));
+    expect(
+      rect.top,
+      greaterThanOrEqualTo(rowRect.top - 0.5),
+      reason: 'text is clipped off the top of the row',
+    );
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(rowRect.bottom + 0.5),
+      reason: 'text is clipped off the bottom of the row',
+    );
+    expect(
+      rect.left,
+      greaterThanOrEqualTo(rowRect.left - 0.5),
+      reason: 'text is clipped off the start of the row',
+    );
+    expect(
+      rect.right,
+      lessThanOrEqualTo(rowRect.right + 0.5),
+      reason: 'text is clipped off the end of the row',
     );
   }
 }
@@ -311,6 +419,11 @@ void main() {
     ) async {
       // The issue's actual complaint, as a number: "at this density two
       // activities no longer fit on a phone screen and ten are unusable".
+      //
+      // Default text scale only. Eight rows is a DENSITY target, and density
+      // is exactly what a user trades away when they turn the system text
+      // size up — the scaled equivalent is asserted separately, at the number
+      // that scale actually yields (#759).
       _useViewport(tester, _narrowViewport);
       await tester.pumpWidget(
         _buildList(
@@ -511,5 +624,169 @@ void main() {
       );
       expect(tester.getSize(_row('a1')).height, lessThan(_wideHeightBudget));
     });
+  });
+
+  group('the compact row at an increased system text scale (#759, FR-AX-1, '
+      'D-18)', () {
+    for (final (scale, _) in _scaledRowsPerScreen) {
+      final label = '${scale.scale(1).toStringAsFixed(1)}x';
+
+      testWidgets('at $label the row lays out without overflowing or '
+          'clipping', (tester) async {
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('en', 'GB'),
+            activities: [_activity()],
+            textScaler: scale,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        _expectNoOverflow(tester);
+        _expectTextWithinRow(tester, 'a1');
+        // The compact form is unchanged in kind — still three capped,
+        // ellipsized lines. Truncating more of the summary is the correct
+        // response to bigger text; wrapping into an unbounded row is not.
+        _expectEveryLineSingleAndEllipsized(tester, 'a1');
+      });
+
+      for (final locale in const [Locale('en', 'GB'), Locale('pt', 'PT')]) {
+        testWidgets(
+          'at $label the row still meets the 44px tap-target floor in '
+          '${locale.languageCode} (D-18)',
+          (tester) async {
+            // Both locales, because the row's height follows its text and
+            // PT's labels are the longer ones.
+            _useViewport(tester, _narrowViewport);
+            await tester.pumpWidget(
+              _buildList(
+                locale: locale,
+                activities: [_activity()],
+                textScaler: scale,
+              ),
+            );
+            await tester.pumpAndSettle();
+
+            expect(
+              tester.getSize(_row('a1')).height,
+              greaterThanOrEqualTo(kMinTapTarget),
+            );
+          },
+        );
+      }
+
+      testWidgets('at $label the apiary-detail card case lays out too', (
+        tester,
+      ) async {
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('en', 'GB'),
+            activities: [_activity()],
+            // The narrowest place this tile renders (see the default-scale
+            // case above): the apiary detail's padded card.
+            rowWidth: 343,
+            textScaler: scale,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        _expectNoOverflow(tester);
+        _expectTextWithinRow(tester, 'a1');
+        _expectEveryLineSingleAndEllipsized(tester, 'a1');
+      });
+
+      testWidgets('at $label Portuguese lays out too', (tester) async {
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('pt', 'PT'),
+            activities: [_activity()],
+            textScaler: scale,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        _expectNoOverflow(tester);
+        _expectTextWithinRow(tester, 'a1');
+        _expectEveryLineSingleAndEllipsized(tester, 'a1');
+      });
+    }
+
+    testWidgets('an apiary-qualified title still fits on one line at 2.0x', (
+      tester,
+    ) async {
+      // The widest title this row can be asked to render, at the widest text
+      // the checklist covers — the case most likely to break the cap.
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(
+        _buildList(
+          locale: const Locale('en', 'GB'),
+          activities: [_activity()],
+          apiaryNameOf: (_) =>
+              'An apiary with a deliberately very long name indeed',
+          textScaler: _maxTextScale,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      _expectNoOverflow(tester);
+      _expectTextWithinRow(tester, 'a1');
+      _expectEveryLineSingleAndEllipsized(tester, 'a1');
+    });
+
+    testWidgets('the attribution keeps its screen-reader label at 2.0x '
+        '(D-18)', (tester) async {
+      // Scaling text must not change what the row ANNOUNCES — the wide/
+      // compact semantics parity #632 established has to survive it too.
+      _useViewport(tester, _narrowViewport);
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _buildList(
+          locale: const Locale('en', 'GB'),
+          activities: [_activity()],
+          textScaler: _maxTextScale,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.bySemanticsLabel(RegExp('Performed by: You')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    for (final (scale, rows) in _scaledRowsPerScreen) {
+      final label = '${scale.scale(1).toStringAsFixed(1)}x';
+
+      testWidgets('at $label the density budget is restated at $rows rows, '
+          'not assumed to still be eight', (tester) async {
+        // The honest version of "at least eight activities fit on one phone
+        // screen" (#759 AC 2) — see [_scaledRowsPerScreen] for where these
+        // numbers come from.
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('en', 'GB'),
+            activities: [for (var i = 0; i < 10; i++) _activity(id: 'a$i')],
+            textScaler: scale,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final rowHeight = tester.getSize(_row('a0')).height;
+        final fit = (_narrowViewport.height / rowHeight).floor();
+        expect(
+          fit,
+          greaterThanOrEqualTo(rows),
+          reason:
+              'a ${rowHeight.toStringAsFixed(1)}px row at $label only fits '
+              '$fit activities on a '
+              '${_narrowViewport.height.toInt()}px screen',
+        );
+      });
+    }
   });
 }
