@@ -20,6 +20,13 @@
 Field-action buttons live in `core/widgets/field_action_button.dart`
 (`PrimaryActionButton` = honey 60px; `SecondaryActionButton` = outlined plum 56px,
 `destructive:` for delete/logout). Tap-target floor: `core/widgets/tap_target.dart`.
+Inline field errors: `core/widgets/field_error.dart` — every form field that renders an error
+inside its decoration passes `errorBuilder: announcedFieldError` so the message is spoken, not
+only painted, and a server-supplied 422 message travels as `forceErrorText:` alongside it (never
+`errorText:`/`InputDecoration.error:`, which leave the field reading as valid). A screen that
+sets `forceErrorText` must clear it when the user edits the field, or its submit button stays
+blocked. An error rendered **outside** a field's decoration (the apiary location group) uses
+`Semantics(liveRegion: true)` directly instead (#750).
 
 ## The scale (from the prototype)
 

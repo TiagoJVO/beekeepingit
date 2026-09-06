@@ -5,6 +5,7 @@ import 'package:beekeepingit_client/features/organization/organization_screen.da
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -185,6 +186,10 @@ void main() {
   testWidgets('surfaces a mocked 422 field error from the server', (
     tester,
   ) async {
+    // The semantics tree has to be alive for the announcement assertion at
+    // the end — same server verdict, and a message that is painted without
+    // being announced is exactly the #750 bug.
+    final handle = tester.ensureSemantics();
     final controller = _FakeOrganizationController(
       onSubmit: ({required name, address}) async {
         throw const ApiException(
@@ -212,6 +217,92 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('name must be at most 200 characters'), findsOneWidget);
+
+    // #750 (FR-AX-1, D-18): a server-supplied field error never passes
+    // through `Form.validate()`, so the SDK's own announcement path never
+    // sees it — it must carry the live region itself.
+    expectLiveRegion(tester, find.text('name must be at most 200 characters'));
+    expect(
+      tester
+          .getSemantics(find.text('name must be at most 200 characters'))
+          .label,
+      'name must be at most 200 characters',
+    );
+    // ...and the field must READ as failing, not just look it. Only
+    // `forceErrorText` sets `FormFieldState._errorText`, which is what
+    // `Semantics(validationResult:)` is derived from; a message pushed in
+    // through `InputDecoration.error` leaves the field `valid` — on web,
+    // `aria-invalid="false"` under a visibly red error.
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('organization-name-field')))
+          .getSemanticsData()
+          .validationResult,
+      SemanticsValidationResult.invalid,
+    );
+    handle.dispose();
+  });
+
+  // A DELIBERATE behaviour change that came with routing the server verdict
+  // through `forceErrorText` (#750): while a server error still stands, the
+  // field is genuinely invalid, so `Form.validate()` returns false and a
+  // second Save WITHOUT editing the field is blocked client-side instead of
+  // re-issuing a request the server has already rejected for that exact
+  // value. `forceErrorText` also overrides the validator — note the local
+  // validator would return null here, the name being perfectly well-formed —
+  // so the block comes from the server's verdict alone. #649's
+  // clear-on-edit is what releases it: the moment the user changes the
+  // value, the verdict is dropped and the next Save goes through (asserted
+  // below).
+  testWidgets('a second save with the server verdict still standing is '
+      'blocked client-side (#750)', (tester) async {
+    var submissions = 0;
+    final controller = _FakeOrganizationController(
+      onSubmit: ({required name, address}) async {
+        submissions++;
+        throw const ApiException(
+          statusCode: 422,
+          code: 'validation.failed',
+          detail: 'one or more fields are invalid',
+          fieldErrors: [
+            ApiFieldError(
+              field: 'name',
+              code: 'reserved',
+              message: 'that name is reserved',
+            ),
+          ],
+        );
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Co.',
+    );
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(submissions, 1);
+    expect(find.text('that name is reserved'), findsOneWidget);
+
+    // Same value, second tap: the client already knows the answer.
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(submissions, 1);
+    expect(find.text('that name is reserved'), findsOneWidget);
+
+    // Edit it, and the block is released — the user is never stuck.
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Cooperative',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('that name is reserved'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(submissions, 2);
   });
 
   // #649 (FR-ONB-2, FR-UX-1): a blocked save raises the required-name error,

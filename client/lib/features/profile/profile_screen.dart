@@ -7,6 +7,7 @@ import '../../core/config/app_config.dart';
 import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -42,12 +43,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   /// Drops the last save's server verdict for [field] once its value changes
   /// (#649) — the same rule apiary_form_screen.dart applies in its
-  /// `Form.onChanged`. Server errors arrive as `InputDecoration.errorText`,
-  /// which `InputDecoration.copyWith` preserves whenever the local validator
-  /// passes, so autovalidation alone would leave a rejected-value message
-  /// sitting under a value the user has already rewritten. The client can't
-  /// know the new value satisfies the server, so this clears on edit rather
-  /// than on validity: the next save re-asks.
+  /// `Form.onChanged`. Server errors arrive as `FormField.forceErrorText`
+  /// (#750), which the field holds onto until the property itself changes:
+  /// autovalidation cannot clear it, because `forceErrorText` overrides the
+  /// validator entirely. Without this the rejected-value message would sit
+  /// under a value the user has already rewritten AND keep
+  /// `Form.validate()` false, so the save button would stay dead. The client
+  /// can't know the new value satisfies the server, so this clears on edit
+  /// rather than on validity: the next save re-asks.
   void _clearFieldError(String field) {
     if (!_fieldErrors.containsKey(field)) return;
     setState(() => _fieldErrors = {..._fieldErrors}..remove(field));
@@ -104,8 +107,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
-      // Only `name` has a field on this form that renders its own
-      // `errorText` below. Any other field the server rejects (e.g.
+      // Only `name` has a field on this form that renders its own error
+      // below. Any other field the server rejects (e.g.
       // `locale`, which has no dedicated error slot) would otherwise be
       // silently dropped entirely once `_fieldErrors` is non-empty (the
       // generic snackbar below used to be suppressed whenever *any* field
@@ -274,7 +277,17 @@ class _ProfileFormFields extends StatelessWidget {
             // soon as any one of them is touched.
             autovalidateMode: AutovalidateMode.onUserInteraction,
             onChanged: (_) => onFieldEdited('name'),
-            decoration: InputDecoration(errorText: fieldErrors['name']),
+            // Both messages — the local validator's and the server's 422 —
+            // are announced, not just painted (#750, FR-AX-1, D-18). The
+            // server one travels as `forceErrorText:` so it also sets
+            // `FormFieldState.hasError`, which is what marks the field
+            // `validationResult: invalid`; a decoration-only `error:`/
+            // `errorText:` would leave it reading as VALID under a visibly
+            // red message. It overrides the validator and blocks the next
+            // save until the value changes — see field_error.dart, and
+            // `onChanged` above, which is what releases it.
+            forceErrorText: fieldErrors['name'],
+            errorBuilder: announcedFieldError,
             validator: (v) => (v == null || v.trim().isEmpty)
                 ? l10n.profileNameRequired
                 : null,

@@ -220,6 +220,20 @@ PowerSync sync-rules column list
 it (as `notes` once was, FR-AP-8/#196) silently stays `NULL` on fresh devices —
 no other layer surfaces that.
 
+## Live regions break a bare `getByText` — scope to `span`
+
+Flutter web mirrors any `Semantics(liveRegion: true)` node's text into a
+transient `<flt-announcement-polite aria-live="polite">` element **as well as**
+the real semantics `<span>`, so a bare `getByText("…")` resolves to two elements
+and trips Playwright's strict mode. Match `page.locator("span").filter({ hasText })`
+(`.first()` guards against nesting) — `slice.spec.ts`'s "Location set:" assertion
+and `stock-declarations.spec.ts`'s snackbar helper both do exactly this.
+
+Since #750 **every form validation message is a live region**
+(`client/lib/core/widgets/field_error.dart`), on top of snackbars and status
+text — so assume any user-visible message needs this treatment, not just the two
+places that already document it.
+
 ## Skipped guards (`test.fixme`) — real bugs found by wiring this e2e
 
 An assertion the e2e correctly caught is marked `test.fixme` (skipped, not
