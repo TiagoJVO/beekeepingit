@@ -84,6 +84,7 @@ Widget _buildScreen({
   DeviceLocation location = const DeviceLocationUnavailable(),
   DeviceLocationService? service,
   ValueListenable<bool>? tabVisible,
+  Locale? locale,
 }) {
   final router = GoRouter(
     initialLocation: '/apiaries',
@@ -121,6 +122,11 @@ Widget _buildScreen({
       ),
     ],
     child: MaterialApp.router(
+      // Null by default, so the pre-existing cases keep resolving through the
+      // test binding's own locale; cases that assert on wording pin it
+      // explicitly, since the empty-state copy (#636) has to be right in both
+      // languages.
+      locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: kSupportedLocales,
       routerConfig: router,
@@ -929,5 +935,59 @@ void main() {
         await tester.pumpWidget(const SizedBox());
       },
     );
+  });
+
+  // #636 (FR-UX-1): the empty state used to read `Tap "Add apiary" to create
+  // one.`, naming a control that isn't on screen — the Apiaries tab has two
+  // quick actions (#52), so the shell renders them behind the collapsed
+  // "Actions" speed dial (#347), which must not change. The copy now
+  // describes the action instead of naming a control, which also stays true
+  // if the tab ever drops back to a single, directly-labelled FAB.
+  group('empty state copy (#636, FR-UX-1)', () {
+    /// Labels of the quick-add options the shell hides behind the Apiaries
+    /// tab's collapsed "Actions" toggle. This asserts on the COPY, not on the
+    /// shell (which this screen-level harness doesn't mount): whatever the
+    /// empty-state wording becomes, it must never quote one of these, because
+    /// none of them is on screen until the toggle is expanded.
+    List<String> hiddenControlLabels(AppLocalizations l10n) => [
+      l10n.addApiary,
+      l10n.addTodo,
+    ];
+
+    for (final (locale, expected) in const [
+      (
+        Locale('en'),
+        'No apiaries yet. Create your first apiary to get started.',
+      ),
+      (
+        Locale('pt'),
+        'Ainda não há apiários. Crie o seu primeiro apiário para começar.',
+      ),
+    ]) {
+      testWidgets(
+        'in ${locale.languageCode} it describes the action without naming a '
+        'control that is not on screen',
+        (tester) async {
+          await tester.pumpWidget(_buildScreen(apiaries: [], locale: locale));
+          await tester.pumpAndSettle();
+
+          final context = tester.element(find.byType(EmptyState));
+          final l10n = AppLocalizations.of(context);
+          expect(l10n.apiariesEmpty, expected);
+          expect(find.text(expected), findsOneWidget);
+
+          for (final label in hiddenControlLabels(l10n)) {
+            expect(
+              find.textContaining(label),
+              findsNothing,
+              reason:
+                  '"$label" labels an action hidden behind the collapsed '
+                  '"Actions" speed dial, so the empty state must not tell the '
+                  'user to tap it',
+            );
+          }
+        },
+      );
+    }
   });
 }
