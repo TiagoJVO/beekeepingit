@@ -83,8 +83,8 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
     final ordered = switch (deviceLocation) {
       DeviceLocationAvailable(:final lon, :final lat) => sortApiariesByDistance(
         filtered,
-        originLon: lon,
         originLat: lat,
+        originLon: lon,
       ),
       _ => sortApiariesByName(filtered),
     };

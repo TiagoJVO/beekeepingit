@@ -575,14 +575,21 @@ List<Apiary> filterApiariesByQuery(List<Apiary> apiaries, String query) {
 /// using the locally synced apiary set and an offline distance
 /// computation"): sorts [apiaries] ascending by haversine distance
 /// (core/geo/haversine.dart, consistent with D-15/#37's approach) from
-/// (originLon, originLat). Apiaries without a location sort after every
+/// (originLat, originLon). Apiaries without a location sort after every
 /// apiary that has one (mirrors the server's `near` ordering, NULLS LAST —
 /// api/apiaries.go's ListApiariesByProximity), staying in their relative
 /// (name) order among themselves.
+///
+/// Boundary rule (#756, #445): computation APIs like this one and
+/// [haversineDistanceMeters] take latitude first. Coordinate-carrying types
+/// stay longitude-first (`Apiary.locationLon`/`locationLat`,
+/// `DeviceLocationAvailable`, the `location_lon`/`location_lat` columns)
+/// because `GeoPoint` in `contracts/openapi/_shared/components.openapi.yaml`
+/// is GeoJSON `[longitude, latitude]`. Don't "fix" the other side to match.
 List<Apiary> sortApiariesByDistance(
   List<Apiary> apiaries, {
-  required double originLon,
   required double originLat,
+  required double originLon,
 }) {
   final withLocation = apiaries.where((a) => a.hasLocation).toList()
     ..sort(
