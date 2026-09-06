@@ -19,6 +19,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../support/a11y_matchers.dart';
+
 /// A no-op [LocalStoreEngine] — [_FakeActivitiesRepository] overrides every
 /// method the form touches, so the superclass's store is never actually
 /// used. Mirrors apiary_form_screen_test.dart's identical fixture.
@@ -524,9 +526,9 @@ void main() {
         (tester) async {
           // Tall viewport: the #46 journey-attachment section pushes the
           // treatment fields further down than the default 800x600 test
-          // viewport shows, so tapping the disease field directly (without
-          // ensureVisible) needs the same fix the save-button tests already
-          // apply elsewhere in this file.
+          // viewport shows, so tapping the disease field directly needs the
+          // room. (Save needs no such help since #357 pinned it outside the
+          // scroll view — only in-form controls still scroll.)
           tester.view.physicalSize = const Size(1200, 2400);
           tester.view.devicePixelRatio = 1.0;
           addTearDown(tester.view.resetPhysicalSize);
@@ -659,7 +661,6 @@ void main() {
           '9',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -815,10 +816,13 @@ void main() {
       'saving a harvest without the required honey_supers is genuinely blocked '
       '(Form.validate() returns false), nothing is created, no navigation',
       (tester) async {
-        // Tall viewport + ensureVisible so the Save tap actually lands on the
-        // button and runs _save() — the previous version tapped an off-screen
-        // button (viewport 800x600, button at y=671), so _save() never ran and
-        // the assertion was a false positive against a cosmetic error string.
+        // Tall viewport so the fields this test drives are laid out without
+        // scrolling. Save itself no longer needs any help: it lives in a
+        // pinned action bar outside the scroll view (#357), so a tap always
+        // lands on it and runs _save() — the original version of this test
+        // tapped an off-screen button (viewport 800x600, button at y=671),
+        // so _save() never ran and the assertion was a false positive
+        // against a cosmetic error string.
         tester.view.physicalSize = const Size(1200, 2400);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
@@ -847,7 +851,6 @@ void main() {
 
         // Harvest is already selected; honey_supers (required) is left empty.
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -893,7 +896,6 @@ void main() {
         await tester.pumpAndSettle();
 
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -935,7 +937,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -1039,7 +1040,6 @@ void main() {
         await tester.pumpAndSettle();
 
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1095,7 +1095,6 @@ void main() {
           '2026-07-A1',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1136,7 +1135,6 @@ void main() {
           '4',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1237,7 +1235,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -1286,7 +1283,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -1340,7 +1336,6 @@ void main() {
           '4',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1399,7 +1394,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -1477,7 +1471,6 @@ void main() {
           '4',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1530,7 +1523,6 @@ void main() {
           '4',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1590,7 +1582,6 @@ void main() {
           '4',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -1696,7 +1687,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pumpAndSettle();
@@ -1761,7 +1751,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pumpAndSettle();
@@ -1837,7 +1826,6 @@ void main() {
         '4',
       );
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -2420,7 +2408,6 @@ void main() {
           '',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -2448,7 +2435,6 @@ void main() {
           '9',
         );
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -2493,7 +2479,6 @@ void main() {
         await goToEditForm(tester, repo);
 
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -2569,7 +2554,6 @@ void main() {
           expect(find.text('Second Harvest Round'), findsOneWidget);
 
           final saveButton = find.byKey(const Key('activity-save-button'));
-          await tester.ensureVisible(saveButton);
           await tester.pumpAndSettle();
           await tester.tap(saveButton);
           await tester.pumpAndSettle();
@@ -2618,7 +2602,6 @@ void main() {
           await tester.pumpAndSettle();
 
           final saveButton = find.byKey(const Key('activity-save-button'));
-          await tester.ensureVisible(saveButton);
           await tester.pumpAndSettle();
           await tester.tap(saveButton);
           await tester.pumpAndSettle();
@@ -2659,7 +2642,6 @@ void main() {
           expect(find.text('No journey attached'), findsOneWidget);
 
           final saveButton = find.byKey(const Key('activity-save-button'));
-          await tester.ensureVisible(saveButton);
           await tester.pumpAndSettle();
           await tester.tap(saveButton);
           await tester.pumpAndSettle();
@@ -2710,7 +2692,6 @@ void main() {
           await tester.pumpAndSettle();
 
           final saveButton = find.byKey(const Key('activity-save-button'));
-          await tester.ensureVisible(saveButton);
           await tester.pumpAndSettle();
           await tester.tap(saveButton);
           await tester.pumpAndSettle();
@@ -2772,7 +2753,6 @@ void main() {
           await goToEditForm(tester, repo, journeysRepo: journeysRepo);
 
           final saveButton = find.byKey(const Key('activity-save-button'));
-          await tester.ensureVisible(saveButton);
           await tester.pumpAndSettle();
           await tester.tap(saveButton);
           await tester.pump();
@@ -2801,7 +2781,6 @@ void main() {
         await goToEditForm(tester, repo);
 
         final deleteButton = find.byKey(const Key('activity-delete-button'));
-        await tester.ensureVisible(deleteButton);
         await tester.pumpAndSettle();
         await tester.tap(deleteButton);
         await tester.pumpAndSettle();
@@ -2839,7 +2818,6 @@ void main() {
       await goToEditForm(tester, repo);
 
       final deleteButton = find.byKey(const Key('activity-delete-button'));
-      await tester.ensureVisible(deleteButton);
       await tester.pumpAndSettle();
       await tester.tap(deleteButton);
       await tester.pumpAndSettle();
@@ -2867,7 +2845,6 @@ void main() {
         await goToEditForm(tester, repo);
 
         final deleteButton = find.byKey(const Key('activity-delete-button'));
-        await tester.ensureVisible(deleteButton);
         await tester.pumpAndSettle();
         await tester.tap(deleteButton);
         await tester.pumpAndSettle();
@@ -3035,7 +3012,6 @@ void main() {
 
     Future<void> save(WidgetTester tester) async {
       final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
       await tester.tap(saveButton);
       await tester.pump();
@@ -3256,7 +3232,6 @@ void main() {
         // ...and saving it straight back preserves the value exactly (the
         // round-trip #623 AC 2 asks for).
         final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
         await tester.pumpAndSettle();
         await tester.tap(saveButton);
         await tester.pump();
@@ -3294,5 +3269,243 @@ void main() {
         '15.5',
       );
     });
+  });
+
+  _pinnedActionTests();
+}
+
+/// #357 — the actions live in a bar pinned OUTSIDE the scroll view, so they
+/// are on screen at every scroll offset. The hazard here is the milder
+/// sibling of #341's: this form embeds no gesture-swallowing map, but a
+/// Treatment's adaptive attribute list plus the #46 journey-attachment
+/// section run well past a field phone's viewport, so an action parked at
+/// the end of the scrollable is a scroll-hunt in gloves rather than a thumb
+/// away (FR-UX-1, FR-AX-1, D-18).
+void _pinnedActionTests() {
+  group('the primary action stays pinned at a short viewport '
+      '(FR-UX-1, FR-AX-1, D-18, #357)', () {
+    // A 400x640 phone held at arm's length in a bee suit — shorter than this
+    // form's content, which is exactly the case the pinning exists for.
+    const shortViewport = Size(400, 640);
+
+    void useShortViewport(WidgetTester tester) {
+      tester.view.physicalSize = shortViewport;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    Future<void> openFormShort(
+      WidgetTester tester,
+      _FakeActivitiesRepository repo,
+    ) async {
+      useShortViewport(tester);
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// Picks [option] from the dropdown at [fieldKey]. The dropdowns are
+    /// in-form controls, so they legitimately scroll — unlike the actions,
+    /// which never do.
+    Future<void> pickDropdown(
+      WidgetTester tester,
+      Key fieldKey,
+      String option,
+    ) async {
+      final field = find.byKey(fieldKey);
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(option).last);
+      await tester.pumpAndSettle();
+    }
+
+    /// Bounded pumps rather than `pumpAndSettle` after a save — mirrors this
+    /// file's own convention: the post-save navigation target watches
+    /// providers that never resolve in this PowerSync-less environment.
+    Future<void> pumpAfterSave(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets(
+      'Save is on-screen and actually creates the activity without scrolling, '
+      'on the tall Treatment form',
+      (tester) async {
+        final repo = _FakeActivitiesRepository();
+        await openFormShort(tester, repo);
+
+        // Treatment is the longest attribute list this form renders — the
+        // worst case for a trailing Save.
+        await pickDropdown(
+          tester,
+          const Key('activity-type-field'),
+          'Treatment',
+        );
+        await pickDropdown(
+          tester,
+          const Key('activity-treatment-context-field'),
+          'General / preventive',
+        );
+        await pickDropdown(
+          tester,
+          const Key('activity-treatment-type-field'),
+          'Oxalic acid',
+        );
+
+        // Back to the top of the form — the user re-reads the type they
+        // picked before committing. `ensureVisible` is used only for in-form
+        // controls, which legitimately scroll; never for the action, which
+        // is the whole point of a pinned bar.
+        await tester.ensureVisible(
+          find.byKey(const Key('activity-type-field')),
+        );
+        await tester.pumpAndSettle();
+
+        final save = find.byKey(const Key('activity-save-button'));
+        expectFullyOnScreen(
+          tester,
+          save,
+          reason: 'Save must be fully on-screen on a short viewport',
+        );
+        expectMinTapTarget(tester, save);
+        expectHasSemanticsLabel(tester, const Key('activity-save-button'));
+
+        await tester.tap(save);
+        await pumpAfterSave(tester);
+
+        expect(
+          repo.created,
+          hasLength(1),
+          reason:
+              'tapping the pinned Save must create the activity, not silently '
+              'no-op',
+        );
+        expect(repo.created.single.type, 'treatment');
+      },
+    );
+
+    testWidgets('Save stays on-screen mid-scroll', (tester) async {
+      final repo = _FakeActivitiesRepository();
+      await openFormShort(tester, repo);
+
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      await tester.pump();
+
+      // Park the form mid-scroll — a pinned action is in the same place at
+      // every offset, a trailing one is not.
+      await tester.drag(
+        find.byKey(const Key('activity-type-field')),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+
+      final save = find.byKey(const Key('activity-save-button'));
+      expectFullyOnScreen(
+        tester,
+        save,
+        reason: 'Save must stay on-screen mid-scroll',
+      );
+      expectMinTapTarget(tester, save);
+
+      await tester.tap(save);
+      await pumpAfterSave(tester);
+
+      expect(repo.created, hasLength(1));
+    });
+
+    testWidgets('the edit form pins Delete alongside Save', (tester) async {
+      useShortViewport(tester);
+      final repo = _FakeActivitiesRepository(
+        existing: const Activity(
+          id: 'act1',
+          apiaryId: 'a1',
+          type: 'treatment',
+          occurredAt: '2026-06-01',
+          attributes: {},
+        ),
+      );
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      GoRouter.of(tester.element(find.byType(AppShell)))
+          .go('/apiaries/a1/activities/act1/edit');
+      await tester.pumpAndSettle();
+
+      for (final key in const [
+        Key('activity-save-button'),
+        Key('activity-delete-button'),
+      ]) {
+        final finder = find.byKey(key);
+        expectFullyOnScreen(
+          tester,
+          finder,
+          reason: '$key must be pinned on-screen on a short viewport',
+        );
+        expectMinTapTarget(tester, finder);
+      }
+    });
+
+    testWidgets(
+      'the edit bar fits a short landscape body instead of overflowing and '
+      'clipping Delete',
+      (tester) async {
+        // A handset in landscape leaves the shell body shorter than the
+        // edit-mode bar's own height. A fixed-height bar in a Column would
+        // hand the scroll view 0px, overflow the Column, and paint the
+        // destructive Delete clipped under the navigation bar — below the
+        // 44x44 floor (D-18) this very pinning is meant to protect.
+        tester.view.physicalSize = const Size(740, 360);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository(
+          existing: const Activity(
+            id: 'act1',
+            apiaryId: 'a1',
+            type: 'treatment',
+            occurredAt: '2026-06-01',
+            attributes: {},
+          ),
+        );
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        GoRouter.of(tester.element(find.byType(AppShell)))
+            .go('/apiaries/a1/activities/act1/edit');
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'the pinned bar must not overflow its Column',
+        );
+        expectFullyOnScreen(
+          tester,
+          find.byKey(const Key('activity-save-button')),
+          reason: 'Save must stay on-screen in a short landscape body',
+        );
+        for (final key in const [
+          Key('activity-save-button'),
+          Key('activity-delete-button'),
+        ]) {
+          expectMinTapTarget(tester, find.byKey(key));
+        }
+      },
+    );
   });
 }

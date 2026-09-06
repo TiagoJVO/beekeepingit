@@ -859,105 +859,160 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Form(
-                    key: _formKey,
-                    // Any field edit arms the unsaved-changes guard (#345);
-                    // edits outside the field tree (date, journey attachment)
-                    // call markUnsavedChanges directly.
-                    onChanged: markUnsavedChanges,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        DropdownButtonFormField<String>(
-                          key: const Key('activity-type-field'),
-                          initialValue: _selectedType,
-                          // isExpanded: a treatment-context/type option's
-                          // localized label (e.g. "Specific disease/condition")
-                          // can be longer than the field's intrinsic width —
-                          // without this the dropdown's internal Row overflows
-                          // rather than truncating/wrapping to the available
-                          // width.
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: l10n.activityTypeFieldLabel,
-                          ),
-                          items: [
-                            for (final type in knownActivityTypes)
-                              DropdownMenuItem(
-                                value: type,
-                                child: Text(
-                                  activityTypeLabel(l10n, type) ?? type,
+                // The fields scroll, the actions stay pinned — the structure
+                // apiary_form_screen.dart adopted for #341 (#357). With the
+                // actions as the last children of the scroll view, a
+                // Treatment's adaptive attribute list plus the #46
+                // journey-attachment section pushed Save well below the fold
+                // on a field phone, turning "record what I just did" into a
+                // scroll-hunt in gloves. Outside the scrollable it is in the
+                // same place at every scroll offset, activity type, viewport
+                // height and text scale (FR-UX-1, FR-AX-1, D-18).
+                //
+                // LayoutBuilder caps that bar at half the body: on a body
+                // shorter than the bar — a handset in landscape, or a large
+                // text scale — an uncapped bar would take the whole Column,
+                // leave the fields 0px, overflow, and paint the destructive
+                // Delete clipped below the 44x44 floor (D-18). Capped, the
+                // bar scrolls internally instead and Save stays whole at the
+                // top of it. At any ordinary height the cap is slack and the
+                // layout is exactly the reference's.
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                          child: Form(
+                            key: _formKey,
+                            // Any field edit arms the unsaved-changes guard (#345);
+                            // edits outside the field tree (date, journey attachment)
+                            // call markUnsavedChanges directly.
+                            onChanged: markUnsavedChanges,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                DropdownButtonFormField<String>(
+                                  key: const Key('activity-type-field'),
+                                  initialValue: _selectedType,
+                                  // isExpanded: a treatment-context/type option's
+                                  // localized label (e.g. "Specific disease/condition")
+                                  // can be longer than the field's intrinsic width —
+                                  // without this the dropdown's internal Row overflows
+                                  // rather than truncating/wrapping to the available
+                                  // width.
+                                  isExpanded: true,
+                                  decoration: InputDecoration(
+                                    labelText: l10n.activityTypeFieldLabel,
+                                  ),
+                                  items: [
+                                    for (final type in knownActivityTypes)
+                                      DropdownMenuItem(
+                                        value: type,
+                                        child: Text(
+                                          activityTypeLabel(l10n, type) ?? type,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() {
+                                        _selectedType = value;
+                                        // A journey's main_activity_type is fixed —
+                                        // any prior match/choice is invalid for the
+                                        // new type. Create mode resets to auto-select
+                                        // fresh against the new type (#46 AC's
+                                        // matching rule); edit mode instead DETACHES
+                                        // (#387 design: "no auto-match surprises on
+                                        // edit" — the stored link only ever changes
+                                        // via an explicit user action, never an
+                                        // automatic re-match after a type change).
+                                        _journeyTouch = widget.isEdit
+                                            ? _JourneyTouch.deselected
+                                            : _JourneyTouch.none;
+                                        _manualJourneyId = null;
+                                        _manualJourneyNameFallback = null;
+                                        // #440/D-31: a type change invalidates any
+                                        // prior relaxed pick too — the plan-growth
+                                        // flag must not survive it.
+                                        _attachGrowsPlan = false;
+                                        // #386: the fresh auto-match for the new
+                                        // type must get its own prefill — even if
+                                        // it happens to re-select the SAME journey
+                                        // id a prior type once matched.
+                                        _lastPrefilledJourneyId = null;
+                                      });
+                                    }
+                                  },
                                 ),
+                                const SizedBox(height: 16),
+                                _journeyAttachmentSection(l10n),
+                                const SizedBox(height: 16),
+                                InkWell(
+                                  key: const Key('activity-occurred-at-field'),
+                                  onTap: _pickDate,
+                                  child: InputDecorator(
+                                    decoration: InputDecoration(
+                                      labelText: l10n.activityOccurredAtLabel,
+                                    ),
+                                    child: Text(
+                                      LocaleFormatting.of(context)
+                                          .date(_occurredAt),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ..._attributeFields(l10n),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Pinned action bar. SafeArea (bottom only — the top belongs
+                      // to the scroll view) keeps it clear of the home indicator /
+                      // browser chrome. Delete is pinned alongside Save rather
+                      // than left trailing the scrollable: the same scroll-hunt
+                      // would strand it too, and it is already protected against a
+                      // gloved mis-tap by [DeleteActivityConfirmDialog]. Both keep
+                      // the shared field-action sizing (at least 56px tall, well
+                      // over the 44x44 floor — D-18, FR-UX-1) and their own
+                      // semantics labels.
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: constraints.maxHeight / 2,
+                        ),
+                        child: SingleChildScrollView(
+                          child: SafeArea(
+                            top: false,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  PrimaryActionButton(
+                                    key: const Key('activity-save-button'),
+                                    label: l10n.saveButton,
+                                    onPressed: _save,
+                                  ),
+                                  if (widget.isEdit) ...[
+                                    const SizedBox(height: 12),
+                                    SecondaryActionButton(
+                                      key: const Key('activity-delete-button'),
+                                      label: l10n.deleteActivity,
+                                      icon: Icons.delete_outline,
+                                      destructive: true,
+                                      onPressed: _confirmDelete,
+                                    ),
+                                  ],
+                                ],
                               ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedType = value;
-                                // A journey's main_activity_type is fixed —
-                                // any prior match/choice is invalid for the
-                                // new type. Create mode resets to auto-select
-                                // fresh against the new type (#46 AC's
-                                // matching rule); edit mode instead DETACHES
-                                // (#387 design: "no auto-match surprises on
-                                // edit" — the stored link only ever changes
-                                // via an explicit user action, never an
-                                // automatic re-match after a type change).
-                                _journeyTouch = widget.isEdit
-                                    ? _JourneyTouch.deselected
-                                    : _JourneyTouch.none;
-                                _manualJourneyId = null;
-                                _manualJourneyNameFallback = null;
-                                // #440/D-31: a type change invalidates any
-                                // prior relaxed pick too — the plan-growth
-                                // flag must not survive it.
-                                _attachGrowsPlan = false;
-                                // #386: the fresh auto-match for the new
-                                // type must get its own prefill — even if
-                                // it happens to re-select the SAME journey
-                                // id a prior type once matched.
-                                _lastPrefilledJourneyId = null;
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        _journeyAttachmentSection(l10n),
-                        const SizedBox(height: 16),
-                        InkWell(
-                          key: const Key('activity-occurred-at-field'),
-                          onTap: _pickDate,
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: l10n.activityOccurredAtLabel,
-                            ),
-                            child: Text(
-                              LocaleFormatting.of(context).date(_occurredAt),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        ..._attributeFields(l10n),
-                        const SizedBox(height: 24),
-                        PrimaryActionButton(
-                          key: const Key('activity-save-button'),
-                          label: l10n.saveButton,
-                          onPressed: _save,
-                        ),
-                        if (widget.isEdit) ...[
-                          const SizedBox(height: 12),
-                          SecondaryActionButton(
-                            key: const Key('activity-delete-button'),
-                            label: l10n.deleteActivity,
-                            icon: Icons.delete_outline,
-                            destructive: true,
-                            onPressed: _confirmDelete,
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
