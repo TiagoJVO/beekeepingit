@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
 import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -182,7 +183,27 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                           key: const Key('invite-email-field'),
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: InputDecoration(errorText: _emailError),
+                          // Drops the last invite's server verdict once
+                          // the address changes (#649's rule) — mandatory
+                          // here, because `forceErrorText` below keeps
+                          // `Form.validate()` false while it stands, so
+                          // without this the invite button would be dead
+                          // for the rest of the session.
+                          onChanged: (_) {
+                            if (_emailError == null) return;
+                            setState(() => _emailError = null);
+                          },
+                          // Both messages — the local validator's and the
+                          // server's 422 — are announced, not just painted
+                          // (#750, FR-AX-1, D-18). The server one travels
+                          // as `forceErrorText:` so it also sets
+                          // `FormFieldState.hasError`, which is what marks
+                          // the field `validationResult: invalid`; a
+                          // decoration-only `error:`/`errorText:` would
+                          // leave it reading as VALID under a visibly red
+                          // message. See field_error.dart.
+                          forceErrorText: _emailError,
+                          errorBuilder: announcedFieldError,
                           validator: (v) {
                             final value = (v ?? '').trim();
                             if (value.isEmpty) {

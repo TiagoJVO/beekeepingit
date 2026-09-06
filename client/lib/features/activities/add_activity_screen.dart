@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/l10n/localized_number_input.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -1078,6 +1079,10 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
               controller: _lotBatchController,
               maxLength: 100,
               autovalidateMode: AutovalidateMode.onUserInteraction,
+              // Announced, not just painted (#750, FR-AX-1, D-18) — and this
+              // field's own `onUserInteraction` errors are exactly the ones
+              // the SDK's `Form.validate()` announcement never reaches.
+              errorBuilder: announcedFieldError,
               validator: (_) => _attrError(l10n, 'lot_batch'),
               onChanged: (_) => setState(() {}),
             ),
@@ -1218,6 +1223,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       maxLength: 10000,
       textInputAction: TextInputAction.newline,
       autovalidateMode: AutovalidateMode.onUserInteraction,
+      // Announced, not just painted (#750, FR-AX-1, D-18).
+      errorBuilder: announcedFieldError,
       validator: (_) => _attrError(l10n, 'notes'),
       // No alignLabelWithHint: it only ever positioned the floating label
       // this field no longer has.
@@ -1247,6 +1254,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         // _save() genuinely blocks submission when a required numeric
         // attribute is missing/invalid (HIGH review fix).
         autovalidateMode: AutovalidateMode.onUserInteraction,
+        // Announced, not just painted (#750, FR-AX-1, D-18).
+        errorBuilder: announcedFieldError,
         validator: (_) => _numericFieldError(
           l10n,
           controller,
@@ -1280,6 +1289,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         // (HIGH fix) — a no-op when [attrKey] isn't currently required (e.g.
         // treatment_type for a detection-only report, #291 AC).
         autovalidateMode: AutovalidateMode.onUserInteraction,
+        // Announced, not just painted (#750, FR-AX-1, D-18).
+        errorBuilder: announcedFieldError,
         validator: (_) => _attrError(l10n, attrKey),
         decoration: InputDecoration(helperText: helperText),
         items: [

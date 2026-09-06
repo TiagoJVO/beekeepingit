@@ -11,6 +11,7 @@ import 'package:beekeepingit_client/features/profile/profile_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -440,6 +441,12 @@ void main() {
   testWidgets('surfaces a mocked 422 field error from the server', (
     tester,
   ) async {
+    // The semantics tree has to be alive for the announcement assertion at
+    // the end — the visible-text assertion above it does not need it, but
+    // the two belong in one test: they are the same server verdict, and a
+    // message that is painted without being announced is exactly the #750
+    // bug.
+    final handle = tester.ensureSemantics();
     final controller = _FakeProfileController(
       _profile(),
       onUpdate: ({name, email, locale}) async {
@@ -468,6 +475,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('name must not be empty'), findsOneWidget);
+
+    // #750 (FR-AX-1, D-18): a server-supplied field error never passes
+    // through `Form.validate()`, so the SDK's own announcement path never
+    // sees it — it must carry the live region itself, or a screen-reader
+    // user is told nothing at all about why the save was rejected.
+    expectLiveRegion(tester, find.text('name must not be empty'));
+    // And it announces the MESSAGE only — not the field's name a second
+    // time (#629).
+    expect(
+      tester.getSemantics(find.text('name must not be empty')).label,
+      'name must not be empty',
+    );
+    // The other half of #750, and the reason the server message travels as
+    // `forceErrorText:` rather than `InputDecoration.error:`: only
+    // `forceErrorText` sets `FormFieldState._errorText`, and only that
+    // drives `Semantics(validationResult:)`. Pushed in through the
+    // decoration the field would stay `valid` — on web, `aria-invalid=
+    // "false"` under a visibly red error, which is worse than saying
+    // nothing.
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('profile-name-field')))
+          .getSemanticsData()
+          .validationResult,
+      SemanticsValidationResult.invalid,
+    );
+    handle.dispose();
   });
 
   // The other half of #649: a save-time verdict from the server is just as

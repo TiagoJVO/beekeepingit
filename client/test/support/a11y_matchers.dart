@@ -49,6 +49,46 @@ void expectMinTapTarget(
   }
 }
 
+/// Asserts the semantics node a screen reader would land on for [finder] is
+/// (or, with `isLiveRegion: false`, is not) a LIVE REGION — the flag that
+/// makes an assistive technology speak the node when its content appears or
+/// changes.
+///
+/// This is the checkable form of the checklist's "validation errors are
+/// announced, not just painted" item (#750, FR-AX-1, D-18). Two shapes,
+/// both needed:
+///
+///  * on an ERROR MESSAGE node, `isLiveRegion: true` — the message must be
+///    spoken when it appears;
+///  * on the FIELD node itself, `isLiveRegion: false` — a live region there
+///    would make an assistive technology re-read the whole field (name,
+///    value, error) on every keystroke.
+///
+/// Reads the real [SemanticsNode]'s flags rather than the [Semantics] widget
+/// so a wrapper that swallows or duplicates the flag cannot pass.
+void expectLiveRegion(
+  WidgetTester tester,
+  Finder finder, {
+  bool isLiveRegion = true,
+}) {
+  expect(
+    finder,
+    findsOneWidget,
+    reason: 'expectLiveRegion: $finder matched no single widget',
+  );
+  final node = tester.getSemantics(finder);
+  expect(
+    node.getSemanticsData().flagsCollection.isLiveRegion,
+    isLiveRegion,
+    reason: isLiveRegion
+        ? 'the node labelled "${node.label}" must be a live region so a '
+              'screen reader speaks it when it appears; it is not'
+        : 'the node labelled "${node.label}" must NOT be a live region — a '
+              'live region there re-announces the whole node on every change; '
+              'it is',
+  );
+}
+
 /// The reference handset viewport for layout guards — 375x812, the size
 /// #630 measured the profile screen's dead vertical band at, and the same
 /// 375 width the rest of this suite already treats as the narrowest phone

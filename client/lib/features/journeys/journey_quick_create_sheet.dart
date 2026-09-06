@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -214,6 +215,9 @@ class _JourneyQuickCreateSheetState
                           controller: _nameController,
                           maxLength: 200,
                           autovalidateMode: AutovalidateMode.onUserInteraction,
+                          // Announced, not just painted (#750, FR-AX-1,
+                          // D-18).
+                          errorBuilder: announcedFieldError,
                           validator: (v) => (v == null || v.trim().isEmpty)
                               ? l10n.journeyNameRequired
                               : _syncErrors.messageFor(l10n, 'name'),
