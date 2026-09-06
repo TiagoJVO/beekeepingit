@@ -117,7 +117,36 @@ abstract final class BrandDimens {
   /// Hero-card interior padding.
   static const double padHero = 20;
 
-  /// Bottom padding that clears the floating action button on scrollable
-  /// screens (the prototype's `padding-bottom:120px`).
-  static const double scrollBottomInset = 120;
+  /// Bottom padding a scrollable screen leaves under its last card, so the
+  /// bottom chrome never lands on content (the prototype's
+  /// `padding-bottom:120px`).
+  ///
+  /// The chrome it has to clear is the floating action button *and* the
+  /// confirmation toast (#631) — the toast is the app's only "your save
+  /// worked" signal, so the card it is reporting on has to stay visible under
+  /// it. A two-line toast at the 200% text scale the field UX supports
+  /// (FR-AX-1) measures ~108 on a 375pt screen.
+  ///
+  /// This number is a **heuristic margin, not derived arithmetic**. Do not
+  /// reconstruct it as `108 + gapToastNav`: [gapToastNav] sits *below* the
+  /// body, not inside it — the body ends at the gutter's top edge, which is
+  /// also where a fixed toast's bottom lands, so the band only ever has to
+  /// cover the toast's own height. 120 already cleared ~108 by 12. The extra
+  /// 16 buys headroom for the cases the measurement does not cover: a
+  /// narrower screen, or a message long enough to wrap to three lines
+  /// (`syncSupersededNotice` is far longer than "Apiary saved"), either of
+  /// which overruns 136 as easily as 120. Re-measure before tuning it.
+  static const double scrollBottomInset = 136;
+
+  /// Gap between a confirmation toast and the bottom navigation under it
+  /// (#631) — the prototype floats its toast at `bottom:110px` over a ~96px
+  /// tab bar rather than resting it on the bar's top edge, which on this
+  /// palette would abut a plum-950 toast against the plum-800 navigation and
+  /// read as one block.
+  ///
+  /// This is *only* the gap. How far above the window bottom it lands the
+  /// toast is the `Scaffold`'s own arithmetic — it anchors a fixed `SnackBar`
+  /// at the top of its bottom chrome, whatever that chrome measures — so no
+  /// navigation-bar height is encoded here or anywhere else.
+  static const double gapToastNav = 14;
 }

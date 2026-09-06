@@ -7,6 +7,7 @@ import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../history/history_section.dart';
@@ -169,7 +170,15 @@ class _ActivityDetailBody extends ConsumerWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          // The shared reserved band, not a local 96 (#631): the last card
+          // here is the change history, and a confirmation toast is wider
+          // than 96 at the larger text sizes the field UX supports.
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

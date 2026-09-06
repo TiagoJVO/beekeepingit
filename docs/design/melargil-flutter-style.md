@@ -30,13 +30,35 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
-  `120` at the bottom to clear the FAB (`BrandDimens.scrollBottomInset`).
-  That inset is for screens a FAB actually floats over — a tab root, or a
-  pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
+  `136` at the bottom (`BrandDimens.scrollBottomInset`) to clear the FAB **and
+  the confirmation toast** — a toast covering the card it just confirmed a save
+  to is `#631`. That inset is for screens a FAB actually floats over — a tab
+  root, or a pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
   full-screen **form** is a pushed route with no FAB at all (the shell hides
   its own on any pushed route), and its pinned action bar sits outside the
   scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
-  the bar do the clearing.
+  the bar do the clearing. Where the inset does apply, use the constant: four
+  detail screens carrying their own smaller `96` is how `#631` got in.
+- **Toasts:** nothing positions them — every `showSnackBar` call site hands the
+  bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
+  of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
+  its `bottomNavigationBar` slot so that anchor lands clear of the navigation
+  bar instead of on its top edge (`#631`). Do **not** reach for
+  `SnackBarBehavior.floating` to get the same gap: with a FAB on screen Flutter
+  anchors a floating bar above the _FAB_, which is 194px up into the content.
+
+  That gutter is **permanent, not toast-only** — it has to be, because the
+  `Scaffold` computes its bottom-chrome height once, not per toast. It costs
+  14px of body height on every tab. On a screen whose content sits on the
+  scaffold background the band is the same colour as the content above it and
+  is invisible; on a **full-bleed** screen it is not. `apiary_map_screen.dart`
+  fills the tab body with a `Stack`, so the map ends 14px above the plum
+  navigation bar with a cream strip between them, permanently. That is an
+  accepted trade (`#631`): the toast is the app's only "your save worked"
+  signal, and separating it from the navigation bar was judged worth a thin
+  band on one tab. Weigh it before adding another full-bleed tab — and do not
+  "fix" it by painting the gutter the navigation bar's colour, which restores
+  exactly the two-dark-bars-read-as-one-block symptom `#631` set out to remove.
 
 ## Widgets (`brand_widgets.dart`) — compose these
 
