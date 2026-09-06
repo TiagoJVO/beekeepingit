@@ -150,3 +150,65 @@ void expectFullyOnScreen(
     reason: '$reason (rendered at $rect, viewport $viewport)',
   );
 }
+
+/// Asserts the control keyed [key] announces [name] as its accessible name —
+/// what `InputDecoration.labelText` used to put on the field's own semantics
+/// node, and what the `client/e2e` suite reaches for with `getByLabel(...)`.
+///
+/// Compares only the FIRST line of the node's label: a field whose label now
+/// sits above it shows its `hintText` as visible placeholder text, and a
+/// visible hint joins the same merged node on a line of its own (with the
+/// label in the box border it was opacity-0, and so left out). A multi-line
+/// field likewise contributes an empty trailing segment. The name is the
+/// part that has to be exact.
+void expectFieldAccessibleName(WidgetTester tester, Key key, String name) {
+  final finder = find.byKey(key);
+  expect(finder, findsOneWidget, reason: 'expectFieldAccessibleName: $key');
+  expect(
+    tester.getSemantics(finder).label.split('\n').first.trim(),
+    name,
+    reason:
+        'the field keyed $key lost the accessible name its floating label '
+        'used to give it — moving the label above the box must hand the '
+        'name to the field, not just paint text near it',
+  );
+}
+
+/// Asserts the form inside [scope] uses ONE field-label pattern — the
+/// documented label-above `LabeledField` — by proving no field on it still
+/// paints a floating Material label (`InputDecoration.labelText`), the
+/// pattern `docs/design/melargil-flutter-style.md` rules out (#629, FR-UX-1).
+///
+/// Every decorated field (`TextField`, `TextFormField`,
+/// `DropdownButtonFormField`, a bare `InputDecorator` wrapping a tappable
+/// value) builds exactly one [InputDecorator], so sweeping those covers all
+/// of them uniformly — including the ones a screen builds from a private
+/// helper, which a key-by-key check would keep missing as fields are added.
+///
+/// [scope] keeps the sweep to the screen under test: list screens' compact
+/// filter/search bars deliberately keep their own labels and may be mounted
+/// elsewhere in the same pumped app.
+void expectNoFloatingFieldLabels(WidgetTester tester, Finder scope) {
+  final decorators = find.descendant(
+    of: scope,
+    matching: find.byType(InputDecorator),
+  );
+  expect(
+    decorators,
+    findsWidgets,
+    reason: 'expectNoFloatingFieldLabels: no fields found inside the scope',
+  );
+  final floating = <String>[
+    for (final element in decorators.evaluate())
+      if ((element.widget as InputDecorator).decoration.labelText
+          case final String label)
+        label,
+  ];
+  expect(
+    floating,
+    isEmpty,
+    reason:
+        'these fields still animate their label into the box border instead '
+        'of wearing it above via LabeledField: $floating',
+  );
+}

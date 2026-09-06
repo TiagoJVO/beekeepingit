@@ -10,6 +10,7 @@ import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_tokens.dart';
+import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
@@ -548,60 +549,84 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              TextFormField(
-                                key: const Key('apiary-name-field'),
-                                controller: _nameController,
-                                focusNode: _syncErrorFocusNodes['name'],
-                                autofocus: !widget.isEdit,
-                                decoration: InputDecoration(
-                                  labelText: l10n.apiaryNameLabel,
+                              // One label pattern throughout (#629, FR-UX-1):
+                              // every label sits ABOVE its field via
+                              // [LabeledField], the pattern
+                              // docs/design/melargil-flutter-style.md
+                              // documents — never animated into the box
+                              // border. This form used to mix the two, and
+                              // the seam showed: a static "Location" heading
+                              // in its own type style landed directly above a
+                              // Notes field whose label floated, so the
+                              // column's baseline rhythm stuttered exactly
+                              // where the two patterns met.
+                              LabeledField(
+                                label: l10n.apiaryNameLabel,
+                                child: TextFormField(
+                                  key: const Key('apiary-name-field'),
+                                  controller: _nameController,
+                                  focusNode: _syncErrorFocusNodes['name'],
+                                  autofocus: !widget.isEdit,
+                                  // The form's own "required" rule first, then
+                                  // whatever the shared sync description says
+                                  // about this column (#597) — e.g. a name
+                                  // that is under the field's 200-character
+                                  // allowance but over the server's 200-BYTE
+                                  // cap, which only a save-time check can
+                                  // catch.
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? l10n.apiaryNameRequired
+                                      : _syncErrors.messageFor(l10n, 'name'),
                                 ),
-                                // The form's own "required" rule first, then
-                                // whatever the shared sync description says
-                                // about this column (#597) — e.g. a name that
-                                // is under the field's 200-character allowance
-                                // but over the server's 200-BYTE cap, which
-                                // only a save-time check can catch.
-                                validator: (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                    ? l10n.apiaryNameRequired
-                                    : _syncErrors.messageFor(l10n, 'name'),
                               ),
                               const SizedBox(height: 16),
-                              TextFormField(
-                                key: const Key('apiary-place-label-field'),
-                                controller: _placeLabelController,
-                                focusNode: _syncErrorFocusNodes['place_label'],
-                                textInputAction: TextInputAction.next,
-                                maxLength: 200,
-                                decoration: InputDecoration(
-                                  labelText: l10n.apiaryPlaceLabelLabel,
-                                  hintText: l10n.apiaryPlaceLabelHint,
+                              LabeledField(
+                                label: l10n.apiaryPlaceLabelLabel,
+                                child: TextFormField(
+                                  key: const Key('apiary-place-label-field'),
+                                  controller: _placeLabelController,
+                                  focusNode:
+                                      _syncErrorFocusNodes['place_label'],
+                                  textInputAction: TextInputAction.next,
+                                  maxLength: 200,
+                                  decoration: InputDecoration(
+                                    hintText: l10n.apiaryPlaceLabelHint,
+                                  ),
+                                  validator: (_) => _syncErrors.messageFor(
+                                    l10n,
+                                    'place_label',
+                                  ),
                                 ),
-                                validator: (_) =>
-                                    _syncErrors.messageFor(l10n, 'place_label'),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                l10n.apiaryLocationSectionLabel,
-                                style: Theme.of(context).textTheme.labelLarge,
-                              ),
-                              const SizedBox(height: 4),
-                              Semantics(
-                                liveRegion: true,
-                                child: Text(
-                                  _location == null
-                                      ? l10n.apiaryFormLocationNotSet
-                                      : l10n.apiaryFormLocationSet(
-                                          _location!.latitude.toStringAsFixed(
-                                            5,
+                              const SizedBox(height: 16),
+                              // Location is a GROUP, not one control — the
+                              // status line below, then the errors, the
+                              // toggle, the picker and its own buttons, all
+                              // of which announce themselves. So the label
+                              // stays purely visual here (`labelsChild:
+                              // false`) rather than being folded onto the
+                              // live-region status line.
+                              LabeledField(
+                                label: l10n.apiaryLocationSectionLabel,
+                                labelsChild: false,
+                                child: Semantics(
+                                  liveRegion: true,
+                                  child: Text(
+                                    _location == null
+                                        ? l10n.apiaryFormLocationNotSet
+                                        : l10n.apiaryFormLocationSet(
+                                            _location!.latitude.toStringAsFixed(
+                                              5,
+                                            ),
+                                            _location!.longitude
+                                                .toStringAsFixed(5),
                                           ),
-                                          _location!.longitude.toStringAsFixed(
-                                            5,
-                                          ),
-                                        ),
-                                  key: const Key('apiary-location-status'),
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                    key: const Key('apiary-location-status'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
                                 ),
                               ),
                               if (_locationPermissionDenied) ...[
@@ -693,21 +718,25 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                 ],
                               ],
                               const SizedBox(height: 16),
-                              TextFormField(
-                                key: const Key('apiary-notes-field'),
-                                controller: _notesController,
-                                focusNode: _syncErrorFocusNodes['notes'],
-                                minLines: 3,
-                                maxLines: 6,
-                                maxLength: 10000,
-                                textInputAction: TextInputAction.newline,
-                                decoration: InputDecoration(
-                                  labelText: l10n.apiaryNotesLabel,
-                                  hintText: l10n.apiaryNotesHint,
-                                  alignLabelWithHint: true,
+                              LabeledField(
+                                label: l10n.apiaryNotesLabel,
+                                child: TextFormField(
+                                  key: const Key('apiary-notes-field'),
+                                  controller: _notesController,
+                                  focusNode: _syncErrorFocusNodes['notes'],
+                                  minLines: 3,
+                                  maxLines: 6,
+                                  maxLength: 10000,
+                                  textInputAction: TextInputAction.newline,
+                                  // No alignLabelWithHint: that only ever
+                                  // positioned the floating label this field
+                                  // no longer has.
+                                  decoration: InputDecoration(
+                                    hintText: l10n.apiaryNotesHint,
+                                  ),
+                                  validator: (_) =>
+                                      _syncErrors.messageFor(l10n, 'notes'),
                                 ),
-                                validator: (_) =>
-                                    _syncErrors.messageFor(l10n, 'notes'),
                               ),
                               const SizedBox(height: 16),
                               // Registration number (FR-AP-9, #296).
@@ -719,22 +748,24 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                               // organization covers several beekeepers.
                               // Leaving it empty is the ordinary case, not
                               // an omission.
-                              TextFormField(
-                                key: const Key(
-                                  'apiary-registration-number-field',
-                                ),
-                                controller: _registrationNumberController,
-                                focusNode:
-                                    _syncErrorFocusNodes['registration_number'],
-                                textInputAction: TextInputAction.done,
-                                maxLength: 50,
-                                decoration: InputDecoration(
-                                  labelText: l10n.apiaryRegistrationNumberLabel,
-                                  hintText: l10n.apiaryRegistrationNumberHint,
-                                ),
-                                validator: (_) => _syncErrors.messageFor(
-                                  l10n,
-                                  'registration_number',
+                              LabeledField(
+                                label: l10n.apiaryRegistrationNumberLabel,
+                                child: TextFormField(
+                                  key: const Key(
+                                    'apiary-registration-number-field',
+                                  ),
+                                  controller: _registrationNumberController,
+                                  focusNode:
+                                      _syncErrorFocusNodes['registration_number'],
+                                  textInputAction: TextInputAction.done,
+                                  maxLength: 50,
+                                  decoration: InputDecoration(
+                                    hintText: l10n.apiaryRegistrationNumberHint,
+                                  ),
+                                  validator: (_) => _syncErrors.messageFor(
+                                    l10n,
+                                    'registration_number',
+                                  ),
                                 ),
                               ),
                             ],

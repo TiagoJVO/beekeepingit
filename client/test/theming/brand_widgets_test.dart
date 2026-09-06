@@ -55,6 +55,73 @@ void main() {
     expect(find.byKey(const Key('lf-child')), findsOneWidget);
   });
 
+  testWidgets(
+    'LabeledField lends its label to the field it wraps as that field\'s '
+    'ACCESSIBLE name (#629, FR-AX-1) — moving the label out of the box '
+    'border must not cost the input the name InputDecoration.labelText '
+    'used to put on its own semantics node',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          const LabeledField(
+            label: 'Name',
+            child: TextField(key: Key('lf-child')),
+          ),
+        ),
+      );
+
+      final semantics = tester.getSemantics(find.byKey(const Key('lf-child')));
+      expect(
+        semantics.label,
+        'Name',
+        reason:
+            'a bare Text sibling is invisible to a screen reader focused on '
+            'the input: the label has to land on the field node itself, the '
+            'way labelText did',
+      );
+      expect(
+        semantics.flagsCollection.isTextField,
+        isTrue,
+        reason:
+            'the label must merge INTO the field node, not wrap it in an '
+            'extra container node that the input would not inherit',
+      );
+      expect(
+        find.bySemanticsLabel('Name'),
+        findsOneWidget,
+        reason:
+            'exactly one announced "Name" — the visible Text is excluded '
+            'from semantics once the field carries the name, or a screen '
+            'reader reads the label twice',
+      );
+      handle.dispose();
+    },
+  );
+
+  testWidgets('LabeledField(labelsChild: false) leaves the wrapped subtree\'s '
+      'semantics untouched — the opt-out for groups whose controls each own '
+      'their name already (pickers, a read-only value, a field sharing its '
+      'row with a button) (#629)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(
+        const LabeledField(
+          label: 'Apiaries',
+          labelsChild: false,
+          child: TextField(key: Key('lf-child')),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSemantics(find.byKey(const Key('lf-child'))).label,
+      isEmpty,
+    );
+    expect(find.text('Apiaries'), findsOneWidget);
+    handle.dispose();
+  });
+
   testWidgets('HeroCard and NotesCard render their content', (tester) async {
     await tester.pumpWidget(
       _host(

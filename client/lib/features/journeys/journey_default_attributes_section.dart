@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 
 /// Mutable holder for the "Defaults for activities" form state (#385) —
@@ -175,12 +176,14 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
         ];
       case activityTypeHarvest:
         return [
-          TextFormField(
-            key: const Key('journey-default-lot-batch-field'),
-            controller: controller.lotBatchController,
-            maxLength: 100,
-            decoration: InputDecoration(labelText: l10n.activityLotBatchLabel),
-            onChanged: (_) => onChanged(),
+          LabeledField(
+            label: l10n.activityLotBatchLabel,
+            child: TextFormField(
+              key: const Key('journey-default-lot-batch-field'),
+              controller: controller.lotBatchController,
+              maxLength: 100,
+              onChanged: (_) => onChanged(),
+            ),
           ),
         ];
       default: // generic — no subtype defaults
@@ -198,23 +201,27 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
     required void Function(String?) onChanged,
     String Function(String)? optionLabel,
   }) {
-    return DropdownButtonFormField<String>(
-      key: Key(key),
-      initialValue: value,
-      isExpanded: true, // long localized labels can overflow otherwise
-      decoration: InputDecoration(labelText: label),
-      items: [
-        DropdownMenuItem(child: Text(l10n.journeyDefaultsNotSetOption)),
-        for (final option in options)
-          DropdownMenuItem(
-            value: option,
-            child: Text(optionLabel == null ? option : optionLabel(option)),
-          ),
-      ],
-      onChanged: (v) {
-        onChanged(v);
-        this.onChanged();
-      },
+    // One label pattern app-wide (#629, FR-UX-1): the label sits ABOVE the
+    // control, matching the journey form these defaults render inside.
+    return LabeledField(
+      label: label,
+      child: DropdownButtonFormField<String>(
+        key: Key(key),
+        initialValue: value,
+        isExpanded: true, // long localized labels can overflow otherwise
+        items: [
+          DropdownMenuItem(child: Text(l10n.journeyDefaultsNotSetOption)),
+          for (final option in options)
+            DropdownMenuItem(
+              value: option,
+              child: Text(optionLabel == null ? option : optionLabel(option)),
+            ),
+        ],
+        onChanged: (v) {
+          onChanged(v);
+          this.onChanged();
+        },
+      ),
     );
   }
 }
