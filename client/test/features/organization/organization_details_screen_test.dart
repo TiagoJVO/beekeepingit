@@ -7,12 +7,15 @@ import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/organization/organization_details_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+
+import '../../support/a11y_matchers.dart';
 
 /// FR-ONB-2 + FR-AP-9 (#296): the organization-details screen — the
 /// re-enterable settings view of an organization that already exists (name,
@@ -132,6 +135,68 @@ const _numberField = Key('organization-details-registration-number-field');
 const _saveButton = Key('organization-details-save-button');
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): all three fields floated their labels.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeOrganizationController(
+            name: 'Apiários do Montargil',
+            address: 'Montargil, Ponte de Sor',
+            registrationNumber: 'PT-123456',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no field on the form paints a floating Material label', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      expectNoFloatingFieldLabels(
+        tester,
+        find.byType(OrganizationDetailsScreen),
+      );
+    });
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      for (final label in const [
+        'Organization name',
+        'Address (optional)',
+        'Registration number',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets(
+      'the fields keep the accessible name their floating labels used to '
+      'give them (FR-AX-1)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpForm(tester);
+
+        expectFieldAccessibleName(tester, _nameField, 'Organization name');
+        expectFieldAccessibleName(tester, _addressField, 'Address (optional)');
+        expectFieldAccessibleName(tester, _numberField, 'Registration number');
+        handle.dispose();
+      },
+    );
+  });
+
   testWidgets('renders the organization name, address and registration '
       'number from the loaded organization', (tester) async {
     await tester.pumpWidget(
@@ -585,6 +650,66 @@ void main() {
         tester.widget<TextFormField>(find.byKey(_numberField)).controller?.text,
         'PT-654321',
         reason: 'a rejected save must not discard what the user typed',
+      );
+    });
+  });
+
+  // #769 (FR-UX-1): this screen hung its 480px column off a plain `Center`,
+  // the shape #630 replaced on profile and new-organization. Measured at
+  // 375x812 the three-field form left a 178.5px dead band under the header.
+  group('layout at 375x812 (#769, FR-UX-1)', () {
+    Future<void> pumpDetails(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeOrganizationController(
+            name: 'Apiarios do Montargil',
+            address: 'Montargil, Ponte de Sor',
+            registrationNumber: 'PT-123456',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the form starts immediately under the header', (tester) async {
+      useViewport(tester);
+      await pumpDetails(tester);
+
+      final scroll = find.ancestor(
+        of: find.byKey(_nameField),
+        matching: find.byType(SingleChildScrollView),
+      );
+      // Guarded before getRect so a second wrapping scroll view fails here
+      // rather than with an opaque "matched N widgets".
+      expect(scroll, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(scroll).top;
+
+      expect(
+        contentTop - headerBottom,
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the organization details form must start just under the header '
+            'like every other form screen; it started '
+            '${contentTop - headerBottom}px below it',
+      );
+    });
+
+    // A FORWARD guard, not a reproduction — Save cleared both bars before
+    // the change too. It protects the opposite failure: top-aligning a short
+    // form hard enough to float its primary action up into the top third,
+    // out of a one-handed thumb's reach.
+    testWidgets('Save stays within comfortable thumb reach', (tester) async {
+      useViewport(tester);
+      await pumpDetails(tester);
+
+      expectWithinThumbReach(
+        tester,
+        find.byKey(_saveButton),
+        label: 'Save organization details',
       );
     });
   });

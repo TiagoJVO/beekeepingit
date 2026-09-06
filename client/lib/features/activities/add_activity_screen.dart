@@ -10,6 +10,7 @@ import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
 import '../journeys/journey_matching.dart';
 import '../journeys/journey_picker.dart';
@@ -856,6 +857,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     return buildUnsavedChangesGuard(
       child: _busy
           ? const Center(child: CircularProgressIndicator())
+          // Still a `Center`, not the `Align(topCenter)` #630/#769 gave the
+          // scroll-view screens: the Column below is mainAxisSize.max around
+          // an Expanded field area, so it already fills the body height and
+          // the vertical alignment never gets to apply — swapping it would
+          // render identically (FR-UX-1, #769).
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
@@ -893,72 +899,81 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                DropdownButtonFormField<String>(
-                                  key: const Key('activity-type-field'),
-                                  initialValue: _selectedType,
-                                  // isExpanded: a treatment-context/type option's
-                                  // localized label (e.g. "Specific disease/condition")
-                                  // can be longer than the field's intrinsic width —
-                                  // without this the dropdown's internal Row overflows
-                                  // rather than truncating/wrapping to the available
-                                  // width.
-                                  isExpanded: true,
-                                  decoration: InputDecoration(
-                                    labelText: l10n.activityTypeFieldLabel,
-                                  ),
-                                  items: [
-                                    for (final type in knownActivityTypes)
-                                      DropdownMenuItem(
-                                        value: type,
-                                        child: Text(
-                                          activityTypeLabel(l10n, type) ?? type,
+                                // One label pattern throughout (#629,
+                                // FR-UX-1): every label sits ABOVE its field
+                                // via [LabeledField], including the adaptive
+                                // attribute list further down — never
+                                // animated into the box border.
+                                LabeledField(
+                                  label: l10n.activityTypeFieldLabel,
+                                  child: DropdownButtonFormField<String>(
+                                    key: const Key('activity-type-field'),
+                                    initialValue: _selectedType,
+                                    // isExpanded: a treatment-context/type option's
+                                    // localized label (e.g. "Specific disease/condition")
+                                    // can be longer than the field's intrinsic width —
+                                    // without this the dropdown's internal Row overflows
+                                    // rather than truncating/wrapping to the available
+                                    // width.
+                                    isExpanded: true,
+                                    items: [
+                                      for (final type in knownActivityTypes)
+                                        DropdownMenuItem(
+                                          value: type,
+                                          child: Text(
+                                            activityTypeLabel(l10n, type) ??
+                                                type,
+                                          ),
                                         ),
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setState(() {
-                                        _selectedType = value;
-                                        // A journey's main_activity_type is fixed —
-                                        // any prior match/choice is invalid for the
-                                        // new type. Create mode resets to auto-select
-                                        // fresh against the new type (#46 AC's
-                                        // matching rule); edit mode instead DETACHES
-                                        // (#387 design: "no auto-match surprises on
-                                        // edit" — the stored link only ever changes
-                                        // via an explicit user action, never an
-                                        // automatic re-match after a type change).
-                                        _journeyTouch = widget.isEdit
-                                            ? _JourneyTouch.deselected
-                                            : _JourneyTouch.none;
-                                        _manualJourneyId = null;
-                                        _manualJourneyNameFallback = null;
-                                        // #440/D-31: a type change invalidates any
-                                        // prior relaxed pick too — the plan-growth
-                                        // flag must not survive it.
-                                        _attachGrowsPlan = false;
-                                        // #386: the fresh auto-match for the new
-                                        // type must get its own prefill — even if
-                                        // it happens to re-select the SAME journey
-                                        // id a prior type once matched.
-                                        _lastPrefilledJourneyId = null;
-                                      });
-                                    }
-                                  },
+                                    ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        setState(() {
+                                          _selectedType = value;
+                                          // A journey's main_activity_type is fixed —
+                                          // any prior match/choice is invalid for the
+                                          // new type. Create mode resets to auto-select
+                                          // fresh against the new type (#46 AC's
+                                          // matching rule); edit mode instead DETACHES
+                                          // (#387 design: "no auto-match surprises on
+                                          // edit" — the stored link only ever changes
+                                          // via an explicit user action, never an
+                                          // automatic re-match after a type change).
+                                          _journeyTouch = widget.isEdit
+                                              ? _JourneyTouch.deselected
+                                              : _JourneyTouch.none;
+                                          _manualJourneyId = null;
+                                          _manualJourneyNameFallback = null;
+                                          // #440/D-31: a type change invalidates any
+                                          // prior relaxed pick too — the plan-growth
+                                          // flag must not survive it.
+                                          _attachGrowsPlan = false;
+                                          // #386: the fresh auto-match for the new
+                                          // type must get its own prefill — even if
+                                          // it happens to re-select the SAME journey
+                                          // id a prior type once matched.
+                                          _lastPrefilledJourneyId = null;
+                                        });
+                                      }
+                                    },
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 _journeyAttachmentSection(l10n),
                                 const SizedBox(height: 16),
-                                InkWell(
-                                  key: const Key('activity-occurred-at-field'),
-                                  onTap: _pickDate,
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText: l10n.activityOccurredAtLabel,
+                                LabeledField(
+                                  label: l10n.activityOccurredAtLabel,
+                                  child: InkWell(
+                                    key: const Key(
+                                      'activity-occurred-at-field',
                                     ),
-                                    child: Text(
-                                      LocaleFormatting.of(context)
-                                          .date(_occurredAt),
+                                    onTap: _pickDate,
+                                    child: InputDecorator(
+                                      decoration: const InputDecoration(),
+                                      child: Text(
+                                        LocaleFormatting.of(context)
+                                            .date(_occurredAt),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1056,14 +1071,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           const SizedBox(height: 16),
           // lot_batch (#292, FR-AC-1, D-19): optional free-text lot/batch
           // identifier, capture-side only (export is a separate story).
-          TextFormField(
-            key: const Key('activity-lot-batch-field'),
-            controller: _lotBatchController,
-            maxLength: 100,
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (_) => _attrError(l10n, 'lot_batch'),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(labelText: l10n.activityLotBatchLabel),
+          LabeledField(
+            label: l10n.activityLotBatchLabel,
+            child: TextFormField(
+              key: const Key('activity-lot-batch-field'),
+              controller: _lotBatchController,
+              maxLength: 100,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              validator: (_) => _attrError(l10n, 'lot_batch'),
+              onChanged: (_) => setState(() {}),
+            ),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -1184,18 +1201,19 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     }
   }
 
-  Widget _notesField(AppLocalizations l10n) => TextFormField(
-    key: const Key('activity-notes-field'),
-    controller: _notesController,
-    minLines: 3,
-    maxLines: 6,
-    maxLength: 10000,
-    textInputAction: TextInputAction.newline,
-    autovalidateMode: AutovalidateMode.onUserInteraction,
-    validator: (_) => _attrError(l10n, 'notes'),
-    decoration: InputDecoration(
-      labelText: l10n.activityNotesLabel,
-      alignLabelWithHint: true,
+  Widget _notesField(AppLocalizations l10n) => LabeledField(
+    label: l10n.activityNotesLabel,
+    child: TextFormField(
+      key: const Key('activity-notes-field'),
+      controller: _notesController,
+      minLines: 3,
+      maxLines: 6,
+      maxLength: 10000,
+      textInputAction: TextInputAction.newline,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: (_) => _attrError(l10n, 'notes'),
+      // No alignLabelWithHint: it only ever positioned the floating label
+      // this field no longer has.
     ),
   );
 
@@ -1207,27 +1225,29 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     required String attrKey,
     bool integerOnly = false,
   }) {
-    return TextFormField(
-      key: Key(key),
-      controller: controller,
-      keyboardType: TextInputType.numberWithOptions(decimal: !integerOnly),
-      // Locale-aware, shared with every other numeric field (#623): the old
-      // `RegExp(r'[0-9.]')` / `digitsOnly` pair was English-only and silently
-      // ate the comma a Portuguese keypad produces, turning `40,5` into
-      // `405` before any validator could object.
-      inputFormatters: _numbers.formatters,
-      // A real validator (not a cosmetic errorText) so Form.validate() in
-      // _save() genuinely blocks submission when a required numeric
-      // attribute is missing/invalid (HIGH review fix).
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      validator: (_) => _numericFieldError(
-        l10n,
-        controller,
-        attrKey,
-        integerOnly: integerOnly,
+    return LabeledField(
+      label: label,
+      child: TextFormField(
+        key: Key(key),
+        controller: controller,
+        keyboardType: TextInputType.numberWithOptions(decimal: !integerOnly),
+        // Locale-aware, shared with every other numeric field (#623): the old
+        // `RegExp(r'[0-9.]')` / `digitsOnly` pair was English-only and
+        // silently ate the comma a Portuguese keypad produces, turning `40,5`
+        // into `405` before any validator could object.
+        inputFormatters: _numbers.formatters,
+        // A real validator (not a cosmetic errorText) so Form.validate() in
+        // _save() genuinely blocks submission when a required numeric
+        // attribute is missing/invalid (HIGH review fix).
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: (_) => _numericFieldError(
+          l10n,
+          controller,
+          attrKey,
+          integerOnly: integerOnly,
+        ),
+        onChanged: (_) => setState(() {}),
       ),
-      decoration: InputDecoration(labelText: label),
-      onChanged: (_) => setState(() {}),
     );
   }
 
@@ -1242,25 +1262,28 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     String Function(String)? optionLabel,
     String? helperText,
   }) {
-    return DropdownButtonFormField<String>(
-      key: Key(key),
-      initialValue: value,
-      isExpanded: true, // see the type-field dropdown's own doc comment above
-      // A real validator so an unselected required dropdown (feed_type,
-      // treatment_context, treatment_type, disease) blocks Form.validate()
-      // (HIGH fix) — a no-op when [attrKey] isn't currently required (e.g.
-      // treatment_type for a detection-only report, #291 AC).
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      validator: (_) => _attrError(l10n, attrKey),
-      decoration: InputDecoration(labelText: label, helperText: helperText),
-      items: [
-        for (final option in options)
-          DropdownMenuItem(
-            value: option,
-            child: Text(optionLabel == null ? option : optionLabel(option)),
-          ),
-      ],
-      onChanged: (v) => setState(() => onChanged(v)),
+    return LabeledField(
+      label: label,
+      child: DropdownButtonFormField<String>(
+        key: Key(key),
+        initialValue: value,
+        isExpanded: true, // see the type-field dropdown's own doc comment
+        // A real validator so an unselected required dropdown (feed_type,
+        // treatment_context, treatment_type, disease) blocks Form.validate()
+        // (HIGH fix) — a no-op when [attrKey] isn't currently required (e.g.
+        // treatment_type for a detection-only report, #291 AC).
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: (_) => _attrError(l10n, attrKey),
+        decoration: InputDecoration(helperText: helperText),
+        items: [
+          for (final option in options)
+            DropdownMenuItem(
+              value: option,
+              child: Text(optionLabel == null ? option : optionLabel(option)),
+            ),
+        ],
+        onChanged: (v) => setState(() => onChanged(v)),
+      ),
     );
   }
 }

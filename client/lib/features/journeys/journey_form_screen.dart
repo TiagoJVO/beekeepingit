@@ -252,6 +252,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     }
 
     return buildUnsavedChangesGuard(
+      // Still a `Center`, not the `Align(topCenter)` #630/#769 gave the
+      // scroll-view screens: the Column below is mainAxisSize.max around an
+      // Expanded field area, so it already fills the body height and the
+      // vertical alignment never gets to apply — swapping it would render
+      // identically (FR-UX-1, #769).
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),

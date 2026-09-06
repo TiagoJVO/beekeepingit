@@ -670,8 +670,8 @@ void main() {
       ];
       final sorted = sortApiariesByDistance(
         apiaries,
-        originLon: 0,
         originLat: 0,
+        originLon: 0,
       );
       expect(sorted.map((a) => a.id).toList(), ['near', 'far', 'none']);
     });
@@ -695,8 +695,8 @@ void main() {
       ];
       final sorted = sortApiariesByDistance(
         apiaries,
-        originLon: 60,
         originLat: 60,
+        originLon: 60,
       );
       expect(sorted.map((a) => a.id).toList(), ['east', 'north']);
     });

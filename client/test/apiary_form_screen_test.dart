@@ -11,6 +11,7 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -257,6 +258,7 @@ Widget _buildApp({
 /// [DeviceLocationService]). Location is mandatory (#341), so create tests
 /// must set one before saving.
 Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('apiary-toggle-map-button')));
   await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-use-current-location-button')));
@@ -265,6 +267,7 @@ Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
 
 void main() {
   _registrationNumberFormTests();
+  _oneFieldLabelPatternTests();
   group('the primary actions stay reachable with the map picker expanded '
       '(FR-UX-1, D-18, #341 regression)', () {
     // The defect this guards: #341 made location mandatory, so every apiary
@@ -573,6 +576,9 @@ void main() {
       // Tapping "set on map" expands the embedded map picker (#252 AC:
       // "placing/dragging a pin on an embedded map picker") and reveals its
       // controls including "use current location".
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('apiary-location-picker')), findsOneWidget);
@@ -727,6 +733,9 @@ void main() {
       );
 
       // Expand the map first (collapsed by default now).
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
       final picker = find.byKey(const Key('apiary-location-picker'));
@@ -873,6 +882,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -909,6 +921,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -951,6 +966,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -1003,6 +1021,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1049,6 +1070,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1098,6 +1122,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1135,6 +1162,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1231,6 +1261,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1295,6 +1328,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1366,6 +1402,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1839,6 +1878,99 @@ void main() {
       expect(find.text('Cancelar'), findsOneWidget);
       expect(find.text('Eliminar'), findsOneWidget);
     });
+  });
+}
+
+/// #629 (FR-UX-1, FR-AX-1): the apiary form is the screen the issue calls out
+/// for MIXING the two label patterns — a static "Location" heading sitting
+/// directly above a Notes field whose label animates into the box border, so
+/// the column of fields visibly stutters. One pattern only: every label
+/// above its field, via `LabeledField`.
+void _oneFieldLabelPatternTests() {
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> openNewApiaryForm(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no field on the form paints a floating Material label', (
+      tester,
+    ) async {
+      await openNewApiaryForm(tester);
+
+      expectNoFloatingFieldLabels(tester, find.byType(ApiaryFormScreen));
+    });
+
+    testWidgets('every field wears its label above, via LabeledField — '
+        'including the location block, whose heading used to be a one-off '
+        '`Text` in a different type style', (tester) async {
+      await openNewApiaryForm(tester);
+
+      for (final label in const [
+        'Name',
+        'Place label',
+        'Location',
+        'Notes',
+        'Registration number',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets(
+      'the fields keep the accessible NAME labelText used to give them — '
+      'the e2e suite drives this very form through getByLabel("Name") / '
+      'getByLabel("Notes") (FR-AX-1)',
+      (tester) async {
+        // Deliberately a PIN, not a red-first test: it passed against the
+        // floating-label form too, because that is exactly the property
+        // being preserved. Its job is to fail the moment the label moves
+        // above the field WITHOUT `LabeledField` handing the name on to the
+        // input — the silent a11y regression this conversion invites.
+        final handle = tester.ensureSemantics();
+        await openNewApiaryForm(tester);
+
+        expectFieldAccessibleName(
+          tester,
+          const Key('apiary-name-field'),
+          'Name',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('apiary-place-label-field'),
+          'Place label',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('apiary-notes-field'),
+          'Notes',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('apiary-registration-number-field'),
+          'Registration number',
+        );
+        handle.dispose();
+      },
+    );
   });
 }
 

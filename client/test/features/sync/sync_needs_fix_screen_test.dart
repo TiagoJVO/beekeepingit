@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../support/bottom_chrome.dart';
+
 /// Widget tests for the needs-fix list (EPIC-06 #7, D-12 notify-and-fix): the
 /// rejected offline writes retained in the local dead-letter, rendered so the
 /// user can fix (deep-link to edit) or dismiss them. Driven through the real
@@ -637,6 +639,45 @@ void main() {
         expect(find.text('journeys list'), findsOneWidget);
       },
     );
+  });
+
+  // #773 (FR-UX-2, FR-AX-1): the list padded a flat `symmetric(vertical: 8)`,
+  // so its last card ran to the window floor.
+  //
+  // This screen raises no toast of its own, which is exactly why it is worth
+  // stating rather than skipping: it is a normal route outside the shell, and
+  // a `ScaffoldMessenger` re-presents its queue in whatever `Scaffold` is up
+  // (`ScaffoldMessengerState._register`) — so the "Sync started" toast raised
+  // on the account screen this list is reached from is still on screen when
+  // the list replaces it. Asserted structurally for the same reason the
+  // history timeline is: there is no message of this screen's own to measure.
+  group('the bottom chrome band (#773, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'the list reserves the bottom chrome band under its last card, at '
+        '${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+          await tester.pumpWidget(
+            _harness(
+              _FakeRejectedStore([for (var i = 0; i < 6; i++) _row(id: 'r$i')]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(ListView));
+
+          expectReservesBottomBand(
+            tester,
+            lastRow: find.byKey(const Key('needs-fix-r5')),
+            scrollable: find.byType(ListView),
+            reason:
+                'a rejected write is the one thing on this screen the user '
+                'has to act on — the last card cannot end under a toast',
+          );
+        },
+      );
+    }
   });
 }
 
