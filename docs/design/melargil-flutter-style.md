@@ -30,10 +30,15 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
-  `136` at the bottom to clear the FAB **and the confirmation toast**
-  (`BrandDimens.scrollBottomInset`) — a toast covering the card it just
-  confirmed a save to is `#631`. Always use the constant; a screen with its own
-  smaller number is how that bug got in.
+  `136` at the bottom (`BrandDimens.scrollBottomInset`) to clear the FAB **and
+  the confirmation toast** — a toast covering the card it just confirmed a save
+  to is `#631`. That inset is for screens a FAB actually floats over — a tab
+  root, or a pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
+  full-screen **form** is a pushed route with no FAB at all (the shell hides
+  its own on any pushed route), and its pinned action bar sits outside the
+  scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
+  the bar do the clearing. Where the inset does apply, use the constant: four
+  detail screens carrying their own smaller `96` is how `#631` got in.
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
   of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
@@ -64,9 +69,16 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **`HeroCard(child:)`** — the plum detail/settings header (radius 20, white
   foreground via `context.brand.onHeroSurface`).
 - **`BrandCard(child:, onTap:)`** — white card on the 1px hairline; tappable
-  ripple when `onTap` is set.
+  ripple when `onTap` is set. Passing `semanticLabel` makes the card announce
+  as **one node** — its child's own semantics are excluded, so the label is
+  the whole announcement (`#662`). Don't pass it on a card whose child has its
+  own focusable controls.
 - **`BrandRowCard(title:, subtitle:, leading:, trailing:, onTap:)`** — the
   standard list row (leading tile · title/subtitle · trailing · chevron).
+  A `trailing` badge that carries meaning of its own (overdue, open/closed,
+  progress) must spell that meaning into `trailingSemanticLabel`, or it is
+  silent to a screen reader; leave it null when the badge only restates the
+  subtitle, so the row doesn't say the same sentence twice.
 - **`LeadingIconTile(icon:, color:, tint:)`** — the rounded tinted icon square.
 - **`NotesCard(text:)`** — the sand "sticky note" callout.
 - **`EmptyState(message:, icon:)`** — centered empty/no-results message.

@@ -328,144 +328,216 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              BrandDimens.gutterForm,
-              BrandDimens.gutterForm,
-              BrandDimens.gutterForm,
-              BrandDimens.scrollBottomInset,
-            ),
-            child: Form(
-              key: _formKey,
-              // Any field edit arms the unsaved-changes guard (#345); the
-              // pickers/date below (outside the field tree) call it directly.
-              // It also drops the last save attempt's parity verdict (#597):
-              // the title field autovalidates on interaction, so a stale
-              // message would otherwise sit under a value the user has already
-              // corrected until they press Save again.
-              onChanged: () {
-                markUnsavedChanges();
-                if (_syncErrors.isNotEmpty) {
-                  setState(
-                    () => _syncErrors = const SaveTimeFieldErrors.none(),
-                  );
-                }
-              },
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  LabeledField(
-                    label: l10n.todoTitleLabel,
-                    child: TextFormField(
-                      key: const Key('todo-title-field'),
-                      controller: _titleController,
-                      maxLength: 500,
-                      autovalidateMode: AutovalidateMode.onUserInteraction,
-                      // The form's own "required" rule first, then whatever
-                      // the shared sync description says about this column
-                      // (#597) — e.g. a title under the field's 500-character
-                      // allowance but over the server's 500-BYTE cap, which
-                      // only a save-time check can catch.
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? l10n.todoTitleRequired
-                          : _syncErrors.messageFor(l10n, 'title'),
+          // The fields scroll, the actions stay pinned — the structure
+          // apiary_form_screen.dart adopted for #341 and
+          // journey_quick_create_sheet.dart already used (#357). With the
+          // actions as the last children of the scroll view, reaching Save on
+          // a short viewport meant a swipe that the assignee and apiary
+          // pickers' bounded inner lists silently swallow whenever the drag
+          // starts over them. Outside the scrollable they are in the same
+          // place at every scroll offset, picker state, viewport height and
+          // text scale (FR-UX-1, FR-AX-1, D-18).
+          //
+          // No `BrandDimens.scrollBottomInset` here any more: that inset
+          // clears a floating action button, and the shell hides its FAB on a
+          // pushed route like this form (`_ShellFab`'s `canGoBack`) — the
+          // pinned bar below is what the scroll view now has to clear, and it
+          // does so by sitting outside it.
+          //
+          // LayoutBuilder caps that bar at half the body. Edit mode stacks
+          // three field actions (~220px); on a body shorter than that — a
+          // handset in landscape, or a large text scale — an uncapped bar
+          // would take the whole Column, leave the fields 0px, overflow, and
+          // paint the destructive Delete clipped below the 44x44 floor
+          // (D-18). Capped, the bar scrolls internally instead and Save
+          // stays whole at the top of it. At any ordinary height the cap is
+          // slack and the layout is exactly the reference's.
+          child: LayoutBuilder(
+            builder: (context, constraints) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      BrandDimens.gutterForm,
+                      BrandDimens.gutterForm,
+                      BrandDimens.gutterForm,
+                      8,
                     ),
-                  ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  LabeledField(
-                    label: l10n.todoDescriptionLabel,
-                    child: TextFormField(
-                      key: const Key('todo-description-field'),
-                      controller: _descriptionController,
-                      minLines: 3,
-                      maxLines: 6,
-                      maxLength: 10000,
-                      textInputAction: TextInputAction.newline,
-                      validator: (_) =>
-                          _syncErrors.messageFor(l10n, 'description'),
-                    ),
-                  ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  _dueDateField(l10n),
-                  const SizedBox(height: BrandDimens.gapField),
-                  LabeledField(
-                    label: l10n.todoPriorityFieldLabel,
-                    child: DropdownButtonFormField<String>(
-                      key: const Key('todo-priority-field'),
-                      initialValue: _priority,
-                      isExpanded: true,
-                      items: [
-                        for (final p in knownTodoPriorities)
-                          DropdownMenuItem(
-                            value: p,
-                            child: Text(todoPriorityLabel(l10n, p) ?? p),
-                          ),
-                        // A stored priority this client version doesn't know
-                        // (replicated from a newer server, D-20) still renders —
-                        // mirrors add_activity_screen.dart's own `disease` field
-                        // fix for the identical
-                        // initialValue-must-be-in-items assertion risk.
-                        if (!knownTodoPriorities.contains(_priority))
-                          DropdownMenuItem(
-                            value: _priority,
-                            child: Text(
-                              todoPriorityLabel(l10n, _priority) ?? _priority,
+                    child: Form(
+                      key: _formKey,
+                      // Any field edit arms the unsaved-changes guard (#345); the
+                      // pickers/date below (outside the field tree) call it directly.
+                      // It also drops the last save attempt's parity verdict (#597):
+                      // the title field autovalidates on interaction, so a stale
+                      // message would otherwise sit under a value the user has already
+                      // corrected until they press Save again.
+                      onChanged: () {
+                        markUnsavedChanges();
+                        if (_syncErrors.isNotEmpty) {
+                          setState(
+                            () =>
+                                _syncErrors = const SaveTimeFieldErrors.none(),
+                          );
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          LabeledField(
+                            label: l10n.todoTitleLabel,
+                            child: TextFormField(
+                              key: const Key('todo-title-field'),
+                              controller: _titleController,
+                              maxLength: 500,
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
+                              // The form's own "required" rule first, then whatever
+                              // the shared sync description says about this column
+                              // (#597) — e.g. a title under the field's 500-character
+                              // allowance but over the server's 500-BYTE cap, which
+                              // only a save-time check can catch.
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? l10n.todoTitleRequired
+                                  : _syncErrors.messageFor(l10n, 'title'),
                             ),
                           ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) setState(() => _priority = v);
-                      },
-                      validator: (_) =>
-                          _syncErrors.messageFor(l10n, 'priority'),
+                          const SizedBox(height: BrandDimens.gapField),
+                          LabeledField(
+                            label: l10n.todoDescriptionLabel,
+                            child: TextFormField(
+                              key: const Key('todo-description-field'),
+                              controller: _descriptionController,
+                              minLines: 3,
+                              maxLines: 6,
+                              maxLength: 10000,
+                              textInputAction: TextInputAction.newline,
+                              validator: (_) =>
+                                  _syncErrors.messageFor(l10n, 'description'),
+                            ),
+                          ),
+                          const SizedBox(height: BrandDimens.gapField),
+                          _dueDateField(l10n),
+                          const SizedBox(height: BrandDimens.gapField),
+                          LabeledField(
+                            label: l10n.todoPriorityFieldLabel,
+                            child: DropdownButtonFormField<String>(
+                              key: const Key('todo-priority-field'),
+                              initialValue: _priority,
+                              isExpanded: true,
+                              items: [
+                                for (final p in knownTodoPriorities)
+                                  DropdownMenuItem(
+                                    value: p,
+                                    child: Text(
+                                      todoPriorityLabel(l10n, p) ?? p,
+                                    ),
+                                  ),
+                                // A stored priority this client version doesn't know
+                                // (replicated from a newer server, D-20) still renders —
+                                // mirrors add_activity_screen.dart's own `disease` field
+                                // fix for the identical
+                                // initialValue-must-be-in-items assertion risk.
+                                if (!knownTodoPriorities.contains(_priority))
+                                  DropdownMenuItem(
+                                    value: _priority,
+                                    child: Text(
+                                      todoPriorityLabel(l10n, _priority) ??
+                                          _priority,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) setState(() => _priority = v);
+                              },
+                              validator: (_) =>
+                                  _syncErrors.messageFor(l10n, 'priority'),
+                            ),
+                          ),
+                          const SizedBox(height: BrandDimens.gapField),
+                          TodoAssigneePickerField(
+                            selectedAssigneeId: _assigneeId,
+                            onChanged: (v) {
+                              setState(() => _assigneeId = v);
+                              markUnsavedChanges();
+                            },
+                          ),
+                          const SizedBox(height: BrandDimens.gapField),
+                          TodoApiaryPickerField(
+                            selectedApiaryId: _apiaryId,
+                            onChanged: (v) {
+                              setState(() => _apiaryId = v);
+                              markUnsavedChanges();
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  TodoAssigneePickerField(
-                    selectedAssigneeId: _assigneeId,
-                    onChanged: (v) {
-                      setState(() => _assigneeId = v);
-                      markUnsavedChanges();
-                    },
+                ),
+                // Pinned action bar. SafeArea (bottom only — the top belongs to the
+                // scroll view) keeps it clear of the home indicator / browser
+                // chrome. The complete/reopen toggle and Delete are pinned alongside
+                // Save rather than left trailing the scrollable: the same swipe the
+                // pickers swallow would strand them too, and Delete is already
+                // protected against a gloved mis-tap by [DeleteTodoConfirmDialog].
+                // All three keep the shared field-action sizing (at least 56px
+                // tall, well over the 44x44 floor — D-18, FR-UX-1) and their
+                // own semantics labels.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: constraints.maxHeight / 2,
                   ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  TodoApiaryPickerField(
-                    selectedApiaryId: _apiaryId,
-                    onChanged: (v) {
-                      setState(() => _apiaryId = v);
-                      markUnsavedChanges();
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  PrimaryActionButton(
-                    key: const Key('todo-save-button'),
-                    label: l10n.saveButton,
-                    busy: _busy,
-                    onPressed: _save,
-                  ),
-                  if (widget.isEdit) ...[
-                    const SizedBox(height: 12),
-                    SecondaryActionButton(
-                      key: const Key('todo-complete-toggle-button'),
-                      label: isDone
-                          ? l10n.todoReopenAction
-                          : l10n.todoCompleteAction,
-                      icon: isDone ? Icons.replay : Icons.check_circle_outline,
-                      busy: _busy,
-                      onPressed: _toggleComplete,
+                  child: SingleChildScrollView(
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          BrandDimens.gutterForm,
+                          BrandDimens.gapField / 2,
+                          BrandDimens.gutterForm,
+                          BrandDimens.gapField,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            PrimaryActionButton(
+                              key: const Key('todo-save-button'),
+                              label: l10n.saveButton,
+                              busy: _busy,
+                              onPressed: _save,
+                            ),
+                            if (widget.isEdit) ...[
+                              const SizedBox(height: 12),
+                              SecondaryActionButton(
+                                key: const Key('todo-complete-toggle-button'),
+                                label: isDone
+                                    ? l10n.todoReopenAction
+                                    : l10n.todoCompleteAction,
+                                icon: isDone
+                                    ? Icons.replay
+                                    : Icons.check_circle_outline,
+                                busy: _busy,
+                                onPressed: _toggleComplete,
+                              ),
+                              const SizedBox(height: 12),
+                              SecondaryActionButton(
+                                key: const Key('todo-delete-button'),
+                                label: l10n.deleteTodo,
+                                icon: Icons.delete_outline,
+                                destructive: true,
+                                busy: _busy,
+                                onPressed: _confirmDelete,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    SecondaryActionButton(
-                      key: const Key('todo-delete-button'),
-                      label: l10n.deleteTodo,
-                      icon: Icons.delete_outline,
-                      destructive: true,
-                      busy: _busy,
-                      onPressed: _confirmDelete,
-                    ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
