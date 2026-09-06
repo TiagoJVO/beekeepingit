@@ -148,13 +148,22 @@ class _ExistingOrganizationController extends OrganizationController {
 const _apiaries = [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)];
 const _memberNames = {'m1': 'Maria Silva'};
 
-Widget _buildApp({required _FakeTodosRepository repo}) {
+Widget _buildApp({
+  required _FakeTodosRepository repo,
+  Stream<Todo?> Function()? detailStream,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(_apiaries)),
       todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
-      todoByIdProvider.overrideWith((ref, id) => repo.liveStream),
+      // [detailStream] lets the layout group at the foot of this file hold
+      // the detail in its `loading` / `error` branch (#787) without
+      // duplicating this whole override list; every other test leaves it null
+      // and watches the fake repository's live stream.
+      todoByIdProvider.overrideWith(
+        (ref, id) => detailStream?.call() ?? repo.liveStream,
+      ),
       memberNamesProvider.overrideWith((ref) async => _memberNames),
       todosRepositoryProvider.overrideWith((ref) async => repo),
       profileProvider.overrideWith(_CompleteProfileController.new),
@@ -389,6 +398,7 @@ void main() {
   });
 
   _pinnedActionTests();
+  _layoutTests();
 }
 
 /// Sizes the test view to [viewport] at a 1:1 device pixel ratio and
@@ -585,5 +595,94 @@ void _pinnedActionTests() {
         }
       },
     );
+  });
+}
+
+/// #787 (FR-UX-1): the top-align sweep #630/#769 started, applied to this
+/// screen's own content wrapper.
+///
+/// This screen sizes its own view rather than reusing `_useTallViewport`
+/// above: at 1200x3600 there is no leftover height question to ask.
+void _layoutTests() {
+  group('TodoDetailScreen — layout at 1024x1366 (#787, FR-UX-1)', () {
+    Future<void> openAt(
+      WidgetTester tester, {
+      _FakeTodosRepository? repo,
+      Stream<Todo?> Function()? detail,
+      bool settle = true,
+    }) async {
+      _useViewport(tester, kTabletViewport);
+      await tester.pumpWidget(
+        _buildApp(
+          repo: repo ?? _FakeTodosRepository(_todo()),
+          detailStream: detail,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final router = GoRouter.of(tester.element(find.byType(AppShell)));
+      router.go('/todos/t1');
+      // The loading branch renders a CircularProgressIndicator, which never
+      // stops animating — `pumpAndSettle` would time out rather than fail on
+      // an assertion, so that case pumps a fixed frame instead.
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+    }
+
+    testWidgets('the content starts at the top of the content area', (
+      tester,
+    ) async {
+      await openAt(tester);
+      // ignore: avoid_print
+      print(
+        'PROBE pinned column: ${tester.getRect(find.ancestor(of: find.byKey(const Key("todo-detail-complete-toggle-button")), matching: find.byType(LayoutBuilder)).first)}',
+      );
+
+      expectStartsAtContentTop(
+        tester,
+        find.ancestor(
+          of: find.byKey(const Key('todo-detail-header')),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        // Anchored on the navigation shell, not an AppBar: this screen has
+        // none of its own — the shell owns the header and hands the route the
+        // region below it (and stacks the offline/needs-fix banners in
+        // between, so the assertion keeps meaning something if one shows).
+        anchor: find.byType(StatefulNavigationShell),
+        from: ContentTopAnchor.inside,
+        label: "the to-do's detail card stack",
+      );
+    });
+
+    // The other half of the change: only the `data` branch top-aligns. These
+    // two fail if the alignment wrapper is ever hoisted above
+    // `todoAsync.when` — the mistake #630 had to undo on the journey stats
+    // screen.
+    testWidgets('the loading spinner stays vertically centred', (tester) async {
+      await openAt(tester, detail: pendingStream<Todo?>, settle: false);
+
+      expectVerticallyCentredIn(
+        tester,
+        find.byType(CircularProgressIndicator),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+      );
+    });
+
+    testWidgets('the error message stays vertically centred', (tester) async {
+      await openAt(
+        tester,
+        detail: () => Stream<Todo?>.error(Exception('boom')),
+      );
+
+      expectVerticallyCentredIn(
+        tester,
+        find.textContaining('boom'),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+        label: 'a lone error message',
+      );
+    });
   });
 }

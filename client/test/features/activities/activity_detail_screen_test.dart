@@ -12,6 +12,9 @@ import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../support/a11y_matchers.dart';
 
 /// Fixtures mirroring the sibling activity/apiary widget tests (file-private
 /// there, so re-declared here).
@@ -107,6 +110,7 @@ Widget _buildApp({
   required Activity activity,
   Activity? byId,
   ActivitiesRepository? repo,
+  Stream<Activity?> Function()? detailStream,
 }) {
   final detail = byId ?? activity;
   return ProviderScope(
@@ -134,8 +138,13 @@ Widget _buildApp({
         (ref, apiaryId) => Stream.value([activity]),
       ),
       activitiesStreamProvider.overrideWith((ref) => Stream.value([activity])),
+      // [detailStream] lets the layout group below hold the detail in its
+      // `loading` / `error` branch (#787) without duplicating this whole
+      // override list; every other test leaves it null and resolves by id.
       activityByIdProvider.overrideWith(
-        (ref, id) => Stream.value(id == detail.id ? detail : null),
+        (ref, id) =>
+            detailStream?.call() ??
+            Stream.value(id == detail.id ? detail : null),
       ),
       if (repo != null)
         activitiesRepositoryProvider.overrideWith((ref) async => repo),
@@ -374,4 +383,97 @@ void main() {
       expect(find.byKey(const Key('apiary-detail-header')), findsOneWidget);
     });
   });
+
+  _layoutTests();
 }
+
+/// #787 (FR-UX-1): the body hung its 480px column off a plain `Center`, which
+/// splits the leftover height into equal bands and leaves a dead gap between
+/// the shell's header and the first card.
+///
+/// The viewport matters more here than on the screens #630/#769 fixed. At
+/// [kHandsetViewport] this screen's header card, attributes card and history
+/// block already overflow the body, so the scroll view fills it and the
+/// `Center` is inert — 0px, before and after. The band only appears once the
+/// body is taller than the content, which on this fixture starts around a
+/// tablet: [kTabletViewport] measured 261.5px on `main`. A guard written at
+/// 375x812 would have asserted nothing at all.
+void _layoutTests() {
+  group('ActivityDetailScreen — layout at 1024x1366 (#787, FR-UX-1)', () {
+    Future<void> openAt(
+      WidgetTester tester, {
+      Stream<Activity?> Function()? detail,
+      bool settle = true,
+    }) async {
+      useViewport(tester, size: kTabletViewport);
+      await tester.pumpWidget(
+        _buildApp(activity: _harvest(), detailStream: detail),
+      );
+      await tester.pumpAndSettle();
+      // The same two taps every test above uses to reach this screen — the
+      // Activities tab lists `act1` off activitiesStreamProvider, which
+      // [detailStream] does not touch.
+      await tester.tap(find.byKey(const Key('shell-tab-activities')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-act1')));
+      // The loading branch renders a CircularProgressIndicator, which never
+      // stops animating — `pumpAndSettle` would time out rather than fail on
+      // an assertion, so that case pumps a fixed frame instead.
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+    }
+
+    testWidgets('the content starts at the top of the content area', (
+      tester,
+    ) async {
+      await openAt(tester);
+
+      expectStartsAtContentTop(
+        tester,
+        find.ancestor(
+          of: find.byKey(const Key('activity-detail-header')),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        // Anchored on the navigation shell, not an AppBar: this screen has
+        // none of its own — the shell owns the header and hands the route
+        // the region below it (and stacks the offline/needs-fix banners in
+        // between, so the assertion keeps meaning something if one shows).
+        anchor: find.byType(StatefulNavigationShell),
+        from: ContentTopAnchor.inside,
+        label: "the activity's detail card stack",
+      );
+    });
+
+    // The other half of the change: only the `data` branch top-aligns. These
+    // two fail if the alignment wrapper is ever hoisted above
+    // `activityAsync.when` — the mistake #630 had to undo on the journey
+    // stats screen.
+    testWidgets('the loading spinner stays vertically centred', (tester) async {
+      await openAt(tester, detail: pendingStream<Activity?>, settle: false);
+
+      expectVerticallyCentredIn(
+        tester,
+        find.byType(CircularProgressIndicator),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+      );
+    });
+
+    testWidgets('the error message stays vertically centred', (tester) async {
+      await openAt(
+        tester,
+        detail: () => Stream<Activity?>.error(Exception('boom')),
+      );
+      expectVerticallyCentredIn(
+        tester,
+        find.textContaining('boom'),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+        label: 'a lone error message',
+      );
+    });
+  });
+}
+

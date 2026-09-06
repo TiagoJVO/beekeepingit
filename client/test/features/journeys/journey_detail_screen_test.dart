@@ -125,6 +125,7 @@ Widget _buildApp({
   List<String> plannedApiaryIds = const ['a1', 'a2'],
   List<Activity> activities = const [],
   JourneyStats stats = JourneyStats.empty,
+  Stream<Journey?> Function()? detailStream,
 }) {
   return ProviderScope(
     overrides: [
@@ -141,7 +142,13 @@ Widget _buildApp({
       journeysStreamProvider.overrideWith(
         (ref) => Stream.value(journey == null ? const <Journey>[] : [journey]),
       ),
-      journeyByIdProvider.overrideWith((ref, id) => Stream.value(journey)),
+      // [detailStream] lets the layout group at the foot of this file hold
+      // the detail in its `loading` / `error` branch (#787) without
+      // duplicating this whole override list; every other test leaves it
+      // null and resolves to [journey].
+      journeyByIdProvider.overrideWith(
+        (ref, id) => detailStream?.call() ?? Stream.value(journey),
+      ),
       journeyStatsProvider.overrideWith((ref, id) => Stream.value(stats)),
       activitiesByJourneyProvider.overrideWith(
         (ref, id) => Stream.value(activities),
@@ -205,6 +212,7 @@ Future<void> _openDetail(
 }
 
 void main() {
+  _layoutTests();
   group('JourneyDetailScreen (#48, FR-JO-3, D-21)', () {
     testWidgets('renders the journey header and embeds the #49 stats section', (
       tester,
@@ -505,5 +513,101 @@ void main() {
         });
       },
     );
+  });
+}
+
+/// #787 (FR-UX-1): the body hung its 480px column off a plain `Center`, which
+/// splits the leftover height into equal bands and leaves a dead gap between
+/// the shell's header and the first card.
+///
+/// This screen is the awkward one of #787's four. Its card stack is the
+/// tallest of the set (~1300px on this fixture), so at [kTabletViewport] the
+/// scroll view still fills the body and the `Center` is inert — the issue
+/// measured 0px there. Rather than thin the fixture down to something no real
+/// journey would show, this guard uses a viewport tall enough for the band to
+/// exist at all. 1024x1800 is not a device; it is the smallest round size
+/// above this screen's own content height, and the only way to make the
+/// alignment observable here.
+void _layoutTests() {
+  group('JourneyDetailScreen — layout (#787, FR-UX-1)', () {
+    // Tall enough to clear the ~1300px card stack; see the note above.
+    const tallViewport = Size(1024, 1800);
+
+    Future<void> openAt(
+      WidgetTester tester, {
+      Stream<Journey?> Function()? detail,
+      Size viewport = tallViewport,
+      bool settle = true,
+    }) async {
+      useViewport(tester, size: viewport);
+      await tester.pumpWidget(_buildApp(detailStream: detail));
+      await tester.pumpAndSettle();
+      final router = GoRouter.of(tester.element(find.byType(AppShell)));
+      router.go('/journeys/j1');
+      // The loading branch renders a CircularProgressIndicator, which never
+      // stops animating — `pumpAndSettle` would time out rather than fail on
+      // an assertion, so that case pumps a fixed frame instead.
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+    }
+
+    testWidgets('the content starts at the top of the content area', (
+      tester,
+    ) async {
+      await openAt(tester);
+
+      expectStartsAtContentTop(
+        tester,
+        find.ancestor(
+          of: find.byKey(const Key('journey-detail-header')),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        // Anchored on the navigation shell, not an AppBar: this screen has
+        // none of its own — the shell owns the header and hands the route the
+        // region below it (and stacks the offline/needs-fix banners in
+        // between, so the assertion keeps meaning something if one shows).
+        anchor: find.byType(StatefulNavigationShell),
+        from: ContentTopAnchor.inside,
+        label: "the journey's detail card stack",
+      );
+    });
+
+    // The other half of the change: only the `data` branch top-aligns. These
+    // two fail if the alignment wrapper is ever hoisted above
+    // `journeyAsync.when` — the mistake #630 had to undo on the sibling
+    // journey stats screen.
+    testWidgets('the loading spinner stays vertically centred', (tester) async {
+      await openAt(
+        tester,
+        detail: pendingStream<Journey?>,
+        viewport: kTabletViewport,
+        settle: false,
+      );
+
+      expectVerticallyCentredIn(
+        tester,
+        find.byType(CircularProgressIndicator),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+      );
+    });
+
+    testWidgets('the error message stays vertically centred', (tester) async {
+      await openAt(
+        tester,
+        detail: () => Stream<Journey?>.error(Exception('boom')),
+        viewport: kTabletViewport,
+      );
+
+      expectVerticallyCentredIn(
+        tester,
+        find.textContaining('boom'),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+        label: 'a lone error message',
+      );
+    });
   });
 }
