@@ -13,6 +13,7 @@ import '../organization/organization_repository.dart';
 import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
 import 'apiary_location_picker_screen.dart';
+import 'map_chrome.dart';
 import 'map_tile_sources.dart';
 
 /// Default map-picker center/zoom when no location is set yet — same
@@ -835,12 +836,11 @@ class _LocationPicker extends StatelessWidget {
                   onTap: (tapPosition, point) => onTap(point),
                 ),
                 children: [
-                  TileLayer(
+                  mapTileLayer(
                     key: const Key('apiary-location-picker-tile-layer'),
                     // map_tile_sources.dart, not a literal: nginx.conf's CSP
                     // `connect-src` has to name this host (#671).
                     urlTemplate: satelliteTileUrlTemplate,
-                    userAgentPackageName: mapTileUserAgentPackageName,
                   ),
                   if (location != null)
                     MarkerLayer(
@@ -863,21 +863,9 @@ class _LocationPicker extends StatelessWidget {
               Positioned(
                 right: 6,
                 bottom: 4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface
-                        .withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    l10n.apiaryMapAttributionEsri,
-                    key: const Key('apiary-location-picker-attribution'),
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
+                child: MapAttributionChip(
+                  text: l10n.apiaryMapAttributionEsri,
+                  textKey: const Key('apiary-location-picker-attribution'),
                 ),
               ),
               // "Maximize" control (#421) — opens the full-screen map picker
@@ -886,42 +874,16 @@ class _LocationPicker extends StatelessWidget {
               // Always shown (unlike recenter): the full-screen view is where
               // a first pin gets placed too, not only where an existing one is
               // adjusted. Top-left, clear of the top-right recenter control.
-              // Gloves-friendly: ≥[kMinTapTarget], Tooltip + Semantics label.
+              // Gloves-friendly: [MapCircleControl] is ≥`kMinTapTarget` with a
+              // Tooltip + Semantics label.
               Positioned(
                 top: 6,
                 left: 6,
-                child: Semantics(
-                  button: true,
-                  label: l10n.apiaryMapPickerMaximizeAction,
-                  child: Tooltip(
-                    message: l10n.apiaryMapPickerMaximizeAction,
-                    child: Material(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
-                      elevation: 2,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        key: const Key(
-                          'apiary-location-picker-maximize-button',
-                        ),
-                        customBorder: const CircleBorder(),
-                        onTap: onMaximize,
-                        child: Container(
-                          width: kMinTapTarget,
-                          height: kMinTapTarget,
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.fullscreen,
-                            size: 22,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                child: MapCircleControl(
+                  itemKey: const Key('apiary-location-picker-maximize-button'),
+                  icon: Icons.fullscreen,
+                  tooltip: l10n.apiaryMapPickerMaximizeAction,
+                  onTap: onMaximize,
                 ),
               ),
               // "Recenter on the pin" control (#420) — a live recenter the
@@ -929,44 +891,20 @@ class _LocationPicker extends StatelessWidget {
               // one-shot placement. Only shown once a pin exists (there's
               // nothing to recenter on otherwise); the picker is already
               // built here, so [controller] is attached and `move` is safe to
-              // call synchronously. Gloves-friendly: ≥[kMinTapTarget], with a
-              // Tooltip + Semantics label (WCAG 2.2 AA).
+              // call synchronously. Gloves-friendly: [MapCircleControl] is
+              // ≥`kMinTapTarget`, with a Tooltip + Semantics label (WCAG 2.2
+              // AA) — the same control the full-screen picker uses (#444).
               if (location != null)
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: Semantics(
-                    button: true,
-                    label: l10n.apiaryMapPickerRecenterAction,
-                    child: Tooltip(
-                      message: l10n.apiaryMapPickerRecenterAction,
-                      child: Material(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        elevation: 2,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          key: const Key(
-                            'apiary-location-picker-recenter-button',
-                          ),
-                          customBorder: const CircleBorder(),
-                          onTap: () => controller.move(location!, streetZoom),
-                          child: Container(
-                            width: kMinTapTarget,
-                            height: kMinTapTarget,
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.my_location,
-                              size: 22,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
+                  child: MapCircleControl(
+                    itemKey: const Key(
+                      'apiary-location-picker-recenter-button',
                     ),
+                    icon: Icons.my_location,
+                    tooltip: l10n.apiaryMapPickerRecenterAction,
+                    onTap: () => controller.move(location!, streetZoom),
                   ),
                 ),
             ],
