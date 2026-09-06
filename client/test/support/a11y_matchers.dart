@@ -47,6 +47,58 @@ void expectMinTapTarget(
   }
 }
 
+/// The reference handset viewport for layout guards — 375x812, the size
+/// #630 measured the profile screen's dead vertical band at, and the same
+/// 375 width the rest of this suite already treats as the narrowest phone
+/// the app targets.
+const Size kHandsetViewport = Size(375, 812);
+
+/// Sizes the test view to [size] at a 1:1 device pixel ratio and restores it
+/// afterwards, so a layout assertion reads in logical pixels that match the
+/// viewport the issue/checklist talks about.
+void useViewport(WidgetTester tester, {Size size = kHandsetViewport}) {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// Asserts the single widget matched by [finder] — a screen's primary action
+/// — is fully on screen without scrolling AND sits in the lower two thirds
+/// of the viewport, the zone a thumb covers comfortably on a one-handed grip
+/// (#630 AC 2). An action stranded in the top third of a tall phone is
+/// reachable only by re-gripping, which is exactly what the field-use pass in
+/// `docs/design/accessibility-field-ux-checklist.md` is trying to avoid.
+void expectWithinThumbReach(
+  WidgetTester tester,
+  Finder finder, {
+  Size viewport = kHandsetViewport,
+  String label = 'the primary action',
+}) {
+  expect(
+    finder,
+    findsOneWidget,
+    reason: 'expectWithinThumbReach: finder matched no single widget',
+  );
+  final rect = tester.getRect(finder);
+  expect(
+    rect.bottom,
+    lessThanOrEqualTo(viewport.height),
+    reason:
+        '$label must be reachable without scrolling on a '
+        '${viewport.width.toInt()}x${viewport.height.toInt()} viewport; '
+        'it rendered at $rect',
+  );
+  expect(
+    rect.center.dy,
+    greaterThanOrEqualTo(viewport.height / 3),
+    reason:
+        '$label must sit in the lower two thirds of a '
+        '${viewport.width.toInt()}x${viewport.height.toInt()} viewport '
+        '(thumb reach); its centre was at ${rect.center.dy}',
+  );
+}
+
 /// Asserts [key] resolves to exactly one widget with a non-empty semantics
 /// label — either its own `Semantics.label`, or one merged up from a
 /// descendant (e.g. a `Text` child), matching how a screen reader would

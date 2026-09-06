@@ -152,7 +152,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         error: (_, _) => Center(child: Text(l10n.profileGenericError)),
         data: (profile) {
           _syncFromProfile(profile);
-          return Center(
+          // Horizontally centred (so the 480px column stays middle-of-page on
+          // a wide window) but TOP-aligned: a plain `Center` split the
+          // leftover height into equal bands and left ~150px of dead space
+          // under the header on a 375x812 phone, unlike every other form
+          // screen in the app (#630, FR-UX-1). The loading/error branches
+          // above stay centred — a lone spinner or message belongs in the
+          // middle.
+          return Align(
+            alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: SingleChildScrollView(
