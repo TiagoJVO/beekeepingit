@@ -8,7 +8,7 @@
   "loginError": "Não foi possível iniciar sessão — verifique a ligação e tente novamente.",
   "logout": "Terminar sessão",
   "apiariesTitle": "Apiários",
-  "apiariesEmpty": "Ainda não há apiários. Toque em “Adicionar apiário” para criar um.",
+  "apiariesEmpty": "Ainda não há apiários. Crie o seu primeiro apiário para começar.",
   "apiariesError": "Não foi possível carregar os apiários: {error}",
   "addApiary": "Adicionar apiário",
   "actionsMenuLabel": "Ações",
