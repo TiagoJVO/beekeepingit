@@ -138,8 +138,13 @@ async function goToApiariesTab(page: Page) {
 async function scrollFormTo(page: Page, target: Locator) {
   const viewport = page.viewportSize();
   if (!viewport) return;
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const box = await target.boundingBox().catch(() => null);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // `boundingBox()` AUTO-WAITS for the element. Left unbounded it inherits
+    // the 240s test timeout, so a target that is not yet attached hangs the
+    // whole test here rather than falling through to a scroll — which is
+    // exactly how the first version of this helper failed. Bound it: a null
+    // box is a normal answer meaning "not measurable yet, scroll and retry".
+    const box = await target.boundingBox({ timeout: 500 }).catch(() => null);
     if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;
     // Point the wheel at the middle of the form, not at the target: the
     // target may be off-screen, and a wheel over the 220px map would be
