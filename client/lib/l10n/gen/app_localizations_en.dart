@@ -1265,6 +1265,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityNoAttributesSummary => 'No additional details';
 
   @override
+  String get activityHeadlineSupersLabel => 'Supers';
+
+  @override
+  String activityHeadlineHoneyKgValue(String value) {
+    return '$value kg';
+  }
+
+  @override
+  String get activityHeadlineFeedAmountLabel => 'Amount';
+
+  @override
   String activityLoadError(String error) {
     return 'Couldn\'t load the activity: $error';
   }

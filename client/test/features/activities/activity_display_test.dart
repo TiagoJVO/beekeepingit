@@ -132,6 +132,170 @@ void main() {
     });
   });
 
+  group('activityHeadlineLine (#632, FR-AC-5/6, FR-UX-1)', () {
+    test(
+      'harvest headlines the supers count — FR-AC-1\'s primary yield metric — '
+      'and nothing else',
+      () {
+        final line = activityHeadlineLine(
+          _l10n,
+          _activity(
+            type: 'harvest',
+            attributes: {
+              'honey_supers': 4,
+              'honey_kg': 12.5,
+              'hives_involved': 9,
+              'lot_batch': '2026-07-A1',
+            },
+          ),
+        );
+        expect(line, 'Supers: 4');
+      },
+    );
+
+    test('harvest: Portuguese uses its own short label', () {
+      final line = activityHeadlineLine(
+        _ptL10n,
+        _activity(type: 'harvest', attributes: {'honey_supers': 4}),
+      );
+      expect(line, 'Alças: 4');
+    });
+
+    test(
+      'harvest: a row carrying only kilograms falls back to those rather than '
+      'headlining nothing',
+      () {
+        final line = activityHeadlineLine(
+          _l10n,
+          _activity(type: 'harvest', attributes: {'honey_kg': 12.5}),
+        );
+        expect(line, '12.5 kg');
+      },
+    );
+
+    test('feeding headlines what was fed and how much', () {
+      final line = activityHeadlineLine(
+        _l10n,
+        _activity(
+          type: 'feeding',
+          // #625: 'Xarope 1:1' is the stored value; English renders it.
+          attributes: {
+            'feed_type': 'Xarope 1:1',
+            'feed_amount': 2.0,
+            'hives_involved': 9,
+          },
+        ),
+      );
+      // #624: `2.0` was Dart's own `double.toString()` leaking into the UI.
+      expect(line, '1:1 syrup · Amount: 2');
+    });
+
+    test('treatment headlines the product applied', () {
+      final line = activityHeadlineLine(
+        _l10n,
+        _activity(
+          type: 'treatment',
+          attributes: {
+            'treatment_type': 'Apivar/amitraz',
+            'treatment_context': 'general_preventive',
+            'hives_involved': 9,
+          },
+        ),
+      );
+      expect(line, 'Apivar/amitraz');
+    });
+
+    test(
+      'treatment: a product applied against a named condition shows both',
+      () {
+        final line = activityHeadlineLine(
+          _l10n,
+          _activity(
+            type: 'treatment',
+            attributes: {
+              'treatment_type': 'Apivar/amitraz',
+              'treatment_context': 'disease_specific',
+              'disease': 'Varroose',
+            },
+          ),
+        );
+        expect(line, 'Apivar/amitraz · Varroosis');
+      },
+    );
+
+    test('treatment: a detection-only report headlines the condition detected '
+        '(#291 — there is no product to name)', () {
+      final line = activityHeadlineLine(
+        _l10n,
+        _activity(
+          type: 'treatment',
+          attributes: {
+            'treatment_context': 'detection_only',
+            'disease': 'Varroose',
+          },
+        ),
+      );
+      expect(line, 'Varroosis');
+    });
+
+    test('treatment: with neither a product nor a condition, the context label '
+        'carries the row', () {
+      final line = activityHeadlineLine(
+        _l10n,
+        _activity(
+          type: 'treatment',
+          attributes: {'treatment_context': 'general_preventive'},
+        ),
+      );
+      expect(line, 'General / preventive');
+    });
+
+    test(
+      'generic has no headline — the caller then shows the date alone rather '
+      'than the summary line\'s "no details" filler',
+      () {
+        expect(
+          activityHeadlineLine(
+            _l10n,
+            _activity(type: 'generic', attributes: {'notes': 'a field note'}),
+          ),
+          isEmpty,
+        );
+        expect(
+          activitySummaryLine(_l10n, _activity(type: 'generic')),
+          _l10n.activityNoAttributesSummary,
+        );
+      },
+    );
+
+    test(
+      'an unknown future type degrades to an empty headline, never a crash',
+      () {
+        expect(
+          activityHeadlineLine(
+            _l10n,
+            _activity(type: 'some-future-type', attributes: {'whatever': 1}),
+          ),
+          isEmpty,
+        );
+      },
+    );
+
+    test('notes never reach the headline', () {
+      final line = activityHeadlineLine(
+        _l10n,
+        _activity(
+          type: 'harvest',
+          attributes: {
+            'honey_supers': 4,
+            'notes': 'a very long field note that should not show here',
+          },
+        ),
+      );
+      expect(line, isNot(contains('a very long field note')));
+    });
+  });
+
   group('activityDetailRows (#310, FR-AC-3/5/6)', () {
     ({String label, String value})? rowFor(
       List<({String label, String value})> rows,

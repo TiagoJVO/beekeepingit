@@ -420,6 +420,29 @@ void main() {
     );
 
     testWidgets(
+      'the displayed distance uses latitude and longitude the right way round '
+      '(#445)',
+      (tester) async {
+        // The fixture above is on the equator and only asserts the "km away"
+        // suffix, so interchanging latitude and longitude would leave it
+        // passing. This one is deliberately off-equator and asymmetric
+        // (1° of latitude, 2° of longitude): the correct reading is ~200.3km,
+        // while feeding the same four numbers in swapped as lat/lon gives
+        // ~248.3km — a difference the rendered figure shows plainly.
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('far', 'Longe', lon: -6.0, lat: 42.0)],
+            location: const DeviceLocationAvailable(lon: -8.0, lat: 41.0),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        expect(card.subtitle, contains('200.3'));
+      },
+    );
+
+    testWidgets(
       'an apiary without a location shows no distance (no placeholder noise, #253 AC)',
       (tester) async {
         await tester.pumpWidget(
@@ -645,6 +668,31 @@ void main() {
         originLat: 0,
       );
       expect(sorted.map((a) => a.id).toList(), ['near', 'far', 'none']);
+    });
+
+    test('sortApiariesByDistance passes latitude and longitude to the '
+        'haversine primitive the right way round (#445)', () {
+      // The fixture above sits entirely on the equator, where interchanging
+      // latitude and longitude leaves both the distances and the ordering
+      // unchanged — so it cannot catch the characteristic bug of the #445
+      // consolidation (core/geo/distance.dart took its named arguments
+      // lon-first, core/geo/haversine.dart takes them lat-first, and every
+      // argument is a `double`, so a swapped binding still compiles).
+      //
+      // At 60°N/60°E a one-degree step east is only ~55.7km (shrunk by
+      // cos(60°) = 0.5) while a one-degree step north is the full ~111.2km,
+      // so 'east' must sort first. Swapping latitude and longitude at the
+      // call site inverts exactly that relationship and reverses the order.
+      final apiaries = [
+        _apiary('north', 'Norte', lon: 60, lat: 61),
+        _apiary('east', 'Leste', lon: 61, lat: 60),
+      ];
+      final sorted = sortApiariesByDistance(
+        apiaries,
+        originLon: 60,
+        originLat: 60,
+      );
+      expect(sorted.map((a) => a.id).toList(), ['east', 'north']);
     });
 
     test('sortApiariesByName orders alphabetically', () {

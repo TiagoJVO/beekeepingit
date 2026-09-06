@@ -23,15 +23,15 @@ browser calls are answered by the Go services' CORS middleware, which exposes `E
 
 ## Stack
 
-| Concern      | Choice                                                           |
-| ------------ | ---------------------------------------------------------------- |
-| Build tool   | **Vite** (`tech-stack.md` — Admin web app)                       |
-| Language     | **TypeScript** (strict) + React 19 (function components + hooks) |
-| Auth         | **`react-oidc-context`** (discovery-driven, Auth Code + PKCE)    |
-| Server state | **TanStack Query**                                               |
-| i18n         | **react-i18next** (EN + PT, strings externalized — `NFR-I18N`)   |
-| Tests        | **Vitest** + React Testing Library + jest-axe (a11y)             |
-| Lint/format  | ESLint (flat config, typescript-eslint) + Prettier               |
+| Concern      | Choice                                                                             |
+| ------------ | ---------------------------------------------------------------------------------- |
+| Build tool   | **Vite** (`tech-stack.md` — Admin web app)                                         |
+| Language     | **TypeScript** (strict) + React 19 (function components + hooks)                   |
+| Auth         | **`react-oidc-context`** (discovery-driven, Auth Code + PKCE)                      |
+| Server state | **TanStack Query**                                                                 |
+| i18n         | **react-i18next** (`en-GB` + `pt-PT`, strings externalized — `NFR-I18N-1`, `D-34`) |
+| Tests        | **Vitest** + React Testing Library + jest-axe (a11y)                               |
+| Lint/format  | ESLint (flat config, typescript-eslint) + Prettier                                 |
 
 No CRUD-scaffolding framework (Refine / React-Admin) is pulled in yet — the single
 hand-built org screen does not justify one (YAGNI); the option stays open per `tech-stack.md`.

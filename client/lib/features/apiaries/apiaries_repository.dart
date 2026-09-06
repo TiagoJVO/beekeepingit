@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../core/geo/distance.dart';
+import '../../core/geo/haversine.dart';
 import '../../core/l10n/diacritics.dart';
 import '../../core/sync/local_store.dart';
 import '../../core/sync/lww_delete.dart';
@@ -574,7 +574,7 @@ List<Apiary> filterApiariesByQuery(List<Apiary> apiaries, String query) {
 /// Offline proximity ordering (FR-AP-2, #33 AC: "the list works offline
 /// using the locally synced apiary set and an offline distance
 /// computation"): sorts [apiaries] ascending by haversine distance
-/// (core/geo/distance.dart, consistent with D-15/#37's approach) from
+/// (core/geo/haversine.dart, consistent with D-15/#37's approach) from
 /// (originLon, originLat). Apiaries without a location sort after every
 /// apiary that has one (mirrors the server's `near` ordering, NULLS LAST —
 /// api/apiaries.go's ListApiariesByProximity), staying in their relative
@@ -588,16 +588,16 @@ List<Apiary> sortApiariesByDistance(
     ..sort(
       (a, b) =>
           haversineDistanceMeters(
-            lon1: originLon,
             lat1: originLat,
-            lon2: a.locationLon!,
+            lon1: originLon,
             lat2: a.locationLat!,
+            lon2: a.locationLon!,
           ).compareTo(
             haversineDistanceMeters(
-              lon1: originLon,
               lat1: originLat,
-              lon2: b.locationLon!,
+              lon1: originLon,
               lat2: b.locationLat!,
+              lon2: b.locationLon!,
             ),
           ),
     );

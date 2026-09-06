@@ -14,7 +14,7 @@
 **Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), FR-ONB-2 (org
 details), FR-ONB-3 (membership & invitations), FR-TEN-2 (org-scoped ownership + optimistic
 concurrency), FR-HIS-1 (entity history), NFR-SEC-1 (authenticated/authorized API access),
-NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
+NFR-TST-1 (automated tests), NFR-I18N-1 (`en-GB`/`pt-PT`)
 **Decisions:** [D-5](../../requirements/decisions.md#d-5) (React + TS admin, online-only),
 [D-7](../../requirements/decisions.md#d-7) (Authentik behind a provider-agnostic OIDC boundary),
 [D-32](../../requirements/decisions.md#d-32--administration-is-two-tier-organization-admin--platform-operator)
@@ -33,13 +33,13 @@ A **React + TypeScript** browser SPA (`admin/`) for organization administration 
 **online-only** (NFR-ROL-2, D-5): deliberately **no** offline support, service worker, or
 PowerSync — that stack belongs to the Flutter field client, not here.
 
-| Concern      | Choice                  | Why                                                     |
-| ------------ | ----------------------- | ------------------------------------------------------- |
-| Build tool   | Vite                    | tech-stack.md (Admin web app)                           |
-| Auth         | `react-oidc-context`    | Generic, discovery-driven OIDC; provider-agnostic (D-7) |
-| Server state | TanStack Query          | Async role/data fetching with loading/error states      |
-| i18n         | react-i18next (EN/PT)   | Strings externalized (NFR-I18N)                         |
-| Tests        | Vitest + RTL + jest-axe | Behaviour- and accessibility-focused (NFR-TST-1)        |
+| Concern      | Choice                  | Why                                                      |
+| ------------ | ----------------------- | -------------------------------------------------------- |
+| Build tool   | Vite                    | tech-stack.md (Admin web app)                            |
+| Auth         | `react-oidc-context`    | Generic, discovery-driven OIDC; provider-agnostic (D-7)  |
+| Server state | TanStack Query          | Async role/data fetching with loading/error states       |
+| i18n         | react-i18next           | Strings externalized; `en-GB`/`pt-PT` (NFR-I18N-1, D-34) |
+| Tests        | Vitest + RTL + jest-axe | Behaviour- and accessibility-focused (NFR-TST-1)         |
 
 No CRUD-scaffolding framework (Refine / React-Admin) is adopted yet — there are no screens
 to scaffold at this stage (YAGNI); tech-stack.md keeps that option open.
@@ -306,11 +306,25 @@ organization's screens; and `jest-axe` on the picker, the banner, and the combin
 
 ## 6. i18n & accessibility
 
-All user-facing strings are externalized in `src/i18n/locales/{en,pt}.json` (NFR-I18N);
-react-i18next auto-detects the language with English fallback. Screens use semantic
-landmarks/roles (`main`, `role="alert"`, `role="status"`), labelled controls, gloves-friendly
-44px/56px tap targets (D-18), visible focus outlines, and light/dark theming. `jest-axe`
-asserts the admin shell has no automatically-detectable a11y violations.
+All user-facing strings are externalized in `src/i18n/locales/{en-GB,pt-PT}.json` (NFR-I18N-1);
+react-i18next auto-detects the language with British English as the fallback.
+
+The locales are **region-qualified** — British English and European Portuguese, the only two the
+product ships ([D-34](../../requirements/decisions.md#d-34--supported-locales-are-european-portuguese-pt-pt-and-british-english-en-gb-units-are-metric),
+[#659](https://github.com/TiagoJVO/beekeepingit/issues/659); the client did the same in
+[#656](https://github.com/TiagoJVO/beekeepingit/issues/656)). `src/i18n/supportedLocales.ts` is
+the one place a raw code becomes one of them, and the detector's `convertDetectedLanguage` maps
+every detected value through it — so a browser reporting `en-US`/`pt-BR`, and a bare `en`/`pt`
+cached in `localStorage` before the rename, both land on a bundle that exists (the cache is then
+rewritten canonically), while a language we do not ship is passed through for `supportedLngs` to
+reject. `src/i18n/formatting.ts` is the matching date/number helper: no screen formats a date or a
+grouped number yet, so it exists to keep the first one that does on the resolved locale, using
+D-34's named-month date pattern (`3 Sept 2026` / `3 set. 2026`) shared with the client. `<html lang>`
+follows the resolved locale (WCAG 3.1.1).
+
+Screens use semantic landmarks/roles (`main`, `role="alert"`, `role="status"`), labelled controls,
+gloves-friendly 44px/56px tap targets (D-18), visible focus outlines, and light/dark theming.
+`jest-axe` asserts the admin shell has no automatically-detectable a11y violations.
 
 ## 7. Configuration & secrets
 
