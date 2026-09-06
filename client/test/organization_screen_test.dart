@@ -156,4 +156,140 @@ void main() {
 
     expect(find.text('name must be at most 200 characters'), findsOneWidget);
   });
+
+  // #649 (FR-ONB-2, FR-UX-1): a blocked save raises the required-name error,
+  // and that error has to disappear the moment the field holds a valid name
+  // — not survive until the next save attempt, contradicting the value the
+  // user can plainly see sitting in the field.
+  testWidgets('clears the name error as soon as the name becomes valid', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter an organization name.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Co.',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter an organization name.'), findsNothing);
+  });
+
+  // #649's second criterion, within one field: a value that is still not
+  // valid (whitespace only — the validator trims) keeps its error.
+  testWidgets('keeps the name error while the value is still invalid', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter an organization name.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      '   ',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter an organization name.'), findsOneWidget);
+  });
+
+  // #649's second criterion, across fields: fixing the name must not sweep
+  // away the error still standing on the address field.
+  testWidgets('fixing the name leaves another field error standing', (
+    tester,
+  ) async {
+    final controller = _FakeOrganizationController(
+      onSubmit: ({required name, address}) async {
+        throw const ApiException(
+          statusCode: 422,
+          code: 'validation.failed',
+          detail: 'one or more fields are invalid',
+          fieldErrors: [
+            ApiFieldError(
+              field: 'name',
+              code: 'too_long',
+              message: 'name must be at most 200 characters',
+            ),
+            ApiFieldError(
+              field: 'address',
+              code: 'too_long',
+              message: 'address must be at most 500 characters',
+            ),
+          ],
+        );
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Co.',
+    );
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('address must be at most 500 characters'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Cooperative',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('address must be at most 500 characters'), findsOneWidget);
+    // ...and the name's own server verdict goes, because that value changed.
+    expect(find.text('name must be at most 200 characters'), findsNothing);
+  });
+
+  // The other half of #649: a save-time verdict from the server is just as
+  // stale once the user edits the value it judged, so it must go the moment
+  // the field changes — the same rule apiary_form_screen.dart applies in its
+  // Form.onChanged. The client can't know the new value passes, so this
+  // clears on edit rather than on validity.
+  testWidgets('drops a server field error once the user edits that field', (
+    tester,
+  ) async {
+    final controller = _FakeOrganizationController(
+      onSubmit: ({required name, address}) async {
+        throw const ApiException(
+          statusCode: 422,
+          code: 'validation.failed',
+          detail: 'one or more fields are invalid',
+          fieldErrors: [
+            ApiFieldError(
+              field: 'address',
+              code: 'too_long',
+              message: 'address must be at most 500 characters',
+            ),
+          ],
+        );
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('organization-name-field')),
+      'Dev Apiary Co.',
+    );
+    await tester.tap(find.byKey(const Key('organization-save-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('address must be at most 500 characters'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('organization-address-field')),
+      'Rua das Abelhas 1',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('address must be at most 500 characters'), findsNothing);
+  });
 }
