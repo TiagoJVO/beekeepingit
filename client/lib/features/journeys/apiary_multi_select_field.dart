@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/option_row.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../apiaries/apiary_search_decoration.dart';
 
 /// The apiaries-to-visit multi-select picker (#45, FR-JO-4) — the FIRST
 /// multi-select widget in this codebase (no prior precedent existed to
@@ -100,11 +101,7 @@ class _ApiaryMultiSelectFieldState
           child: TextField(
             key: const Key('journey-apiaries-search-field'),
             controller: _searchController,
-            decoration: InputDecoration(
-              hintText: l10n.apiariesSearchHint,
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-            ),
+            decoration: apiarySearchDecoration(l10n),
             onChanged: (v) => setState(() => _query = v),
           ),
         ),
@@ -187,9 +184,10 @@ class _ApiaryMultiSelectFieldState
                       final selected = widget.selectedApiaryIds.contains(
                         apiary.id,
                       );
-                      return _ApiaryCheckTile(
+                      return OptionRow(
                         key: Key('journey-apiary-option-${apiary.id}'),
                         label: apiary.name,
+                        mode: OptionRowMode.multiSelect,
                         selected: selected,
                         onTap: () => _toggle(apiary.id),
                       );
@@ -207,74 +205,6 @@ class _ApiaryMultiSelectFieldState
           style: theme.textTheme.bodySmall,
         ),
       ],
-    );
-  }
-}
-
-/// One checkable apiary row — a full [kMinTapTarget] tap target,
-/// `Semantics(button:, selected:, label:)` so a screen-reader user hears
-/// "Serra Norte, selected/not selected, button" (matching
-/// apiaries_list_screen.dart's `_ToggleSegment` convention).
-class _ApiaryCheckTile extends StatelessWidget {
-  const _ApiaryCheckTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: kMinTapTarget),
-            child: ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: AppTheme.bodyFontFamily,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Icon(
-                      selected
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                      color: selected
-                          ? theme.colorScheme.tertiary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

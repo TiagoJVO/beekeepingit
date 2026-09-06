@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/widgets/field_action_button.dart';
-import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/option_row.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../apiaries/apiary_search_decoration.dart';
 import 'add_activity_screen.dart';
 
 /// The Activities tab's own create flow (#634, FR-UX-2/FR-AC-2).
@@ -199,10 +200,10 @@ class _NoApiariesStep extends StatelessWidget {
 
 /// The apiary step: search over the org's locally-synced apiaries and pick
 /// one. A single-select list rather than a form field, since this IS the
-/// whole step — deliberately the same search-and-row shape as
-/// `TodoApiaryPickerField` and `ApiaryMultiSelectField`, both of which are
-/// off-limits to this change (they sit in feature areas another change owns);
-/// the shared row/search widget those three should collapse into is #762.
+/// whole step — its own row renders via `core/widgets/option_row.dart`'s
+/// [OptionRow] (`OptionRowMode.navigate`), the shared skeleton #762
+/// extracted from this row and `TodoApiaryPickerField`/
+/// `ApiaryMultiSelectField`'s own rows.
 class _ApiaryStep extends StatefulWidget {
   const _ApiaryStep({required this.apiaries});
 
@@ -262,11 +263,7 @@ class _ApiaryStepState extends State<_ApiaryStep> {
               TextField(
                 key: const Key('new-activity-apiary-search-field'),
                 controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: l10n.apiariesSearchHint,
-                  prefixIcon: const Icon(Icons.search),
-                  isDense: true,
-                ),
+                decoration: apiarySearchDecoration(l10n),
                 onChanged: (v) => setState(() => _query = v),
               ),
               const SizedBox(height: 12),
@@ -283,103 +280,22 @@ class _ApiaryStepState extends State<_ApiaryStep> {
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final apiary = filtered[index];
-                    return _ApiaryOptionTile(
+                    return OptionRow(
                       key: Key('new-activity-apiary-option-${apiary.id}'),
-                      apiary: apiary,
-                      borderColor: brand.cardBorder,
-                      background: brand.cardColor,
+                      label: apiary.name,
+                      subtitle: l10n.hiveCountValue(apiary.hiveCount),
+                      mode: OptionRowMode.navigate,
+                      cardColor: brand.cardColor,
+                      cardShape: RoundedRectangleBorder(
+                        borderRadius: BrandDimens.borderCard,
+                        side: BorderSide(color: brand.cardBorder),
+                      ),
                       onTap: () => context.go('/activities/new/${apiary.id}'),
                     );
                   },
                 ),
         ),
       ],
-    );
-  }
-}
-
-/// One pickable apiary row — a full [kMinTapTarget] gloves-friendly target
-/// (D-18) carrying a `Semantics(button:, label:)` so a screen-reader user
-/// hears the apiary name as an actionable choice, mirroring the row shape
-/// `TodoApiaryPickerField`/`ApiaryMultiSelectField` already use. No selected
-/// state: tapping IS the choice and navigates straight on, so there is
-/// nothing to reflect back.
-class _ApiaryOptionTile extends StatelessWidget {
-  const _ApiaryOptionTile({
-    required this.apiary,
-    required this.borderColor,
-    required this.background,
-    required this.onTap,
-    super.key,
-  });
-
-  final Apiary apiary;
-  final Color borderColor;
-  final Color background;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    return Semantics(
-      button: true,
-      label: apiary.name,
-      child: Material(
-        color: background,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BrandDimens.borderCard,
-          side: BorderSide(color: borderColor),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: kMinTapTarget),
-            child: ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            apiary.name,
-                            style: TextStyle(
-                              fontFamily: AppTheme.bodyFontFamily,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          Text(
-                            l10n.hiveCountValue(apiary.hiveCount),
-                            style: TextStyle(
-                              fontFamily: AppTheme.bodyFontFamily,
-                              fontSize: 13,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
