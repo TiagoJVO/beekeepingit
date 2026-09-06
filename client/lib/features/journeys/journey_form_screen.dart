@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -339,6 +340,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                               // (#597) — e.g. a name under the field's 200-character
                               // allowance but over the server's 200-BYTE cap, which
                               // only a save-time check can catch.
+                              // Announced, not just painted (#750, FR-AX-1,
+                              // D-18) — this field autovalidates per
+                              // interaction, which the SDK's own
+                              // `Form.validate()` announcement never covers.
+                              errorBuilder: announcedFieldError,
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? l10n.journeyNameRequired
                                   : _syncErrors.messageFor(l10n, 'name'),
@@ -374,6 +380,9 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                                   });
                                 }
                               },
+                              // Announced, not just painted (#750, FR-AX-1,
+                              // D-18).
+                              errorBuilder: announcedFieldError,
                               validator: (_) => _syncErrors.messageFor(
                                 l10n,
                                 'main_activity_type',

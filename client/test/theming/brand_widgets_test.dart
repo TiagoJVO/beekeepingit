@@ -46,6 +46,58 @@ void main() {
   // a screen — jumping header to header instead of reading every node in
   // order. [SectionHeader] is the app's ONE section-header mechanism, so this
   // single node carries every heading in the app.
+  // #797 (FR-AX-1, D-18): a plain `Center > Padding > Column` overflowed by
+  // 181px at the 200% text scale the app commits to, inside any bounded
+  // parent. A RenderFlex overflow is a hard error under test, so this also
+  // made the shell untestable at 200% — its IndexedStack builds every tab and
+  // any empty one threw during layout.
+  testWidgets('EmptyState does not overflow a bounded parent at 200% text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 500);
+    tester.view.devicePixelRatio = 1.0;
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      _host(
+        const Column(
+          children: [
+            Expanded(
+              child: EmptyState(
+                message:
+                    'No activities recorded yet for this apiary. Record one '
+                    'to start building its history.',
+                icon: Icons.inbox_outlined,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // A RenderFlex overflow surfaces as a thrown exception during layout.
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('EmptyState still lays out under an unbounded parent', (
+    tester,
+  ) async {
+    // The other half of the contract: it is also dropped straight into
+    // unbounded Columns, where a bare SingleChildScrollView would throw.
+    await tester.pumpWidget(
+      _host(
+        const SingleChildScrollView(
+          child: Column(children: [EmptyState(message: 'Nothing here yet')]),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Nothing here yet'), findsOneWidget);
+  });
+
   testWidgets('SectionHeader announces its label as a heading', (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(

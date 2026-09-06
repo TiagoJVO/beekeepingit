@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -153,6 +154,8 @@ class _OrganizationDetailsScreenState
                       controller: _nameController,
                       enabled: editable,
                       onChanged: _markEdited,
+                      // Announced, not just painted (#750, FR-AX-1, D-18).
+                      errorBuilder: announcedFieldError,
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? l10n.organizationNameRequired
                           : null,

@@ -8,6 +8,7 @@ import '../../core/config/app_config.dart';
 import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
 import '../../theming/app_theme.dart';
@@ -65,6 +66,19 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  /// Drops the last save's server verdict for [field] once its value changes
+  /// (#649) — the same rule profile/organization apply. Server errors arrive
+  /// as `FormField.forceErrorText` (#750), which the field holds onto until
+  /// the property itself changes and which makes `Form.validate()` false
+  /// while it stands, so without this the save button would stay dead for
+  /// the rest of the session. The client can't know the new value satisfies
+  /// the server, so this clears on edit rather than on validity: the next
+  /// save re-asks.
+  void _clearFieldError(String field) {
+    if (!_fieldErrors.containsKey(field)) return;
+    setState(() => _fieldErrors = {..._fieldErrors}..remove(field));
   }
 
   void _syncFromProfile(Profile profile) {
@@ -219,9 +233,22 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             child: TextFormField(
                               key: const Key('account-name-field'),
                               controller: _nameController,
-                              decoration: InputDecoration(
-                                errorText: _fieldErrors['name'],
-                              ),
+                              onChanged: (_) => _clearFieldError('name'),
+                              // Both messages — the local validator's and
+                              // the server's 422 — are announced, not just
+                              // painted (#750, FR-AX-1, D-18). The server
+                              // one travels as `forceErrorText:` so it also
+                              // sets `FormFieldState.hasError`, which is
+                              // what marks the field
+                              // `validationResult: invalid`; a
+                              // decoration-only `error:`/`errorText:` would
+                              // leave it reading as VALID under a visibly
+                              // red message. It overrides the validator and
+                              // blocks the next save until the value
+                              // changes — `onChanged` above is what
+                              // releases it (see field_error.dart).
+                              forceErrorText: _fieldErrors['name'],
+                              errorBuilder: announcedFieldError,
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? l10n.profileNameRequired
                                   : null,

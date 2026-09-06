@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -402,6 +403,11 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                               // (#597) — e.g. a title under the field's 500-character
                               // allowance but over the server's 500-BYTE cap, which
                               // only a save-time check can catch.
+                              // Announced, not just painted (#750, FR-AX-1,
+                              // D-18) — this field autovalidates per
+                              // interaction, which the SDK's own
+                              // `Form.validate()` announcement never covers.
+                              errorBuilder: announcedFieldError,
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? l10n.todoTitleRequired
                                   : _syncErrors.messageFor(l10n, 'title'),
@@ -417,6 +423,9 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                               maxLines: 6,
                               maxLength: 10000,
                               textInputAction: TextInputAction.newline,
+                              // Announced, not just painted (#750, FR-AX-1,
+                              // D-18).
+                              errorBuilder: announcedFieldError,
                               validator: (_) =>
                                   _syncErrors.messageFor(l10n, 'description'),
                             ),
@@ -455,6 +464,9 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
                               onChanged: (v) {
                                 if (v != null) setState(() => _priority = v);
                               },
+                              // Announced, not just painted (#750, FR-AX-1,
+                              // D-18).
+                              errorBuilder: announcedFieldError,
                               validator: (_) =>
                                   _syncErrors.messageFor(l10n, 'priority'),
                             ),

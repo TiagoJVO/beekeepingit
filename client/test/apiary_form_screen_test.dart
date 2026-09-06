@@ -421,6 +421,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(error, findsOneWidget);
       expect(repo.created, isEmpty);
+
+      // Announced, not just painted (#750, FR-AX-1, D-18). Location is a
+      // GROUP rather than one field, so this message is rendered OUTSIDE any
+      // `InputDecoration` and wears its own `Semantics(liveRegion: true)`
+      // instead of going through `announcedFieldError` — the one error path
+      // in the app that does. It is held to the same bar as the fields'.
+      final handle = tester.ensureSemantics();
+      await tester.pumpAndSettle();
+      expectLiveRegion(tester, error);
+      handle.dispose();
     });
   });
 
