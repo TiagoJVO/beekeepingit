@@ -133,30 +133,64 @@ class SectionHeader extends StatelessWidget {
 
 /// A form field with its label sitting *above* it (the prototype's field
 /// pattern) rather than a floating Material label.
+///
+/// This is the ONE field-label pattern the app uses (#629, FR-UX-1): every
+/// form field wears its label above the box, so a column of fields keeps a
+/// single baseline rhythm instead of stuttering between static headings and
+/// labels that animate into a border.
+///
+/// Moving the label out of [InputDecoration] would otherwise cost the field
+/// its accessible NAME — `labelText` puts the label on the input's own
+/// semantics node, while a bare `Text` sibling is a separate node a screen
+/// reader focused on the input never reads, and Playwright's
+/// `getByLabel(...)` in `client/e2e` never finds. So by default
+/// ([labelsChild]) the label is ALSO annotated onto the wrapped control and
+/// excluded from the visible `Text`, which reproduces exactly the one
+/// labelled node `labelText` produced (FR-AX-1). This is the same fix
+/// `apiary_detail_screen.dart`'s counter editor already carries by hand for
+/// the same reason (#393).
+///
+/// Pass `labelsChild: false` when [child] is a GROUP rather than a single
+/// control — a search box plus select-all/clear buttons, a picker's field
+/// plus its result list, a read-only value that supplies its own combined
+/// label. Annotating a group would fold the label into whichever descendant
+/// node happens to come first and nest the group's other controls under it.
 class LabeledField extends StatelessWidget {
-  const LabeledField({required this.label, required this.child, super.key});
+  const LabeledField({
+    required this.label,
+    required this.child,
+    this.labelsChild = true,
+    super.key,
+  });
 
   final String label;
   final Widget child;
 
+  /// Whether [label] also becomes the wrapped control's accessible name.
+  final bool labelsChild;
+
   @override
   Widget build(BuildContext context) {
+    final labelText = Padding(
+      padding: const EdgeInsets.only(bottom: 6, left: 2),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: AppTheme.bodyFontFamily,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6, left: 2),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        child,
+        // Excluded once the control itself announces the label: leaving both
+        // in makes a screen reader read the name twice — once as loose text,
+        // then again with the field.
+        if (labelsChild) ExcludeSemantics(child: labelText) else labelText,
+        if (labelsChild) Semantics(label: label, child: child) else child,
       ],
     );
   }
@@ -216,6 +250,22 @@ class LeadingIconTile extends StatelessWidget {
 /// A white content card on the 1px hairline. Tappable when [onTap] is given
 /// (with a matching ink ripple), otherwise a static container. Use for list
 /// rows and grouped content.
+///
+/// **[semanticLabel] is the card's WHOLE announcement.** When it is set the
+/// card speaks as one node and its [child]'s own semantics are excluded, so a
+/// screen reader reads the row exactly once, in the order the label spells
+/// out. Before #662 (FR-AX-1) the label merely *added* to the node the child's
+/// `Text` widgets were already merging into, so every row on the apiaries,
+/// journeys, todos and Home lists announced its title and subtitle three times
+/// over. Two consequences for callers:
+///
+/// - anything the child shows that the label doesn't say — a badge, a status
+///   pill — is silent unless it is spelled into [semanticLabel]
+///   ([BrandRowCard.trailingSemanticLabel] is that seam for rows);
+/// - a card whose child has its OWN focusable controls must not pass
+///   [semanticLabel] at all, or assistive tech loses them. Every such use
+///   today (detail-screen panels, `MenuListCard` rows) already leaves it null
+///   and announces its children directly.
 class BrandCard extends StatelessWidget {
   const BrandCard({
     required this.child,
@@ -235,6 +285,15 @@ class BrandCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
+    // The exclusion wraps [child] ALONE, not the whole decorated card: the
+    // [InkWell] below it must keep contributing its tap action and its
+    // focusable/focused flags to the annotated node (a card excluded whole
+    // announces as a button that nothing can focus or activate). What has to
+    // stop merging is only the caller's content — the `Text`s [semanticLabel]
+    // already spells out (#662).
+    final content = semanticLabel == null
+        ? child
+        : ExcludeSemantics(child: child);
     final decorated = DecoratedBox(
       decoration: BoxDecoration(
         color: brand.cardColor,
@@ -242,7 +301,7 @@ class BrandCard extends StatelessWidget {
         border: Border.all(color: brand.cardBorder),
       ),
       child: onTap == null
-          ? Padding(padding: padding, child: child)
+          ? Padding(padding: padding, child: content)
           : Material(
               type: MaterialType.transparency,
               child: InkWell(
@@ -250,7 +309,7 @@ class BrandCard extends StatelessWidget {
                 onTap: onTap,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: kMinTapTarget),
-                  child: Padding(padding: padding, child: child),
+                  child: Padding(padding: padding, child: content),
                 ),
               ),
             ),
@@ -273,6 +332,7 @@ class BrandRowCard extends StatelessWidget {
     this.subtitle,
     this.leading,
     this.trailing,
+    this.trailingSemanticLabel,
     this.onTap,
     this.showChevron = true,
     super.key,
@@ -282,6 +342,19 @@ class BrandRowCard extends StatelessWidget {
   final String? subtitle;
   final Widget? leading;
   final Widget? trailing;
+
+  /// What [trailing] contributes to the row's announcement, when it carries
+  /// information [title]/[subtitle] don't already say — a "5 days overdue"
+  /// badge, an open/closed status pill.
+  ///
+  /// [BrandCard] speaks a row as one composed label and excludes its
+  /// children's own semantics (#662, FR-AX-1), so a badge that matters has to
+  /// be spelled out here. Leave it null for a badge that merely restates the
+  /// subtitle in shorter words — announcing it too would say the same
+  /// sentence twice, which is the defect this seam exists to avoid, not to
+  /// reintroduce.
+  final String? trailingSemanticLabel;
+
   final VoidCallback? onTap;
   final bool showChevron;
 
@@ -291,7 +364,14 @@ class BrandRowCard extends StatelessWidget {
     final brand = context.brand;
     return BrandCard(
       onTap: onTap,
-      semanticLabel: subtitle == null ? title : '$title. $subtitle',
+      // Blank parts are dropped, not joined: a caller computing the trailing
+      // label from a collection that came back empty would otherwise have the
+      // row announce a dangling "Title. Subtitle. ".
+      semanticLabel: [
+        title,
+        ?subtitle,
+        ?trailingSemanticLabel,
+      ].where((part) => part.isNotEmpty).join('. '),
       child: Row(
         children: [
           if (leading != null) ...[leading!, const SizedBox(width: 14)],

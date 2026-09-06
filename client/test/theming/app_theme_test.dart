@@ -1,7 +1,23 @@
 import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:beekeepingit_client/theming/brand_tokens.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// The font family every `Text` reading [text] *actually renders with* — the
+/// effective style after `DefaultTextStyle` inheritance and any widget-level
+/// merge, not the style someone declared. `Text` builds a [RichText] whose
+/// span style is exactly that resolved result, so reading it back is the only
+/// honest way to assert what a user sees.
+///
+/// Returns one entry per occurrence: an open dropdown draws its selected value
+/// twice (the closed button's `IndexedStack` and the overlay menu), and both
+/// have to be right.
+Iterable<String?> _renderedFamilies(WidgetTester tester, String text) => tester
+    .widgetList<RichText>(
+      find.descendant(of: find.text(text), matching: find.byType(RichText)),
+    )
+    .map((rich) => rich.text.style?.fontFamily);
 
 /// Brand-wiring assertions for `AppTheme` (FR-UX-1, FR-AX-1, D-18, EPIC-11
 /// #243): the theme is built from the Melargil tokens, honey is the single
@@ -87,7 +103,6 @@ void main() {
           theme.textTheme.displayLarge,
           theme.textTheme.headlineMedium,
           theme.textTheme.titleLarge,
-          theme.textTheme.titleMedium,
         ]) {
           expect(style?.fontFamily, AppTheme.displayFontFamily);
         }
@@ -97,6 +112,147 @@ void main() {
           theme.textTheme.labelMedium?.fontFamily,
           AppTheme.bodyFontFamily,
         );
+      });
+
+      test('$name: titleMedium is Archivo — it is Material\'s form-control '
+          'tier, not a title tier (#628)', () {
+        // `titleMedium` is what Material resolves for a form control, not
+        // for a title: under this theme's M3 defaults it is `DropdownButton`'s
+        // value and menu items that read it. (`PopupMenuButton`, `AlertDialog`
+        // and `SnackBar` read it only under M2; on M3 they take
+        // `labelLarge`/`bodyMedium`.) Putting the display serif here dressed
+        // the dropdowns as headings — the serif word sitting inside a
+        // sans-serif form that #628 reports. Screen titles
+        // ride `titleLarge` and above (asserted just above); section headers
+        // ride [SectionHeader], which pins Playfair itself.
+        expect(
+          theme.textTheme.titleMedium?.fontFamily,
+          AppTheme.bodyFontFamily,
+        );
+      });
+    }
+  });
+
+  group('dropdown values render in Archivo (#628, FR-UX-1)', () {
+    // The prototype (docs/design/prototype.md §Typography) gives Archivo "all
+    // UI, labels, inputs, buttons, body" and Playfair only "display / screen
+    // titles / brand". A dropdown's selected value is an input value.
+    //
+    // These assert the *rendered* family rather than a theme field, because
+    // Flutter offers no theme entry for `DropdownButtonFormField`:
+    // `DropdownMenuThemeData` overrides the unrelated M3 `DropdownMenu`, and
+    // `DropdownButton._textStyle` reads `theme.textTheme.titleMedium` with no
+    // override hook. So what the widget actually paints is the only thing
+    // worth asserting.
+    Widget host(ThemeData theme) => MaterialApp(
+      theme: theme,
+      home: Scaffold(
+        body: DropdownButtonFormField<String>(
+          key: const Key('locale-field'),
+          initialValue: 'en-GB',
+          decoration: const InputDecoration(labelText: 'Language'),
+          items: const [
+            DropdownMenuItem(value: 'en-GB', child: Text('English')),
+            DropdownMenuItem(value: 'pt-PT', child: Text('Portugues')),
+          ],
+          onChanged: (_) {},
+        ),
+      ),
+    );
+
+    for (final entry in {
+      'light': AppTheme.light(),
+      'dark': AppTheme.dark(),
+    }.entries) {
+      testWidgets('${entry.key}: the closed dropdown\'s selected value is '
+          'Archivo, like every other form control', (tester) async {
+        await tester.pumpWidget(host(entry.value));
+
+        expect(
+          _renderedFamilies(tester, 'English'),
+          everyElement(AppTheme.bodyFontFamily),
+        );
+        // Sanity: the assertion above is meaningless if it matched nothing.
+        expect(_renderedFamilies(tester, 'English'), isNotEmpty);
+        // The field's own label was already Archivo and must stay that way.
+        expect(
+          _renderedFamilies(tester, 'Language'),
+          everyElement(AppTheme.bodyFontFamily),
+        );
+        // Same guard: `everyElement` is vacuously true on an empty iterable,
+        // so a renamed/removed label would pass while checking nothing.
+        expect(_renderedFamilies(tester, 'Language'), isNotEmpty);
+      });
+
+      testWidgets('${entry.key}: the open menu\'s items are Archivo too', (
+        tester,
+      ) async {
+        await tester.pumpWidget(host(entry.value));
+        await tester.tap(find.byKey(const Key('locale-field')));
+        await tester.pumpAndSettle();
+
+        // Open, the selected value is drawn twice (button + overlay menu);
+        // both, and the unselected item, must be Archivo.
+        expect(_renderedFamilies(tester, 'English').length, greaterThan(1));
+        for (final label in ['English', 'Portugues']) {
+          expect(
+            _renderedFamilies(tester, label),
+            everyElement(AppTheme.bodyFontFamily),
+          );
+          // `everyElement` is vacuously true on an empty iterable — without
+          // this, renaming a menu item would leave the loop green and blind.
+          expect(_renderedFamilies(tester, label), isNotEmpty);
+        }
+      });
+    }
+  });
+
+  group('Playfair stays on titles, brand and section headers (#628)', () {
+    // The companion constraint to the group above: the fix must take the
+    // serif *off* form controls without taking it off anything that is
+    // legitimately a title. These are the three sanctioned homes.
+    for (final entry in {
+      'light': AppTheme.light(),
+      'dark': AppTheme.dark(),
+    }.entries) {
+      final name = entry.key;
+      final theme = entry.value;
+
+      test('$name: screen titles keep the display serif', () {
+        // The tiers screen titles and brand text ride. The shell header's own
+        // title is covered by the app-bar test below.
+        expect(
+          theme.textTheme.titleLarge?.fontFamily,
+          AppTheme.displayFontFamily,
+        );
+        expect(
+          theme.textTheme.headlineSmall?.fontFamily,
+          AppTheme.displayFontFamily,
+        );
+        expect(
+          theme.textTheme.displaySmall?.fontFamily,
+          AppTheme.displayFontFamily,
+        );
+      });
+
+      testWidgets('$name: section headers keep the display serif', (
+        tester,
+      ) async {
+        // [SectionHeader] is the app's one section-header mechanism (every
+        // screen composes it). It pins Playfair itself rather than borrowing a
+        // text-theme tier, which is why retiring the serif from `titleMedium`
+        // cannot reach it.
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: const Scaffold(body: SectionHeader('Organization')),
+          ),
+        );
+        expect(
+          _renderedFamilies(tester, 'Organization'),
+          everyElement(AppTheme.displayFontFamily),
+        );
+        expect(_renderedFamilies(tester, 'Organization'), isNotEmpty);
       });
 
       test('$name: the app-bar title uses the Playfair title style', () {

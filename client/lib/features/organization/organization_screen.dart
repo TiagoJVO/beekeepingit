@@ -96,7 +96,13 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.organizationTitle)),
-      body: Center(
+      // Horizontally centred (so the 480px column stays middle-of-page on a
+      // wide window) but TOP-aligned: a plain `Center` split the leftover
+      // height into equal bands and left dead space under the header on a
+      // phone (#630, FR-UX-1). Sibling screens still on the old `Center`
+      // shape are tracked in #769, not fixed here.
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
@@ -120,36 +126,42 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     text: l10n.organizationCreateBlocksInvitationWarning,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-name-field'),
-                    controller: _nameController,
-                    autofocus: true,
-                    // Per-field, so a blocked save's "enter a name" error
-                    // clears the moment the field holds one instead of
-                    // waiting for the next save (#649, FR-UX-1) — matching
-                    // journey/todo. Field-level rather than on the Form: a
-                    // Form-level onUserInteraction validates every field as
-                    // soon as ANY of them is touched, which would flag this
-                    // still-untouched name the instant the user types an
-                    // address.
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    onChanged: (_) => _clearFieldError('name'),
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationNameLabel,
-                      errorText: _fieldErrors['name'],
+                  // One label pattern throughout (#629, FR-UX-1): every label
+                  // sits ABOVE its field, never animated into the box border.
+                  LabeledField(
+                    label: l10n.organizationNameLabel,
+                    child: TextFormField(
+                      key: const Key('organization-name-field'),
+                      controller: _nameController,
+                      autofocus: true,
+                      // Per-field, so a blocked save's "enter a name" error
+                      // clears the moment the field holds one instead of
+                      // waiting for the next save (#649, FR-UX-1) — matching
+                      // journey/todo. Field-level rather than on the Form: a
+                      // Form-level onUserInteraction validates every field as
+                      // soon as ANY of them is touched, which would flag this
+                      // still-untouched name the instant the user types an
+                      // address.
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      onChanged: (_) => _clearFieldError('name'),
+                      decoration: InputDecoration(
+                        errorText: _fieldErrors['name'],
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.organizationNameRequired
+                          : null,
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? l10n.organizationNameRequired
-                        : null,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-address-field'),
-                    controller: _addressController,
-                    onChanged: (_) => _clearFieldError('address'),
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationAddressLabel,
-                      errorText: _fieldErrors['address'],
+                  LabeledField(
+                    label: l10n.organizationAddressLabel,
+                    child: TextFormField(
+                      key: const Key('organization-address-field'),
+                      controller: _addressController,
+                      onChanged: (_) => _clearFieldError('address'),
+                      decoration: InputDecoration(
+                        errorText: _fieldErrors['address'],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),

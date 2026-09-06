@@ -151,39 +151,49 @@ class _JourneyStatsDetailBody extends ConsumerWidget {
     };
     final activitiesAsync = ref.watch(activitiesByJourneyProvider(journey.id));
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: activitiesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, _) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l10n.journeysError('$err')),
-            ),
+    // The `.when` sits OUTSIDE the alignment wrapper on purpose (#630,
+    // FR-UX-1): the scrolling breakdown has to start at the top of the
+    // content area — under a plain `Center` it floated mid-viewport while
+    // short and only crept upwards as the list grew — while a lone spinner
+    // or error message still belongs in the middle. One shared wrapper
+    // couldn't give the three branches different vertical alignments.
+    return activitiesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, _) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(l10n.journeysError('$err')),
           ),
-          data: (activities) {
-            final records = [
-              for (final a in activities)
-                JourneyActivityRecord(
-                  apiaryId: a.apiaryId,
-                  type: a.type,
-                  attributes: a.attributes,
-                ),
-            ];
-            final allStats = computePerApiaryJourneyStats(
-              plannedApiaryIds: plannedApiaryIds,
-              activities: records,
-              hiveCounts: hiveCounts,
-            );
-            final visible = _sortedStats(
-              _filteredStats(allStats, filter),
-              sort,
-              apiaryNames,
-              l10n,
-            );
+        ),
+      ),
+      data: (activities) {
+        final records = [
+          for (final a in activities)
+            JourneyActivityRecord(
+              apiaryId: a.apiaryId,
+              type: a.type,
+              attributes: a.attributes,
+            ),
+        ];
+        final allStats = computePerApiaryJourneyStats(
+          plannedApiaryIds: plannedApiaryIds,
+          activities: records,
+          hiveCounts: hiveCounts,
+        );
+        final visible = _sortedStats(
+          _filteredStats(allStats, filter),
+          sort,
+          apiaryNames,
+          l10n,
+        );
 
-            return SingleChildScrollView(
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 96),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -219,10 +229,10 @@ class _JourneyStatsDetailBody extends ConsumerWidget {
                     ],
                 ],
               ),
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

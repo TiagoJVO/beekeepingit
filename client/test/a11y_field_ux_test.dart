@@ -16,7 +16,9 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
+import 'package:beekeepingit_client/features/activities/activities_list_screen.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
+import 'package:beekeepingit_client/features/activities/activity_types.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
@@ -24,6 +26,7 @@ import 'package:beekeepingit_client/features/apiaries/apiary_visit_recency.dart'
 import 'package:beekeepingit_client/features/auth/login_screen.dart';
 import 'package:beekeepingit_client/features/home/home_screen.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
+import 'package:beekeepingit_client/features/journeys/journeys_list_screen.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/members/members_screen.dart';
@@ -31,7 +34,9 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/organization/organization_screen.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_screen.dart';
+import 'package:beekeepingit_client/features/todos/todo_filters.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
+import 'package:beekeepingit_client/features/todos/todos_list_screen.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
@@ -621,6 +626,194 @@ void main() {
       }
     });
   });
+
+  // Every row card in the app is a [BrandCard] with a composed
+  // `semanticLabel`. Before #662 that label sat on a semantics node that ALSO
+  // absorbed the strings of the `Text` widgets inside it, so a screen reader
+  // read each row's title and subtitle three times over — once from the
+  // composed label, once from the title, once from the subtitle — on the
+  // apiaries, journeys, todos and Home lists alike.
+  //
+  // These assertions read the real `SemanticsNode` label and compare the
+  // WHOLE string (or count occurrences within it). A `contains` matcher is
+  // precisely what hid the defect while #658 was being written: "Late task"
+  // is happily "contained" in a label that says it three times.
+  group('row cards announce their content once (#662, FR-AX-1)', () {
+    testWidgets('apiaries list row', (tester) async {
+      await _pumpRowScreen(
+        tester,
+        screen: const ApiariesListScreen(),
+        overrides: [
+          apiariesStreamProvider.overrideWith(
+            (ref) => Stream.value(const [
+              Apiary(id: 'a1', name: 'Sunny yard', hiveCount: 4),
+            ]),
+          ),
+          deviceLocationServiceProvider.overrideWithValue(
+            const _FakeDeviceLocationService(),
+          ),
+        ],
+      );
+
+      expect(
+        _semanticsLabel(tester, const Key('apiary-a1')),
+        'Sunny yard. 4 hives',
+      );
+      _expectActivatableButton(tester, const Key('apiary-a1'));
+    });
+
+    // The two pills are the row's only open/closed and plan-progress signals,
+    // so both have to survive into the announcement (#662 AC 3) — once each,
+    // and this is the one row that joins two fragments into one label.
+    testWidgets('journeys list row, both badges included', (tester) async {
+      await _pumpRowScreen(
+        tester,
+        screen: const JourneysListScreen(),
+        overrides: [
+          journeysStreamProvider.overrideWith(
+            (ref) => Stream.value(const [
+              Journey(
+                id: 'j1',
+                name: 'Spring round',
+                mainActivityType: activityTypeHarvest,
+                status: journeyStatusOpen,
+                organizationId: 'org-1',
+              ),
+            ]),
+          ),
+          // Two apiaries planned, one of them already visited on this
+          // journey — a "1/2 apiaries visited" progress badge.
+          journeyPlanApiariesByJourneyProvider.overrideWith(
+            (ref) => Stream.value(const {
+              'j1': ['a1', 'a2'],
+            }),
+          ),
+          activitiesStreamProvider.overrideWith(
+            (ref) => Stream.value([
+              Activity(
+                id: 'act-1',
+                apiaryId: 'a1',
+                journeyId: 'j1',
+                type: activityTypeHarvest,
+                occurredAt: _homeIsoDate(_homeDaysAgo(1)),
+                attributes: const {},
+                organizationId: 'org-1',
+              ),
+            ]),
+          ),
+          apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
+        ],
+      );
+
+      expect(
+        _semanticsLabel(tester, const Key('journey-j1')),
+        'Spring round. Honey harvest. Status: Open. 1/2 apiaries visited',
+      );
+      _expectActivatableButton(tester, const Key('journey-j1'));
+    });
+
+    testWidgets('todos list rows, status included', (tester) async {
+      await _pumpRowScreen(
+        tester,
+        screen: const TodosListScreen(),
+        overrides: [
+          todosStreamProvider.overrideWith(
+            (ref) => Stream.value([
+              _homeTodo(
+                'open',
+                title: 'Water the hives',
+                priority: todoPriorityHigh,
+              ),
+              _homeTodo(
+                'late',
+                title: 'Late task',
+                dueDate: _homeIsoDate(_homeDaysAgo(3)),
+              ),
+            ]),
+          ),
+          apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
+          // The tab defaults to `open`, which is a bucket that EXCLUDES
+          // overdue (todo_filters.dart) — both rows have to be on screen.
+          todoStatusFilterProvider.overrideWith((ref) => TodoStatusFilter.all),
+        ],
+      );
+
+      expect(
+        _semanticsLabel(tester, const Key('todo-open')),
+        'Water the hives. No due date · High. Status: Open',
+      );
+      final late = _semanticsLabel(tester, const Key('todo-late'));
+      _expectAnnouncedOnce(late, ['Late task']);
+      expect(late, endsWith('. Status: Overdue'));
+      _expectActivatableButton(tester, const Key('todo-open'));
+    });
+
+    // The activities tab builds on `ListTile`, not [BrandCard] — this is the
+    // guard that it stays that way (or that whoever moves it onto a row card
+    // does not inherit the duplication #662 fixed).
+    testWidgets('activities list row', (tester) async {
+      await _pumpRowScreen(
+        tester,
+        screen: const ActivitiesListScreen(),
+        overrides: [
+          activitiesStreamProvider.overrideWith(
+            (ref) => Stream.value([
+              Activity(
+                id: 'act-1',
+                apiaryId: 'a1',
+                type: activityTypeHarvest,
+                occurredAt: _homeIsoDate(_homeDaysAgo(2)),
+                attributes: const {},
+                organizationId: 'org-1',
+              ),
+            ]),
+          ),
+          apiariesStreamProvider.overrideWith(
+            (ref) => Stream.value(const [
+              Apiary(id: 'a1', name: 'Sunny yard', hiveCount: 4),
+            ]),
+          ),
+        ],
+      );
+
+      _expectAnnouncedOnce(
+        _semanticsLabel(tester, const Key('activity-act-1')),
+        ['Sunny yard · Honey harvest'],
+      );
+    });
+
+    testWidgets('home summary rows, badges included', (tester) async {
+      await _pumpHomeNeedsAttention(tester);
+
+      final late = _semanticsLabel(tester, const Key('home-todo-late'));
+      _expectAnnouncedOnce(late, ['Late task']);
+      expect(late, endsWith('. 5 days overdue'));
+
+      _expectAnnouncedOnce(
+        _semanticsLabel(tester, const Key('home-journey-open')),
+        ['Spring inspection round'],
+      );
+
+      // The never-visited badge spells out the very sentence the subtitle
+      // already carries, so the row says it ONCE, not twice (#662 AC 1).
+      expect(
+        _semanticsLabel(tester, const Key('home-apiary-never')),
+        'Never seen. No activity recorded yet',
+      );
+
+      final stale = _semanticsLabel(tester, const Key('home-apiary-stale'));
+      _expectAnnouncedOnce(stale, ['Stale yard']);
+      expect(stale, endsWith('. 40 days since the last visit'));
+
+      for (final key in const [
+        Key('home-todo-late'),
+        Key('home-journey-open'),
+        Key('home-apiary-never'),
+      ]) {
+        _expectActivatableButton(tester, key);
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -797,5 +990,63 @@ Future<void> _pumpHomeNeedsAttention(
           organizationId: 'org-1',
         ),
     ],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row-card announcement helpers (#662).
+// ---------------------------------------------------------------------------
+
+/// Pumps a tab-root [screen] inside a router + Scaffold, the way the app
+/// shell hosts it, with [overrides] supplying its data.
+Future<void> _pumpRowScreen(
+  WidgetTester tester, {
+  required Widget screen,
+  required List<Object> overrides,
+}) async {
+  final router = GoRouter(
+    initialLocation: '/',
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => Scaffold(body: screen),
+      ),
+    ],
+  );
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: overrides.cast(),
+      child: MaterialApp.router(
+        theme: AppTheme.light(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: kSupportedLocales,
+        routerConfig: router,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// Asserts each of [fragments] appears EXACTLY once in [label] — the shape of
+/// assertion a `contains` matcher cannot make, and the one #662 needed.
+void _expectAnnouncedOnce(String label, List<String> fragments) {
+  for (final fragment in fragments) {
+    expect(
+      fragment.allMatches(label).length,
+      1,
+      reason:
+          'expected "$fragment" to be announced exactly once, '
+          'but the semantics label is "$label"',
+    );
+  }
+}
+
+/// Asserts the row keyed [key] is exposed as a button an assistive technology
+/// can activate (#662 AC 2) — the flag alone is a lie without the action.
+void _expectActivatableButton(WidgetTester tester, Key key) {
+  expect(
+    tester.getSemantics(find.byKey(key)),
+    isSemantics(isButton: true, hasTapAction: true),
+    reason: '$key must stay an activatable button',
   );
 }

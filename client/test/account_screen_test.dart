@@ -13,9 +13,12 @@ import 'package:beekeepingit_client/features/settings/sync_settings_repository.d
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// An in-memory [LocalPrefs] fake — same convention as
 /// `profile_repository_test.dart`/`auth_controller_test.dart` — backing the
@@ -157,6 +160,68 @@ Widget _buildScreen(
 }
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): the account screen's profile form floated both
+  // its labels while the screens it links to wear theirs above.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'no field in the profile form paints a floating Material label',
+      (tester) async {
+        await pumpForm(tester);
+
+        expectNoFloatingFieldLabels(tester, find.byType(Form));
+      },
+    );
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      for (final label in const ['Name', 'Preferred language']) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets(
+      'the fields keep the accessible name their floating labels used to '
+      'give them (FR-AX-1)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpForm(tester);
+
+        expectFieldAccessibleName(
+          tester,
+          const Key('account-name-field'),
+          'Name',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('account-locale-field'),
+          'Preferred language',
+        );
+        handle.dispose();
+      },
+    );
+  });
+
   testWidgets('renders current profile fields and the change-password action', (
     tester,
   ) async {

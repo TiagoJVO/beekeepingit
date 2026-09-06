@@ -5,9 +5,12 @@ import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/members/members_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/a11y_matchers.dart';
 
 Member _member({
   String userId = 'user-1',
@@ -135,6 +138,65 @@ Widget _buildScreen(MembersController controller) {
 }
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): the invite field floated its label while the
+  // forms this screen sits beside wear theirs above. With the label above
+  // the field, the Invite button moves under it rather than beside it —
+  // sharing the row would align the button with the label, not the input.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeMembersController(
+            MembersState(
+              members: [_member(userId: 'admin-1', role: 'admin')],
+              invitations: const [],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the invite field paints no floating Material label', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      expectNoFloatingFieldLabels(tester, find.byType(Form));
+    });
+
+    testWidgets('its label sits above the field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      expect(
+        find.descendant(
+          of: find.byType(LabeledField),
+          matching: find.text('Email to invite'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'the field keeps the accessible name its floating label used to give '
+      'it, and the submit button keeps its own (FR-AX-1)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpForm(tester);
+
+        expectFieldAccessibleName(
+          tester,
+          const Key('invite-email-field'),
+          'Email to invite',
+        );
+        expectHasSemanticsLabel(tester, const Key('invite-submit-button'));
+        handle.dispose();
+      },
+    );
+  });
+
   testWidgets('renders members and invitations lists', (tester) async {
     await tester.pumpWidget(
       _buildScreen(
