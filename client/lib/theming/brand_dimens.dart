@@ -121,22 +121,50 @@ abstract final class BrandDimens {
   /// Hero-card interior padding.
   static const double padHero = 20;
 
-  /// Bottom padding that clears the floating action button on scrollable
-  /// screens (the prototype's `padding-bottom:120px`).
-  static const double scrollBottomInset = 120;
+  /// Bottom padding a scrollable screen leaves under its last card, so the
+  /// bottom chrome never lands on content (the prototype's
+  /// `padding-bottom:120px`).
+  ///
+  /// The chrome it has to clear is the floating action button *and* the
+  /// confirmation toast (#631) — the toast is the app's only "your save
+  /// worked" signal, so the card it is reporting on has to stay visible under
+  /// it. A two-line toast at the 200% text scale the field UX supports
+  /// (FR-AX-1) measures ~108 on a 375pt screen.
+  ///
+  /// This number is a **heuristic margin, not derived arithmetic**. Do not
+  /// reconstruct it as `108 + gapToastNav`: [gapToastNav] sits *below* the
+  /// body, not inside it — the body ends at the gutter's top edge, which is
+  /// also where a fixed toast's bottom lands, so the band only ever has to
+  /// cover the toast's own height. 120 already cleared ~108 by 12. The extra
+  /// 16 buys headroom for the cases the measurement does not cover: a
+  /// narrower screen, or a message long enough to wrap to three lines
+  /// (`syncSupersededNotice` is far longer than "Apiary saved"), either of
+  /// which overruns 136 as easily as 120. Re-measure before tuning it.
+  static const double scrollBottomInset = 136;
+
+  /// Gap between a confirmation toast and the bottom navigation under it
+  /// (#631) — the prototype floats its toast at `bottom:110px` over a ~96px
+  /// tab bar rather than resting it on the bar's top edge, which on this
+  /// palette would abut a plum-950 toast against the plum-800 navigation and
+  /// read as one block.
+  ///
+  /// This is *only* the gap. How far above the window bottom it lands the
+  /// toast is the `Scaffold`'s own arithmetic — it anchors a fixed `SnackBar`
+  /// at the top of its bottom chrome, whatever that chrome measures — so no
+  /// navigation-bar height is encoded here or anywhere else.
+  static const double gapToastNav = 14;
 
   /// [scrollBottomInset] as the screen at [context] actually has to reserve
   /// it — the constant plus whatever bottom inset the *window* adds to that
   /// screen's own bottom chrome (#773, FR-UX-2/FR-AX-1).
   ///
-  /// The constant sizes the chrome itself — today at 120, which #316 chose to
-  /// clear the FAB and which happens to clear a 108pt two-line toast in the
-  /// shell as well. That headroom is coincidence, not derivation: #774 (#631)
-  /// re-derives the constant against the toast and raises it. This helper is
-  /// written against whatever the constant is, so it composes either way; do
-  /// not restate a number from it.
+  /// The constant above sizes the chrome itself, and #631 has now re-derived
+  /// it against the toast. This helper deliberately restates no number from
+  /// it: it adds only what the constant cannot know, which is the window
+  /// inset the screen at [context] actually carries.
   ///
-  /// On a screen with a bottom navigation bar that is the whole story: `Scaffold` strips the window's
+  /// On a screen with a bottom navigation bar the constant is the whole
+  /// story: `Scaffold` strips the window's
   /// bottom padding from the body **and** from the toast it places over it —
   /// literally the same `removeBottomPadding: bottomNavigationBar != null ||
   /// persistentFooterButtons != null` flag feeds both slots — so the toast's

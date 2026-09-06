@@ -13,6 +13,7 @@ import '../features/notifications/notification_preferences_repository.dart';
 import '../features/settings/notification_settings_repository.dart';
 import '../features/sync/sync_rejected_repository.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../theming/brand_dimens.dart';
 import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
 
@@ -239,18 +240,42 @@ class AppShell extends ConsumerWidget {
         activeTabRoute: activeTab.route,
         canGoBack: canGoBack,
       ),
-      bottomNavigationBar: NavigationBar(
-        key: const Key('shell-bottom-nav'),
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => _onSelectTab(context, ref, index),
-        destinations: [
-          for (final tab in tabs)
-            NavigationDestination(
-              key: Key('shell-tab-${tab.route}'),
-              icon: Icon(tab.icon),
-              selectedIcon: Icon(tab.selectedIcon),
-              label: tab.label(l10n),
-            ),
+      // The navigation slot is the bar *plus* a gutter above it (#631,
+      // FR-UX-2). A `Scaffold` anchors a fixed `SnackBar` — every confirmation
+      // toast in the app, all 56 of them, shown through `ScaffoldMessenger`
+      // and positioned by nobody — at the top of its bottom chrome, so
+      // whatever this slot measures is what the toast clears. Putting the
+      // gutter *inside* the slot therefore lifts the toast off the bar's top
+      // edge without any screen, theme or call site knowing the bar's height:
+      // the arithmetic stays the Scaffold's.
+      //
+      // Two things this deliberately is not. It is not
+      // `SnackBarBehavior.floating`, whose margin would have done the same job
+      // in one theme line: with the shell's FAB on screen Flutter lifts a
+      // floating snack bar above the *FAB* instead, which measured 194px up
+      // into the list a save had just returned to — clearing the navigation by
+      // covering the content, the second half of #631. And it is not a
+      // per-screen offset: screens outside the shell (login, onboarding,
+      // account) have no bottom navigation and get no gutter, so their toasts
+      // still sit on the safe-area bottom rather than floating over a gap.
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: BrandDimens.gapToastNav),
+          NavigationBar(
+            key: const Key('shell-bottom-nav'),
+            selectedIndex: navigationShell.currentIndex,
+            onDestinationSelected: (index) => _onSelectTab(context, ref, index),
+            destinations: [
+              for (final tab in tabs)
+                NavigationDestination(
+                  key: Key('shell-tab-${tab.route}'),
+                  icon: Icon(tab.icon),
+                  selectedIcon: Icon(tab.selectedIcon),
+                  label: tab.label(l10n),
+                ),
+            ],
+          ),
         ],
       ),
     );
