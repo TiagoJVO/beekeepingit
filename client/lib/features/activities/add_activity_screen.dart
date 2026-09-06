@@ -1135,20 +1135,13 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             optionLabel: (v) => treatmentContextLabel(l10n, v) ?? v,
             onChanged: (v) => setState(() => _treatmentContext = v),
           ),
-          const SizedBox(height: 16),
-          _dropdownField(
-            l10n: l10n,
-            key: 'activity-treatment-type-field',
-            label: l10n.activityTreatmentTypeLabel,
-            value: _treatmentType,
-            options: treatmentTypes,
-            attrKey: 'treatment_type',
-            optionLabel: (v) => treatmentTypeLabel(l10n, v),
-            helperText: isDetectionOnly
-                ? l10n.activityTreatmentTypeOptionalForDetectionHint
-                : null,
-            onChanged: (v) => setState(() => _treatmentType = v),
-          ),
+          // The revealed field sits directly under the dropdown that
+          // reveals it — right after `treatment_context`, before
+          // `treatment_type` — rather than after it (#637). Keeping the
+          // leading gap INSIDE this conditional block (and exactly one
+          // unconditional gap between context and treatment-type below)
+          // yields a single 16px gap between every adjacent pair in both
+          // the revealed and hidden states.
           if (requiresDisease) ...[
             const SizedBox(height: 16),
             _dropdownField(
@@ -1179,6 +1172,20 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
               onChanged: (v) => setState(() => _disease = v),
             ),
           ],
+          const SizedBox(height: 16),
+          _dropdownField(
+            l10n: l10n,
+            key: 'activity-treatment-type-field',
+            label: l10n.activityTreatmentTypeLabel,
+            value: _treatmentType,
+            options: treatmentTypes,
+            attrKey: 'treatment_type',
+            optionLabel: (v) => treatmentTypeLabel(l10n, v),
+            helperText: isDetectionOnly
+                ? l10n.activityTreatmentTypeOptionalForDetectionHint
+                : null,
+            onChanged: (v) => setState(() => _treatmentType = v),
+          ),
           const SizedBox(height: 16),
           _numberField(
             l10n: l10n,

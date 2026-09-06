@@ -7,11 +7,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/a11y_matchers.dart';
+import '../../support/reveal_order_matchers.dart';
 
 /// The controlled vocabularies render in the ACTIVE language while the value
 /// the section builds stays the stored/wire string (#625, NFR-I18N-1,
 /// FR-AC-1, D-19).
 void main() {
+  // Wrapped in a StatefulBuilder so `onChanged` actually rebuilds the
+  // section — mirrors journey_form_screen.dart's own `onChanged: () =>
+  // setState(() {})` (this widget is Stateless; without a rebuild trigger
+  // here, selecting a dropdown option would never reveal a conditional
+  // field like `journey-default-disease-field` in a test).
   Widget host({
     required String type,
     required JourneyDefaultAttributesController controller,
@@ -22,10 +28,12 @@ void main() {
     supportedLocales: kSupportedLocales,
     home: Scaffold(
       body: SingleChildScrollView(
-        child: JourneyDefaultAttributesSection(
-          type: type,
-          controller: controller,
-          onChanged: () {},
+        child: StatefulBuilder(
+          builder: (context, setState) => JourneyDefaultAttributesSection(
+            type: type,
+            controller: controller,
+            onChanged: () => setState(() {}),
+          ),
         ),
       ),
     ),
@@ -79,6 +87,59 @@ void main() {
           );
         }
         handle.dispose();
+      });
+    }
+  });
+
+  group('the revealed disease default sits directly under its trigger, not '
+      'after treatment-type (#637 twin site)', () {
+    for (final locale in const [Locale('en'), Locale('pt')]) {
+      testWidgets('locale: ${locale.languageCode}', (tester) async {
+        final controller = JourneyDefaultAttributesController();
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          host(
+            type: activityTypeTreatment,
+            controller: controller,
+            locale: locale,
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('journey-default-disease-field')),
+          findsNothing,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('journey-default-treatment-context-field')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find
+              .text(
+                locale.languageCode == 'pt'
+                    ? 'Doença/condição específica'
+                    : 'Specific disease/condition',
+              )
+              .last,
+        );
+        await tester.pumpAndSettle();
+
+        expectRevealedDirectlyBelow(
+          tester,
+          revealed: find.byKey(const Key('journey-default-disease-field')),
+          trigger: find.byKey(
+            const Key('journey-default-treatment-context-field'),
+          ),
+          notBetween: [
+            find.byKey(const Key('journey-default-treatment-type-field')),
+          ],
+          reason:
+              'the journey default disease field must render directly '
+              'below the treatment-context dropdown that reveals it, not '
+              'below treatment-type (#637 twin site) — locale '
+              '${locale.languageCode}',
+        );
       });
     }
   });

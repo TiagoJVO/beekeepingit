@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../support/a11y_matchers.dart';
+import '../../support/reveal_order_matchers.dart';
 
 /// A no-op [LocalStoreEngine] — [_FakeActivitiesRepository] overrides every
 /// method the form touches, so the superclass's store is never actually
@@ -363,12 +364,14 @@ Future<void> _openAddActivityForm(
   WidgetTester tester, {
   _FakeJourneysRepository? journeysRepo,
   Apiary apiary = _apiary,
+  bool portuguese = false,
 }) async {
   await tester.pumpWidget(
     _buildApp(
       repo: _FakeActivitiesRepository(),
       journeysRepo: journeysRepo,
       apiary: apiary,
+      portuguese: portuguese,
     ),
   );
   await tester.pumpAndSettle();
@@ -633,6 +636,109 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('activity-disease-field')), findsOneWidget);
+      });
+
+      group('the revealed disease field sits directly under its trigger, not '
+          'after treatment-type (#637)', () {
+        Future<void> revealDiseaseField(
+          WidgetTester tester,
+          String treatmentContextOptionText, {
+          bool portuguese = false,
+        }) async {
+          useViewport(tester, size: const Size(1200, 2400));
+
+          await _openAddActivityForm(tester, portuguese: portuguese);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.text(portuguese ? 'Tratamento' : 'Treatment').last,
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('activity-disease-field')), findsNothing);
+
+          await tester.tap(
+            find.byKey(const Key('activity-treatment-context-field')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(treatmentContextOptionText).last);
+          await tester.pumpAndSettle();
+        }
+
+        testWidgets(
+          'via "Specific disease/condition" (context → disease → product)',
+          (tester) async {
+            await revealDiseaseField(tester, 'Specific disease/condition');
+
+            expectRevealedDirectlyBelow(
+              tester,
+              revealed: find.byKey(const Key('activity-disease-field')),
+              trigger: find.byKey(
+                const Key('activity-treatment-context-field'),
+              ),
+              notBetween: [
+                find.byKey(const Key('activity-treatment-type-field')),
+                find.byKey(const Key('activity-hives-involved-field')),
+                find.byKey(const Key('activity-notes-field')),
+              ],
+              reason:
+                  'the disease field must render directly below the '
+                  'treatment-context dropdown that reveals it, not below '
+                  'treatment-type (#637)',
+            );
+          },
+        );
+
+        testWidgets('via "Detection only (no treatment yet)" — the second '
+            'requiresDisease trigger', (tester) async {
+          await revealDiseaseField(tester, 'Detection only (no treatment yet)');
+
+          expectRevealedDirectlyBelow(
+            tester,
+            revealed: find.byKey(const Key('activity-disease-field')),
+            trigger: find.byKey(const Key('activity-treatment-context-field')),
+            notBetween: [
+              find.byKey(const Key('activity-treatment-type-field')),
+              find.byKey(const Key('activity-hives-involved-field')),
+              find.byKey(const Key('activity-notes-field')),
+            ],
+            reason:
+                'the disease field must render directly below the '
+                'treatment-context dropdown for the detection-only '
+                'trigger too — requiresDisease has two triggering values '
+                'and the AC must hold for both (#637)',
+          );
+        });
+
+        testWidgets(
+          'holds with Portuguese labels too (not accidentally coupled to '
+          'label width)',
+          (tester) async {
+            await revealDiseaseField(
+              tester,
+              'Doença/condição específica',
+              portuguese: true,
+            );
+
+            expectRevealedDirectlyBelow(
+              tester,
+              revealed: find.byKey(const Key('activity-disease-field')),
+              trigger: find.byKey(
+                const Key('activity-treatment-context-field'),
+              ),
+              notBetween: [
+                find.byKey(const Key('activity-treatment-type-field')),
+                find.byKey(const Key('activity-hives-involved-field')),
+                find.byKey(const Key('activity-notes-field')),
+              ],
+              reason:
+                  'the ordering must hold in Portuguese too — "Contexto do '
+                  'tratamento" / "Doença/condição específica" / "Produto '
+                  'de tratamento" / "Doença / condição" (#637)',
+            );
+          },
+        );
       });
 
       testWidgets(
