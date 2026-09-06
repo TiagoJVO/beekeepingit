@@ -1814,6 +1814,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get todoSortDirectionDescendingLabel => 'Descending';
 
   @override
+  String todoSortDirectionAction(String direction) {
+    return 'Sort direction: $direction';
+  }
+
+  @override
+  String todoFilterChipLabel(String label, String value) {
+    return '$label: $value';
+  }
+
+  @override
   String get todoDueDateUnset => 'No due date';
 
   @override

@@ -61,10 +61,9 @@ class JourneyFilterBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Type and status share one row (like TodoFilterBar's own status +
-          // priority pair) rather than each taking a full-width line, so
-          // adding the status filter doesn't push the list itself further
-          // down the screen.
+          // Type and status share one row rather than each taking a
+          // full-width line, so adding the status filter doesn't push the
+          // list itself further down the screen.
           Row(
             children: [
               Expanded(

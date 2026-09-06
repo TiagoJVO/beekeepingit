@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
+import 'package:beekeepingit_client/features/todos/todo_filter_bar.dart';
 import 'package:beekeepingit_client/features/todos/todo_filters.dart';
-import 'package:beekeepingit_client/features/todos/todo_list_widgets.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/app_theme.dart';
@@ -11,27 +11,41 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Layout regression tests for the Todos filter bar (#626, NFR-I18N-1,
-/// FR-UX-1, FR-TD-1).
+/// Layout regression tests for the compacted Todos filter bar (#635,
+/// NFR-I18N-1, FR-UX-1, FR-TD-1) — the successor to the #626 suite this file
+/// replaces.
 ///
-/// The defect: at a 375 CSS px viewport `Estado` and `Prioridade` shared one
-/// row (~155 px each), which is not wide enough for the Portuguese
-/// `Todas as prioridades` — the value soft-wrapped and the second line was
-/// clipped by the dropdown's fixed-height button, so the filter read
-/// `Todas as`: a dangling article, with no ellipsis to signal truncation.
-/// English (`All priorities`) happens to fit, so nothing caught it.
+/// #626's own defect (a `DropdownButtonFormField`'s selected value soft-
+/// wrapping and getting clipped by the field's fixed height) cannot recur
+/// here: there are no more dropdown fields. The four filters are now a
+/// horizontally-scrollable [BrandChip] row (status) plus three menu chips
+/// that open a bottom sheet (priority/due/sort field), per #635's own
+/// design. The invariant this suite restates for the new shape:
 ///
-/// These tests assert the invariant directly on the rendered text, in `pt`:
-/// the selected value gets enough horizontal room to lay out on ONE line, and
-/// at large text scales it degrades to a single ellipsized line rather than a
-/// clipped mid-phrase one. Mirrors the "wrap the widget directly" convention
-/// of journey_stats_section_test.dart rather than booting the whole app.
+///  * Every CHIP's own label — status word, or a menu chip's composed
+///    `category: value` (`todoFilterChipLabel`) — renders in full on ONE
+///    line, in `pt` (the longer locale), at default text scale AND at 2x. A
+///    chip lives in an unbounded horizontal scroll row (this file's own
+///    `SingleChildScrollView` + `Row`, not a `ListView` — see
+///    todo_filter_bar.dart's own doc), so it is never width-constrained and
+///    therefore never NEEDS to wrap or ellipsize: this suite asserts that
+///    directly, which is the concrete, checkable form of "never clipped
+///    mid-phrase" for a scrollable chip row.
+///  * Every SHEET OPTION (a fixed-width `ListTile`, unlike a chip) renders
+///    in full on one line at default scale and ellipsizes — never wraps
+///    mid-phrase — if it no longer fits at 2x.
+///
+/// Mirrors the retired suite's own conventions: real fonts loaded (text
+/// metrics are the whole subject here) and the widget wrapped directly
+/// rather than booting the whole app.
 
 /// A 375 CSS px-wide viewport — the narrowest phone width the PWA targets,
 /// and the width the issue reproduces at.
 const _narrowViewport = Size(375, 812);
 
-/// A tablet-width viewport, wide enough for the two-up filter row.
+/// A wide/tablet viewport, to prove the bar never needs a stacked/2-up
+/// breakpoint (#626's own `_kStackFiltersBelowWidth`, retired by #635): a
+/// scrollable chip row has nothing to stack.
 const _wideViewport = Size(900, 1200);
 
 /// Loads the app's real text fonts into the test binding.
@@ -40,10 +54,9 @@ const _wideViewport = Size(900, 1200);
 /// glyph as a full em square, so measured text comes out roughly twice as
 /// wide as what a user sees, and a width assertion made against it would be
 /// about a layout nobody ships. Both families are loaded so the measurement
-/// holds whichever tier a widget here resolves — the bar itself is all Archivo
-/// now that dropdown values no longer inherit the display serif (#628). Read
-/// from disk rather than `rootBundle` so the test does not depend on the
-/// tool's asset bundle.
+/// holds whichever tier a widget here resolves — the bar itself is all
+/// Archivo (#628). Read from disk rather than `rootBundle` so the test does
+/// not depend on the tool's asset bundle.
 Future<void> _loadAppFonts() async {
   Future<void> load(String family, String path) async {
     final bytes = await File(path).readAsBytes();
@@ -67,6 +80,7 @@ Widget _buildBar({
   TodoDueFilter due = TodoDueFilter.any,
   TodoSortField sortField = TodoSortField.priority,
   double textScale = 1.0,
+  Size viewport = _narrowViewport,
 }) {
   return MaterialApp(
     locale: locale,
@@ -75,7 +89,7 @@ Widget _buildBar({
     supportedLocales: kSupportedLocales,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(context)
-          .copyWith(textScaler: TextScaler.linear(textScale)),
+          .copyWith(textScaler: TextScaler.linear(textScale), size: viewport),
       child: child!,
     ),
     home: Scaffold(
@@ -96,225 +110,345 @@ Widget _buildBar({
   );
 }
 
-/// The single [RenderParagraph] rendering [value] inside the field keyed
-/// [fieldKey] — i.e. the dropdown's currently *shown* selection.
-RenderParagraph _shownValue(WidgetTester tester, Key fieldKey, String value) {
+void _useViewport(WidgetTester tester, Size size) {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// The single [RenderParagraph] rendering [value] as a chip's OWN label
+/// (found by ancestor [BrandChip] rather than a fixed field key, since a
+/// chip's key is per-value, e.g. `todo-filter-status-chip-overdue`).
+RenderParagraph _chipText(WidgetTester tester, Key chipKey, String value) {
   final finder = find.descendant(
-    of: find.byKey(fieldKey),
+    of: find.byKey(chipKey),
     matching: find.text(value),
   );
   expect(
     finder,
     findsOneWidget,
-    reason: '"$value" should be the shown selection of $fieldKey',
+    reason: '"$value" should be the $chipKey chip\'s own label',
   );
   return tester.renderObject<RenderParagraph>(finder);
 }
 
-/// Fails when [value] does not have room to render on one line inside its
-/// field — the #626 defect (clipped mid-phrase, no ellipsis).
-void _expectValueFitsOnOneLine(
+/// Fails when [value] does not render as one, unwrapped, un-ellipsized line
+/// inside the chip keyed [chipKey] — a chip lives in an unbounded horizontal
+/// scroll row, so it should never need to wrap or truncate at all.
+void _expectChipRendersFullyOnOneLine(
   WidgetTester tester,
-  Key fieldKey,
+  Key chipKey,
   String value,
 ) {
-  final paragraph = _shownValue(tester, fieldKey, value);
-  final painter = TextPainter(
-    text: paragraph.text,
-    textDirection: TextDirection.ltr,
-    textScaler: paragraph.textScaler,
-  )..layout();
-  expect(
-    paragraph.size.width,
-    greaterThanOrEqualTo(painter.width - 0.5),
-    reason:
-        '"$value" needs ${painter.width.toStringAsFixed(1)}px but the '
-        '$fieldKey field gives it only '
-        '${paragraph.size.width.toStringAsFixed(1)}px, so it is truncated',
-  );
+  final paragraph = _chipText(tester, chipKey, value);
   expect(
     paragraph.didExceedMaxLines,
     isFalse,
-    reason: '"$value" is truncated inside $fieldKey',
+    reason: '"$value" is truncated inside $chipKey',
   );
   expect(
     paragraph.size.height,
     lessThan(paragraph.preferredLineHeight * 1.5),
-    reason: '"$value" wrapped onto a second line inside $fieldKey',
+    reason: '"$value" wrapped onto a second line inside $chipKey',
   );
+  // No overflow set at all — an unbounded-width chip never needs one; a
+  // maxLines/overflow appearing here would mean the chip started rendering
+  // inside a WIDTH-CONSTRAINED context, and this suite's whole premise (a
+  // chip can never be #626-style clipped) would need re-checking.
+  expect(paragraph.text.toPlainText(), value);
 }
 
-/// Fails when [value] renders on more than one line — at a large text scale
-/// a value may legitimately no longer fit, but it must then ellipsize on a
-/// single line, never wrap into a line the dropdown button clips away.
-void _expectValueStaysOnOneLine(
+/// Opens the bottom sheet keyed [chipKey] and returns the [ListTile] option
+/// text keyed [optionKey]'s [RenderParagraph].
+Future<RenderParagraph> _openSheetAndFindOption(
   WidgetTester tester,
-  Key fieldKey,
-  String value,
-) {
-  final paragraph = _shownValue(tester, fieldKey, value);
-  expect(
-    paragraph.maxLines,
-    1,
-    reason: '$fieldKey\'s selected value must be capped at one line',
+  Key chipKey,
+  Key optionKey,
+) async {
+  await tester.tap(find.byKey(chipKey));
+  await tester.pumpAndSettle();
+  final finder = find.descendant(
+    of: find.byKey(optionKey),
+    matching: find.byType(Text),
   );
-  expect(
-    paragraph.overflow,
-    TextOverflow.ellipsis,
-    reason: '$fieldKey\'s selected value must ellipsize when it cannot fit',
-  );
-  expect(
-    paragraph.size.height,
-    lessThan(paragraph.preferredLineHeight * 1.5),
-    reason: '"$value" wrapped onto a second line inside $fieldKey',
-  );
+  expect(finder, findsOneWidget, reason: '$optionKey should render one Text');
+  return tester.renderObject<RenderParagraph>(finder);
 }
 
 void main() {
   setUpAll(_loadAppFonts);
 
-  group('TodoFilterBar values are never clipped mid-phrase (#626)', () {
-    void useViewport(WidgetTester tester, Size size) {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-    }
-
-    void useNarrowViewport(WidgetTester tester) =>
-        useViewport(tester, _narrowViewport);
-
+  group('status chip row renders every value on one line (#635, pt)', () {
     testWidgets(
-      'the Portuguese priority filter shows "Todas as prioridades" in full, '
-      'not clipped to "Todas as"',
+      'Concluída (the longest status word) fits on one line at default '
+      'scale',
       (tester) async {
-        useNarrowViewport(tester);
-        await tester.pumpWidget(_buildBar(locale: const Locale('pt')));
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(
+          _buildBar(locale: const Locale('pt'), status: TodoStatusFilter.done),
+        );
         await tester.pumpAndSettle();
 
-        _expectValueFitsOnOneLine(
+        _expectChipRendersFullyOnOneLine(
           tester,
-          const Key('todo-filter-priority-field'),
-          'Todas as prioridades',
+          const Key('todo-filter-status-chip-done'),
+          'Concluída',
         );
+        expect(tester.takeException(), isNull);
       },
     );
 
-    testWidgets('every Portuguese filter value fits on one line', (
+    testWidgets('every status chip stays on one line at 2x text scale', (
       tester,
     ) async {
-      useNarrowViewport(tester);
+      _useViewport(tester, _narrowViewport);
       await tester.pumpWidget(
-        _buildBar(
-          locale: const Locale('pt'),
-          // The longest option of each filter, so the assertion covers the
-          // worst case a user can select — not just the default.
-          status: TodoStatusFilter.done,
-          priority: todoPriorityMedium,
-          due: TodoDueFilter.thisWeek,
-          sortField: TodoSortField.priority,
-        ),
+        _buildBar(locale: const Locale('pt'), textScale: 2.0),
       );
       await tester.pumpAndSettle();
 
-      _expectValueFitsOnOneLine(
-        tester,
-        const Key('todo-filter-status-field'),
-        'Concluída',
+      for (final (key, label) in const [
+        ('todo-filter-status-chip-all', 'Todas'),
+        ('todo-filter-status-chip-open', 'Em aberto'),
+        ('todo-filter-status-chip-overdue', 'Atrasada'),
+        ('todo-filter-status-chip-done', 'Concluída'),
+      ]) {
+        _expectChipRendersFullyOnOneLine(tester, Key(key), label);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('menu chips compose "category: value" on one line (#635, pt)', () {
+    testWidgets('Prioridade: Média fits on one line at default scale', (
+      tester,
+    ) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(
+        _buildBar(locale: const Locale('pt'), priority: todoPriorityMedium),
       );
-      _expectValueFitsOnOneLine(
+      await tester.pumpAndSettle();
+
+      _expectChipRendersFullyOnOneLine(
         tester,
-        const Key('todo-filter-priority-field'),
-        'Média',
-      );
-      _expectValueFitsOnOneLine(
-        tester,
-        const Key('todo-filter-due-field'),
-        'Vence esta semana',
-      );
-      _expectValueFitsOnOneLine(
-        tester,
-        const Key('todo-sort-field-field'),
-        'Prioridade',
+        const Key('todo-filter-priority-chip'),
+        'Prioridade: Média',
       );
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('English filter values fit on one line too', (tester) async {
-      useNarrowViewport(tester);
+    testWidgets('Prazo: Vence esta semana fits on one line at default scale', (
+      tester,
+    ) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(
+        _buildBar(locale: const Locale('pt'), due: TodoDueFilter.thisWeek),
+      );
+      await tester.pumpAndSettle();
+
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-filter-due-chip'),
+        'Prazo: Vence esta semana',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Ordenar por: Prioridade fits on one line at default scale', (
+      tester,
+    ) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(_buildBar(locale: const Locale('pt')));
+      await tester.pumpAndSettle();
+
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-sort-field-chip'),
+        'Ordenar por: Prioridade',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('every menu chip stays on one line at 2x text scale', (
+      tester,
+    ) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(
+        _buildBar(
+          locale: const Locale('pt'),
+          priority: todoPriorityMedium,
+          due: TodoDueFilter.thisWeek,
+          textScale: 2.0,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-filter-priority-chip'),
+        'Prioridade: Média',
+      );
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-filter-due-chip'),
+        'Prazo: Vence esta semana',
+      );
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-sort-field-chip'),
+        'Ordenar por: Prioridade',
+      );
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('English chip labels fit on one line too (#635)', () {
+    testWidgets('the default (cleared) menu chips show their bare category '
+        'labels', (tester) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(_buildBar(locale: const Locale('en')));
+      await tester.pumpAndSettle();
+
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-filter-priority-chip'),
+        'Priority',
+      );
+      _expectChipRendersFullyOnOneLine(
+        tester,
+        const Key('todo-filter-due-chip'),
+        'Due',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Due: Due this month fits on one line', (tester) async {
+      _useViewport(tester, _narrowViewport);
       await tester.pumpWidget(
         _buildBar(locale: const Locale('en'), due: TodoDueFilter.thisMonth),
       );
       await tester.pumpAndSettle();
 
-      _expectValueFitsOnOneLine(
+      _expectChipRendersFullyOnOneLine(
         tester,
-        const Key('todo-filter-priority-field'),
-        'All priorities',
-      );
-      _expectValueFitsOnOneLine(
-        tester,
-        const Key('todo-filter-due-field'),
-        'Due this month',
+        const Key('todo-filter-due-chip'),
+        'Due: Due this month',
       );
       expect(tester.takeException(), isNull);
     });
+  });
 
+  group('a wide viewport has nothing to stack (#635, replaces the retired '
+      '480px breakpoint)', () {
     testWidgets(
-      'the two-up status + priority row still fits at a tablet width',
+      'the bar renders every control with no overflow and no vertical '
+      'scrolling at a tablet width',
       (tester) async {
-        useViewport(tester, _wideViewport);
+        _useViewport(tester, _wideViewport);
         await tester.pumpWidget(
           _buildBar(
             locale: const Locale('pt'),
             status: TodoStatusFilter.done,
+            priority: todoPriorityMedium,
             due: TodoDueFilter.thisWeek,
+            viewport: _wideViewport,
           ),
         );
         await tester.pumpAndSettle();
 
-        // Guards the stack-below breakpoint from the other side: above it
-        // both filters share one row, and both must still fit.
-        _expectValueFitsOnOneLine(
+        expect(tester.takeException(), isNull);
+        // Every chip is simultaneously visible (no stacking, no second
+        // row needed) — the retired dropdown bar's own two-up breakpoint
+        // has no equivalent here.
+        for (final key in const [
+          'todo-filter-status-chip-all',
+          'todo-filter-status-chip-open',
+          'todo-filter-status-chip-overdue',
+          'todo-filter-status-chip-done',
+          'todo-filter-priority-chip',
+          'todo-filter-due-chip',
+          'todo-sort-field-chip',
+          'todo-sort-direction-button',
+        ]) {
+          expect(find.byKey(Key(key)), findsOneWidget);
+        }
+        _expectChipRendersFullyOnOneLine(
           tester,
-          const Key('todo-filter-status-field'),
+          const Key('todo-filter-status-chip-done'),
           'Concluída',
         );
-        _expectValueFitsOnOneLine(
+        _expectChipRendersFullyOnOneLine(
           tester,
-          const Key('todo-filter-priority-field'),
-          'Todas as prioridades',
+          const Key('todo-filter-priority-chip'),
+          'Prioridade: Média',
         );
+      },
+    );
+  });
+
+  group('sheet options render in full at default scale, ellipsized at 2x '
+      '(#635, pt)', () {
+    testWidgets(
+      'every priority sheet option fits on one line at default scale',
+      (tester) async {
+        _useViewport(tester, _narrowViewport);
+        await tester.pumpWidget(_buildBar(locale: const Locale('pt')));
+        await tester.pumpAndSettle();
+
+        final paragraph = await _openSheetAndFindOption(
+          tester,
+          const Key('todo-filter-priority-chip'),
+          const Key('todo-filter-priority-option-all'),
+        );
+        expect(paragraph.text.toPlainText(), 'Todas as prioridades');
+        expect(paragraph.didExceedMaxLines, isFalse);
         expect(tester.takeException(), isNull);
       },
     );
 
     testWidgets(
-      'at 2x text scale the Portuguese values ellipsize on one line instead '
-      'of clipping mid-phrase',
+      'the due sheet\'s longest option ellipsizes rather than wraps at 2x '
+      'text scale',
       (tester) async {
-        useNarrowViewport(tester);
+        _useViewport(tester, _narrowViewport);
         await tester.pumpWidget(
-          _buildBar(
-            locale: const Locale('pt'),
-            due: TodoDueFilter.thisWeek,
-            textScale: 2.0,
-          ),
+          _buildBar(locale: const Locale('pt'), textScale: 2.0),
         );
         await tester.pumpAndSettle();
 
-        _expectValueStaysOnOneLine(
+        final paragraph = await _openSheetAndFindOption(
           tester,
-          const Key('todo-filter-priority-field'),
-          'Todas as prioridades',
+          const Key('todo-filter-due-chip'),
+          const Key('todo-filter-due-option-thisWeek'),
         );
-        _expectValueStaysOnOneLine(
-          tester,
-          const Key('todo-filter-due-field'),
-          'Vence esta semana',
+        expect(paragraph.maxLines, 1);
+        expect(paragraph.overflow, TextOverflow.ellipsis);
+        expect(
+          paragraph.size.height,
+          lessThan(paragraph.preferredLineHeight * 1.5),
+          reason:
+              'the option wrapped onto a second line instead of '
+              'ellipsizing',
         );
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets('the sort-field sheet options fit on one line at default '
+        'scale', (tester) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(_buildBar(locale: const Locale('pt')));
+      await tester.pumpAndSettle();
+
+      final paragraph = await _openSheetAndFindOption(
+        tester,
+        const Key('todo-sort-field-chip'),
+        const Key('todo-sort-field-option-priority'),
+      );
+      expect(paragraph.text.toPlainText(), 'Prioridade');
+      expect(paragraph.didExceedMaxLines, isFalse);
+      expect(tester.takeException(), isNull);
+    });
   });
 }
