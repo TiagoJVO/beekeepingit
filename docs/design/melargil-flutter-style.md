@@ -57,6 +57,14 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **`SectionHeader(text)`** — Playfair 19 serif header between content blocks.
 - **`LabeledField(label:, child:)`** — label _above_ the field (the prototype
   pattern), not a floating Material label. Wrap `TextFormField`/`DropdownButton`.
+  It also hands the label to the wrapped control as that control's **accessible
+  name** — the name `InputDecoration.labelText` used to put on the input's own
+  semantics node, and what `client/e2e`'s `getByLabel(...)` reads — and excludes
+  the visible `Text` from semantics so it is announced once, not twice. Pass
+  `labelsChild: false` when the child is a **group** rather than one control (a
+  picker's search box plus its result list, a block with its own buttons, a
+  read-only value supplying its own combined label); annotating a group folds
+  the label into whichever descendant node comes first.
 - **`HeroCard(child:)`** — the plum detail/settings header (radius 20, white
   foreground via `context.brand.onHeroSurface`).
 - **`BrandCard(child:, onTap:)`** — white card on the 1px hairline; tappable
@@ -89,6 +97,13 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   `primary`, so in light mode they are plum-filled with a white on-colour
   (9.62:1) rather than honey-filled. That is the point: honey marks the one
   action to take, so it can't also mark every "this one is selected".
+- **One field-label pattern, app-wide** — every form field wears its label
+  above the box via `LabeledField`; `InputDecoration.labelText` is not used on
+  a form (`#629`). List screens' compact filter/sort bars and their
+  hint-only search boxes are not form fields and keep their own treatment.
+  A label above a field also means a submit button cannot share the field's
+  row: aligned to the row's top it rides up level with the label, and any
+  fixed nudge back down breaks at a larger OS text scale — put it underneath.
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.

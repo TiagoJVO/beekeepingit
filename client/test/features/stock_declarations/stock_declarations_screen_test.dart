@@ -5,10 +5,13 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_repository.dart';
 import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/a11y_matchers.dart';
 
 /// FR-AP-10 (#298): the stock-declaration log screen.
 ///
@@ -301,6 +304,73 @@ void _recordFlowTests() {
       final today = DateTime.now();
       final expected = const LocaleFormatting.forLocale('en_GB').date(today);
       expect(find.text(expected), findsOneWidget);
+    });
+
+    // #629 (FR-UX-1, FR-AX-1): the record dialog is a form like any other —
+    // both its fields floated their labels while the screens around it wear
+    // theirs above.
+    group('one field-label pattern (#629, FR-UX-1)', () {
+      Future<void> openDialog(WidgetTester tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            orgRegistrationNumber: 'PT-111',
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('stock-declarations-record-PT-111')),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('neither field paints a floating Material label', (
+        tester,
+      ) async {
+        await openDialog(tester);
+
+        expectNoFloatingFieldLabels(tester, find.byType(AlertDialog));
+      });
+
+      testWidgets('every label sits above its field, via LabeledField', (
+        tester,
+      ) async {
+        await openDialog(tester);
+
+        for (final label in const ['Declaration date', 'Note (optional)']) {
+          expect(
+            find.descendant(
+              of: find.byType(LabeledField),
+              matching: find.text(label),
+            ),
+            findsOneWidget,
+            reason: '"$label" must be a LabeledField label',
+          );
+        }
+      });
+
+      testWidgets(
+        'the fields keep the accessible name their floating labels used to '
+        'give them (FR-AX-1)',
+        (tester) async {
+          final handle = tester.ensureSemantics();
+          await openDialog(tester);
+
+          expectFieldAccessibleName(
+            tester,
+            const Key('stock-declaration-date-field'),
+            'Declaration date',
+          );
+          expectFieldAccessibleName(
+            tester,
+            const Key('stock-declaration-notes-field'),
+            'Note (optional)',
+          );
+          handle.dispose();
+        },
+      );
     });
 
     testWidgets('cancelling writes nothing', (tester) async {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
 import '../organization/organization_repository.dart';
 import '../organization/registration_number.dart';
@@ -311,28 +312,34 @@ class _RecordDeclarationDialogState extends State<_RecordDeclarationDialog> {
         children: [
           Text(l10n.stockDeclarationHiveTotal(widget.totalHives)),
           const SizedBox(height: 16),
-          // A tappable row rather than a bare text button so the target
-          // comfortably clears the 44x44 gloves-friendly minimum (D-18).
-          InkWell(
-            key: const Key('stock-declaration-date-field'),
-            onTap: _pickDate,
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: l10n.stockDeclarationDateLabel,
-                suffixIcon: const Icon(Icons.calendar_today_outlined),
+          // One label pattern app-wide (#629, FR-UX-1): both labels sit ABOVE
+          // their field, never animated into the box border.
+          LabeledField(
+            label: l10n.stockDeclarationDateLabel,
+            // A tappable row rather than a bare text button so the target
+            // comfortably clears the 44x44 gloves-friendly minimum (D-18).
+            child: InkWell(
+              key: const Key('stock-declaration-date-field'),
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  suffixIcon: Icon(Icons.calendar_today_outlined),
+                ),
+                child: Text(formatting.date(_declaredOn)),
               ),
-              child: Text(formatting.date(_declaredOn)),
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            key: const Key('stock-declaration-notes-field'),
-            controller: _notesController,
-            maxLength: 2000,
-            maxLines: 2,
-            decoration: InputDecoration(
-              labelText: l10n.stockDeclarationNotesLabel,
-              hintText: l10n.stockDeclarationNotesHint,
+          LabeledField(
+            label: l10n.stockDeclarationNotesLabel,
+            child: TextField(
+              key: const Key('stock-declaration-notes-field'),
+              controller: _notesController,
+              maxLength: 2000,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: l10n.stockDeclarationNotesHint,
+              ),
             ),
           ),
         ],

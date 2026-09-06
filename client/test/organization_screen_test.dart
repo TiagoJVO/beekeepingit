@@ -3,9 +3,12 @@ import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// A fake controller so tests drive [OrganizationScreen] without a real
 /// [ApiClient]/network call, matching profile_screen_test.dart's
@@ -51,6 +54,59 @@ Widget _buildScreen(OrganizationController controller) {
 }
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): the onboarding org form floated both its
+  // labels, so it read differently from every other form in the app.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no field on the form paints a floating Material label', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      expectNoFloatingFieldLabels(tester, find.byType(OrganizationScreen));
+    });
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      for (final label in const ['Organization name', 'Address (optional)']) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets('the fields keep the accessible name their floating labels '
+        'used to give them — the registration e2e types into this form via '
+        'getByLabel("Organization name", exact) (FR-AX-1)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpForm(tester);
+
+      expectFieldAccessibleName(
+        tester,
+        const Key('organization-name-field'),
+        'Organization name',
+      );
+      expectFieldAccessibleName(
+        tester,
+        const Key('organization-address-field'),
+        'Address (optional)',
+      );
+      handle.dispose();
+    });
+  });
+
   testWidgets(
     'the create form warns that creating an organization is a one-way choice',
     (tester) async {

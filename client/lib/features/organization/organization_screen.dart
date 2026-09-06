@@ -120,36 +120,42 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     text: l10n.organizationCreateBlocksInvitationWarning,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-name-field'),
-                    controller: _nameController,
-                    autofocus: true,
-                    // Per-field, so a blocked save's "enter a name" error
-                    // clears the moment the field holds one instead of
-                    // waiting for the next save (#649, FR-UX-1) — matching
-                    // journey/todo. Field-level rather than on the Form: a
-                    // Form-level onUserInteraction validates every field as
-                    // soon as ANY of them is touched, which would flag this
-                    // still-untouched name the instant the user types an
-                    // address.
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    onChanged: (_) => _clearFieldError('name'),
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationNameLabel,
-                      errorText: _fieldErrors['name'],
+                  // One label pattern throughout (#629, FR-UX-1): every label
+                  // sits ABOVE its field, never animated into the box border.
+                  LabeledField(
+                    label: l10n.organizationNameLabel,
+                    child: TextFormField(
+                      key: const Key('organization-name-field'),
+                      controller: _nameController,
+                      autofocus: true,
+                      // Per-field, so a blocked save's "enter a name" error
+                      // clears the moment the field holds one instead of
+                      // waiting for the next save (#649, FR-UX-1) — matching
+                      // journey/todo. Field-level rather than on the Form: a
+                      // Form-level onUserInteraction validates every field as
+                      // soon as ANY of them is touched, which would flag this
+                      // still-untouched name the instant the user types an
+                      // address.
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      onChanged: (_) => _clearFieldError('name'),
+                      decoration: InputDecoration(
+                        errorText: _fieldErrors['name'],
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.organizationNameRequired
+                          : null,
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? l10n.organizationNameRequired
-                        : null,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-address-field'),
-                    controller: _addressController,
-                    onChanged: (_) => _clearFieldError('address'),
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationAddressLabel,
-                      errorText: _fieldErrors['address'],
+                  LabeledField(
+                    label: l10n.organizationAddressLabel,
+                    child: TextFormField(
+                      key: const Key('organization-address-field'),
+                      controller: _addressController,
+                      onChanged: (_) => _clearFieldError('address'),
+                      decoration: InputDecoration(
+                        errorText: _fieldErrors['address'],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),

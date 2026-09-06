@@ -133,30 +133,64 @@ class SectionHeader extends StatelessWidget {
 
 /// A form field with its label sitting *above* it (the prototype's field
 /// pattern) rather than a floating Material label.
+///
+/// This is the ONE field-label pattern the app uses (#629, FR-UX-1): every
+/// form field wears its label above the box, so a column of fields keeps a
+/// single baseline rhythm instead of stuttering between static headings and
+/// labels that animate into a border.
+///
+/// Moving the label out of [InputDecoration] would otherwise cost the field
+/// its accessible NAME — `labelText` puts the label on the input's own
+/// semantics node, while a bare `Text` sibling is a separate node a screen
+/// reader focused on the input never reads, and Playwright's
+/// `getByLabel(...)` in `client/e2e` never finds. So by default
+/// ([labelsChild]) the label is ALSO annotated onto the wrapped control and
+/// excluded from the visible `Text`, which reproduces exactly the one
+/// labelled node `labelText` produced (FR-AX-1). This is the same fix
+/// `apiary_detail_screen.dart`'s counter editor already carries by hand for
+/// the same reason (#393).
+///
+/// Pass `labelsChild: false` when [child] is a GROUP rather than a single
+/// control — a search box plus select-all/clear buttons, a picker's field
+/// plus its result list, a read-only value that supplies its own combined
+/// label. Annotating a group would fold the label into whichever descendant
+/// node happens to come first and nest the group's other controls under it.
 class LabeledField extends StatelessWidget {
-  const LabeledField({required this.label, required this.child, super.key});
+  const LabeledField({
+    required this.label,
+    required this.child,
+    this.labelsChild = true,
+    super.key,
+  });
 
   final String label;
   final Widget child;
 
+  /// Whether [label] also becomes the wrapped control's accessible name.
+  final bool labelsChild;
+
   @override
   Widget build(BuildContext context) {
+    final labelText = Padding(
+      padding: const EdgeInsets.only(bottom: 6, left: 2),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: AppTheme.bodyFontFamily,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6, left: 2),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        child,
+        // Excluded once the control itself announces the label: leaving both
+        // in makes a screen reader read the name twice — once as loose text,
+        // then again with the field.
+        if (labelsChild) ExcludeSemantics(child: labelText) else labelText,
+        if (labelsChild) Semantics(label: label, child: child) else child,
       ],
     );
   }

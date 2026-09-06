@@ -9,10 +9,13 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+
+import 'support/a11y_matchers.dart';
 
 Profile _profile({
   String name = '',
@@ -124,6 +127,79 @@ Widget _buildScreen(
 }
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): this form mixed the two label patterns within
+  // one screen — a read-only account email already wearing its label above,
+  // sandwiched between a name field and a language dropdown whose labels
+  // animated into their box borders.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no field on the form paints a floating Material label', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      expectNoFloatingFieldLabels(tester, find.byType(ProfileScreen));
+    });
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      for (final label in const [
+        'Name',
+        'Account email',
+        'Preferred language',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets('the fields keep the accessible name their floating labels '
+        'used to give them — the registration e2e types into this very form '
+        'via getByLabel("Name", exact) (FR-AX-1)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpForm(tester);
+
+      expectFieldAccessibleName(
+        tester,
+        const Key('profile-name-field'),
+        'Name',
+      );
+      expectFieldAccessibleName(
+        tester,
+        const Key('profile-locale-field'),
+        'Preferred language',
+      );
+      // The read-only address opts OUT of that: it supplies its own combined
+      // label, so layering the field label on top would announce it twice.
+      expect(
+        tester
+            .getSemantics(find.byKey(const Key('profile-account-email-value')))
+            .label,
+        'Account email: ana@example.com',
+      );
+      handle.dispose();
+    });
+  });
+
   testWidgets('renders the name field and the read-only account email', (
     tester,
   ) async {
