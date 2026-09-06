@@ -41,10 +41,13 @@ class _FabAction {
 
 /// Per-tab quick-add config for the contextual actions (FR-UX-2). Tabs with no
 /// single right create action have no entry here, so [AppShell] omits the
-/// control entirely: Activities (an activity always needs an apiary context
-/// first, so its create entry point lives on the apiary detail page) and Home
-/// (#658, D-35 — FR-UX-2's quick-add is contextual to the active area, and
-/// Home's area is every area).
+/// control entirely — Home is the only such tab (#658, D-35: FR-UX-2's
+/// quick-add is contextual to the active area, and Home's area is every area).
+/// Activities used to be the other one, on the grounds that an activity always
+/// needs an apiary context first; #634 overturned that — logging an activity is
+/// the app's central field action, and the apiary context is a question the
+/// flow can ask (new_activity_flow_screen.dart) rather than a reason to hide
+/// the entry point from the tab named after it.
 /// [secondary] is optional — only the Apiaries tab has one (#52): a "New todo"
 /// action alongside its primary "New apiary" action. With two actions the
 /// shell renders a single expandable "Actions" button (#347); with one, a
@@ -75,10 +78,21 @@ const _fabConfigByTab = <String, _FabConfig>{
       onPressed: _openNewTodo,
     ),
   ),
-  // Journeys (#45): unlike Activities (whose create entry point lives on the
-  // apiary detail page, since an activity always needs an apiary context
-  // first), a journey isn't tied to a single apiary — so its own tab root is
-  // a sensible "New journey" entry point, mirroring the Apiaries tab's FAB.
+  // Activities (#634, FR-UX-2/FR-AC-2): the tab's own quick-add. An activity
+  // is always recorded at an apiary, so this opens a flow that asks WHICH
+  // apiary first (apiary -> type -> fields, the prototype's order) instead of
+  // requiring the user to have navigated to one beforehand.
+  'activities': _FabConfig(
+    primary: _FabAction(
+      key: Key('shell-fab'),
+      label: _activityFabLabel,
+      icon: Icons.event_note_outlined,
+      onPressed: _openNewActivity,
+    ),
+  ),
+  // Journeys (#45): a journey isn't tied to a single apiary, so its own tab
+  // root is a sensible "New journey" entry point, mirroring the Apiaries
+  // tab's FAB.
   'journeys': _FabConfig(
     primary: _FabAction(
       key: Key('shell-fab'),
@@ -100,10 +114,17 @@ const _fabConfigByTab = <String, _FabConfig>{
 };
 
 String _apiaryFabLabel(AppLocalizations l10n) => l10n.addApiary;
+String _activityFabLabel(AppLocalizations l10n) => l10n.addActivityAction;
 String _journeyFabLabel(AppLocalizations l10n) => l10n.addJourney;
 String _todoFabLabel(AppLocalizations l10n) => l10n.addTodo;
 
 void _openNewApiary(BuildContext context) => context.go('/apiaries/new');
+
+/// The Activities tab's own create flow (#634) — a route in the ACTIVITIES
+/// branch, not `/apiaries/:id/activities/new`, so the tab never switches
+/// under the user and Back returns to the Activities list.
+void _openNewActivity(BuildContext context) => context.go('/activities/new');
+
 void _openNewJourney(BuildContext context) => context.go('/journeys/new');
 
 /// Routes to the full create form (#389, replacing #52's quick-create
@@ -411,6 +432,11 @@ class AppShell extends ConsumerWidget {
       'apiaryDetail' => l10n.apiaryDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
       'activityNew' => l10n.newActivityTitle,
+      // #634's two-step flow in the activities branch: both steps are "New
+      // activity" in the header — the apiary step names itself in its own
+      // in-body heading, so the header stays the destination, not the step.
+      'activityNewChooseApiary' => l10n.newActivityTitle,
+      'activityNewForApiary' => l10n.newActivityTitle,
       'activityDetail' => l10n.activityDetailTitle,
       // #384: the journey-scoped activity detail route renders the same
       // ActivityDetailScreen as 'activityDetail' above — same title.

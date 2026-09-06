@@ -672,6 +672,53 @@ void main() {
     );
 
     testWidgets(
+      'saving from the apiary-detail entry point still lands on that apiary '
+      '(the default returnLocation, #634)',
+      (tester) async {
+        // #634 gave AddActivityScreen an optional returnLocation so the
+        // Activities tab's own quick-add can send the user back to
+        // /activities. This pins the DEFAULT the apiaries branch relies on.
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(
+          GoRouter.of(tester.element(find.byType(AppShell))).state.uri
+              .toString(),
+          '/apiaries/a1',
+        );
+      },
+    );
+
+    testWidgets(
       'an apiary with 0/unknown hives leaves the field empty, not "0"',
       (tester) async {
         await _openAddActivityForm(

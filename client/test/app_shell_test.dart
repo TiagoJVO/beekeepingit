@@ -372,7 +372,12 @@ void main() {
     // The Activities tab (#43) now renders real content — with the
     // overridden empty activities stream (see _buildShellApp), that's its
     // own empty state, not the old ComingSoonScreen placeholder text.
-    expect(find.text('No activities yet.'), findsOneWidget);
+    expect(
+      find.text(
+        'No activities yet. Record your first activity with the button below.',
+      ),
+      findsOneWidget,
+    );
     var nav = tester.widget<NavigationBar>(
       find.byKey(const Key('shell-bottom-nav')),
     );
@@ -621,28 +626,35 @@ void main() {
   );
 
   testWidgets(
-    'tabs without their own quick-add action have no FAB (Activities)',
+    'the Activities tab shows its own "Add activity" FAB (#634, FR-AC-2)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      // Activities has no FAB: its create entry point lives on the apiary
-      // detail page, since an activity always needs an apiary context first.
-      // Journeys (#45) and Todos (#52) DO have their own FAB — covered by
-      // their own tests below, not this one. Home's own no-FAB rule (#658,
-      // D-35) has its own dedicated test above, since its reason differs
-      // (every area is its area, so no create action is the right one).
+      // #634 reversed this tab's earlier no-FAB rule: an activity does always
+      // need an apiary context, but that is a question the flow asks (the
+      // apiary step in new_activity_flow_screen.dart), not a reason to hide
+      // the create entry point from the tab named after activities. Home's
+      // own no-FAB rule (#658, D-35) still stands and has its own test above,
+      // since its reason differs (every area is its area, so no single create
+      // action is the right one).
       await tester.tap(find.byKey(const Key('shell-tab-activities')));
       await tester.pumpAndSettle();
+
+      // A single action -> a direct FAB, no collapsed "Actions" toggle.
+      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
+
+      // ...and it opens the Activities branch's own create flow, so the tab
+      // never switches under the user.
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
       expect(
-        find.byKey(const Key('shell-fab')),
-        findsNothing,
-        reason: 'the Activities tab should not show the contextual FAB',
-      );
-      expect(
-        find.byKey(const Key('actions-speed-dial-toggle')),
-        findsNothing,
-        reason: 'the Activities tab should not show the Actions control',
+        GoRouter.of(tester.element(find.byKey(const Key('shell-bottom-nav'))))
+            .state
+            .uri
+            .toString(),
+        '/activities/new',
       );
     },
   );
