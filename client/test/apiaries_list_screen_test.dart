@@ -3,6 +3,7 @@ import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_dimens.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -1034,6 +1035,52 @@ void main() {
                   'user to tap it',
             );
           }
+        },
+      );
+    }
+  });
+
+  // #650: at a wide desktop viewport the list content is capped at
+  // BrandDimens.maxWidthList instead of stretching across the whole window,
+  // while the map view stays full-bleed by design (its own doc comment,
+  // apiaries_list_screen.dart).
+  group('content width at a wide viewport (#650)', () {
+    for (final locale in const [Locale('en'), Locale('pt')]) {
+      testWidgets(
+        'in ${locale.languageCode} a row stays within maxWidthList and the '
+        'map view still renders full-bleed',
+        (tester) async {
+          tester.view.physicalSize = const Size(1280, 800);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          // Deliberately no device location fixture here (defaults to
+          // [DeviceLocationUnavailable]): this group is only about the
+          // content-width cap, and an available location draws the map's
+          // own user-location pin, which is unrelated pre-existing overflow
+          // territory (`_UserPin`, apiary_map_screen.dart) this PR does not
+          // touch.
+          await tester.pumpWidget(
+            _buildScreen(
+              apiaries: [_apiary('a1', 'Serra Norte', lat: 40.0, lon: -8.0)],
+              locale: locale,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final rowWidth = tester
+              .getSize(find.byType(BrandRowCard).first)
+              .width;
+          expect(rowWidth, lessThanOrEqualTo(BrandDimens.maxWidthList));
+
+          // Switch to the map view — it must still span the full viewport
+          // rather than being clamped to the same column.
+          await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+          await tester.pumpAndSettle();
+
+          final mapWidth = tester.getSize(find.byKey(const Key('apiary-map')));
+          expect(mapWidth.width, greaterThan(BrandDimens.maxWidthList));
         },
       );
     }

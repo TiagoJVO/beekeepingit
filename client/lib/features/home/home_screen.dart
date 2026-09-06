@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
@@ -106,21 +107,25 @@ class _AttentionSections extends StatelessWidget {
         _StaleApiariesSection(section: summary.staleApiaries),
     ];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        BrandDimens.gutter,
-        8,
-        BrandDimens.gutter,
-        BrandDimens.scrollBottomInset,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < sections.length; i++) ...[
-            if (i > 0) const SizedBox(height: 24),
-            sections[i],
+    // ContentColumn (#650): caps the section stack at BrandDimens.maxWidthList
+    // on a wide desktop viewport rather than stretching it across the window.
+    return ContentColumn(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          BrandDimens.gutter,
+          8,
+          BrandDimens.gutter,
+          BrandDimens.scrollBottomInset,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < sections.length; i++) ...[
+              if (i > 0) const SizedBox(height: 24),
+              sections[i],
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -650,12 +655,17 @@ class _UnavailableState extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Center(
-      child: SingleChildScrollView(
-        key: const Key('home-unavailable'),
-        child: EmptyState(
-          message: l10n.homeUnavailableMessage,
-          icon: Icons.cloud_off_outlined,
+    // ContentColumn (#650) narrows this to BrandDimens.maxWidthList on a
+    // wide viewport; the inner Center still centres vertically within that
+    // narrowed column, unchanged from before.
+    return ContentColumn(
+      child: Center(
+        child: SingleChildScrollView(
+          key: const Key('home-unavailable'),
+          child: EmptyState(
+            message: l10n.homeUnavailableMessage,
+            icon: Icons.cloud_off_outlined,
+          ),
         ),
       ),
     );
@@ -722,25 +732,30 @@ class _FirstRunState extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Center(
-      child: SingleChildScrollView(
-        key: const Key('home-first-run'),
-        padding: const EdgeInsets.symmetric(horizontal: BrandDimens.gutter),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EmptyState(
-              message: l10n.homeFirstRunMessage,
-              icon: Icons.hive_outlined,
-            ),
-            PrimaryActionButton(
-              key: const Key('home-first-run-action'),
-              label: l10n.homeFirstRunAction,
-              icon: Icons.add,
-              onPressed: () => context.go('/apiaries/new'),
-            ),
-          ],
+    // ContentColumn (#650) narrows this to BrandDimens.maxWidthList on a
+    // wide viewport; the inner Center still centres vertically within that
+    // narrowed column, unchanged from before.
+    return ContentColumn(
+      child: Center(
+        child: SingleChildScrollView(
+          key: const Key('home-first-run'),
+          padding: const EdgeInsets.symmetric(horizontal: BrandDimens.gutter),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              EmptyState(
+                message: l10n.homeFirstRunMessage,
+                icon: Icons.hive_outlined,
+              ),
+              PrimaryActionButton(
+                key: const Key('home-first-run-action'),
+                label: l10n.homeFirstRunAction,
+                icon: Icons.add,
+                onPressed: () => context.go('/apiaries/new'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -768,12 +783,17 @@ class _AllClearState extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Center(
-      child: SingleChildScrollView(
-        key: const Key('home-all-clear'),
-        child: EmptyState(
-          message: l10n.homeAllClearMessage(apiaryVisitRecencyDays),
-          icon: Icons.check_circle_outline,
+    // ContentColumn (#650) narrows this to BrandDimens.maxWidthList on a
+    // wide viewport; the inner Center still centres vertically within that
+    // narrowed column, unchanged from before.
+    return ContentColumn(
+      child: Center(
+        child: SingleChildScrollView(
+          key: const Key('home-all-clear'),
+          child: EmptyState(
+            message: l10n.homeAllClearMessage(apiaryVisitRecencyDays),
+            icon: Icons.check_circle_outline,
+          ),
         ),
       ),
     );

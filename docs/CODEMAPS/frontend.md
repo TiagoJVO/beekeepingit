@@ -235,6 +235,11 @@ arrive JSON-encoded as TEXT, same convention as `activities.attributes`).
 
 ## Theming / brand
 
+Content width (#650): `core/widgets/content_column.dart`'s `ContentColumn` caps list/content
+screens at `BrandDimens.maxWidthList` (720) or `.maxWidthContent` (480) on a wide viewport —
+`Align.topCenter` + `ConstrainedBox`, no breakpoint (the constraint is a no-op below the cap).
+See `docs/design/melargil-flutter-style.md`'s scale section for why 720, not 480, is load-bearing.
+
 `lib/theming/` — `app_theme.dart` (light/dark, system mode), `brand_tokens.dart`.
 One brand mark (#686): `BrandMark` (`brand_widgets.dart`) draws the bundled
 `assets/brand/app-icon-512.png`, a byte-identical copy of the PWA icon `web/icons/Icon-512.png`,
