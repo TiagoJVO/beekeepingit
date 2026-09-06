@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todo_detail_screen.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/material.dart';
@@ -483,13 +484,15 @@ void main() {
 
         expect(repo.created, hasLength(1));
         expect(find.byKey(const Key('todo-title-field')), findsNothing);
-        // The detail screen's edit FAB renders even while its own data watch
-        // is still loading (see _pumpBounded's doc comment) — proof we
-        // actually left the form for the detail route.
-        expect(
-          find.byKey(const Key('todo-detail-edit-button')),
-          findsOneWidget,
-        );
+        // Since #633 pinned the detail screen's edit action inside its own
+        // data-loaded body (previously it lived on the Scaffold's
+        // floatingActionButton, which rendered even during a loading
+        // state), it no longer renders while the detail screen's own data
+        // watch is still loading (see _pumpBounded's doc comment) — so
+        // asserting the route itself is what actually proves we left the
+        // form for the detail screen, rather than a widget that happens not
+        // to be mounted yet.
+        expect(find.byType(TodoDetailScreen), findsOneWidget);
       },
     );
   });
