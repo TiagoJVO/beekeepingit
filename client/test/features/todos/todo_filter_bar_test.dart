@@ -39,11 +39,11 @@ const _wideViewport = Size(900, 1200);
 /// Mandatory for this suite specifically: the default test font draws every
 /// glyph as a full em square, so measured text comes out roughly twice as
 /// wide as what a user sees, and a width assertion made against it would be
-/// about a layout nobody ships. Both families are needed — a dropdown's
-/// selected value inherits `textTheme.titleMedium`, which `AppTheme` puts on
-/// Playfair Display, while the rest of the bar is Archivo. Read from disk
-/// rather than `rootBundle` so the test does not depend on the tool's asset
-/// bundle.
+/// about a layout nobody ships. Both families are loaded so the measurement
+/// holds whichever tier a widget here resolves — the bar itself is all Archivo
+/// now that dropdown values no longer inherit the display serif (#628). Read
+/// from disk rather than `rootBundle` so the test does not depend on the
+/// tool's asset bundle.
 Future<void> _loadAppFonts() async {
   Future<void> load(String family, String path) async {
     final bytes = await File(path).readAsBytes();
