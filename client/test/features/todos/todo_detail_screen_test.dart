@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../support/a11y_matchers.dart';
+
 /// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every method
 /// exercised, mirroring the sibling todos/activities/journeys test fixtures.
 class _NoopLocalStore implements LocalStoreEngine {
@@ -70,9 +72,9 @@ class _FakeTodosRepository extends TodosRepository {
   }
 
   /// Used by the edit form's own one-shot `_loadExisting()` (reached via the
-  /// detail screen's edit FAB) — the base [TodosRepository.getById] would
-  /// otherwise always resolve null against [_NoopLocalStore], leaving the
-  /// form blank instead of pre-filled.
+  /// detail screen's Edit action, #633) — the base [TodosRepository.getById]
+  /// would otherwise always resolve null against [_NoopLocalStore], leaving
+  /// the form blank instead of pre-filled.
   @override
   Future<Todo?> getById(String id) async => current;
 
@@ -231,7 +233,7 @@ void main() {
       expect(find.text('Serra Norte'), findsOneWidget);
       expect(find.text('Status: Open'), findsOneWidget);
       // No edit controls on this read-focused screen (edit lives on the
-      // form, reached via the FAB).
+      // form, reached via the pinned action bar).
       expect(find.byType(TextFormField), findsNothing);
     });
 
@@ -357,7 +359,10 @@ void main() {
       });
     });
 
-    testWidgets('the edit FAB navigates to the edit form', (tester) async {
+    // #633 replaced the floating action button with an OutlinedButton
+    // (SecondaryActionButton) in the pinned bar — it taps the same way, and
+    // the key is deliberately reused, so this test's behaviour is unchanged.
+    testWidgets('the edit action navigates to the edit form', (tester) async {
       final repo = _FakeTodosRepository(_todo());
       await _openDetail(tester, repo: repo);
 
@@ -381,5 +386,204 @@ void main() {
       expect(find.byKey(const Key('todo-detail-header')), findsNothing);
       expect(find.text('No todos yet.'), findsOneWidget);
     });
+  });
+
+  _pinnedActionTests();
+}
+
+/// Sizes the test view to [viewport] at a 1:1 device pixel ratio and
+/// restores it afterwards — copied from todo_form_screen_test.dart's own
+/// `_useViewport` rather than reused, and deliberately NOT
+/// `_useTallViewport` above: that helper's 1200x3600 viewport is precisely
+/// what hides the defect this group reproduces (#633) — at that height the
+/// completed state's extra `todo-detail-completed-at` row never pushes
+/// content anywhere near the FAB's band.
+void _useViewport(WidgetTester tester, Size viewport) {
+  tester.view.physicalSize = viewport;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// Reproduces #633 (FR-TD-1, FR-UX-1, D-18): on a completed todo, the
+/// full-width honey "Reabrir"/Reopen [PrimaryActionButton] and the honey
+/// "Editar tarefa"/Edit [FloatingActionButton] occupy the same band with the
+/// FAB on top, clipping the button's label and stealing roughly the right
+/// 45% of its tap area — a tap there opens the edit form instead of
+/// reopening the todo.
+///
+/// The screen already carries `BrandDimens.scrollBottomInset` as its scroll
+/// bottom padding, and that inset is larger than the FAB's band — but an
+/// inset only guarantees clearance at MAXIMUM scroll extent. The completed
+/// state adds the `todo-detail-completed-at` row, pushing content one row
+/// past the viewport, so AT REST (no scrolling) the button renders inside
+/// the FAB's band. That asymmetry is exactly why the defect doesn't appear
+/// before completion: the open state's content is one row shorter and
+/// doesn't reach the FAB.
+///
+/// The fix (mirroring #357's pinned-action pattern, already used by
+/// todo_form_screen.dart) is to pin the primary action in a bar OUTSIDE the
+/// scroll view and drop the FAB entirely, replacing it with a demoted
+/// secondary action in the same bar — which is what turns every assertion
+/// below from red to green.
+void _pinnedActionTests() {
+  group('the primary action does not collide with the edit FAB (#633, '
+      'FR-TD-1, FR-UX-1, D-18)', () {
+    // The handset #766 tested the sibling form screen's own pinned-action
+    // fix at — short enough that the completed state's extra row overflows
+    // the viewport and collides with the FAB's band.
+    const shortViewport = Size(400, 640);
+
+    Future<void> openAt(
+      WidgetTester tester, {
+      required _FakeTodosRepository repo,
+      Size viewport = shortViewport,
+    }) async {
+      _useViewport(tester, viewport);
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      final router = GoRouter.of(tester.element(find.byType(AppShell)));
+      router.go('/todos/t1');
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'the toggle button is fully on-screen with no scrolling, open and '
+      'completed alike',
+      (tester) async {
+        final open = _FakeTodosRepository(_todo());
+        await openAt(tester, repo: open);
+
+        final toggle = find.byKey(
+          const Key('todo-detail-complete-toggle-button'),
+        );
+        expectFullyOnScreen(
+          tester,
+          toggle,
+          reason:
+              'the complete toggle must be reachable without scrolling on '
+              'a $shortViewport viewport (open state)',
+        );
+        expectMinTapTarget(tester, toggle);
+
+        final done = _FakeTodosRepository(
+          _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
+        );
+        await openAt(tester, repo: done);
+
+        expectFullyOnScreen(
+          tester,
+          toggle,
+          reason:
+              'the reopen toggle must be reachable without scrolling on a '
+              '$shortViewport viewport (completed state, one row taller)',
+        );
+        expectMinTapTarget(tester, toggle);
+      },
+    );
+
+    testWidgets(
+      'tapping the trailing edge of the Reopen button reopens the todo, '
+      'it does not open the edit form',
+      (tester) async {
+        final repo = _FakeTodosRepository(
+          _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
+        );
+        await openAt(tester, repo: repo);
+
+        // Derive the drag from geometry rather than a fixed offset, so the
+        // reproduction is deterministic rather than a viewport lottery:
+        // drag the fields card until the toggle button's centre lines up
+        // with the FAB's centre, i.e. maximum overlap. Guarded on the FAB
+        // still existing so this same test keeps working once the fix
+        // removes it — the pinned button is then never dragged and a plain
+        // trailing-edge tap must still reopen without navigating, which is
+        // the regression this test protects going forward.
+        final fabFinder = find.byType(FloatingActionButton);
+        if (fabFinder.evaluate().isNotEmpty) {
+          final fabRect = tester.getRect(fabFinder);
+          final buttonRect = tester.getRect(
+            find.byKey(const Key('todo-detail-complete-toggle-button')),
+          );
+          await tester.drag(
+            find.byKey(const Key('todo-detail-fields')),
+            Offset(0, fabRect.center.dy - buttonRect.center.dy),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        final r = tester.getRect(
+          find.byKey(const Key('todo-detail-complete-toggle-button')),
+        );
+        // tapAt, not tap: tap's `warnIfMissed` would turn a real overlap
+        // into a mere console warning instead of actually hitting whatever
+        // widget is topmost at that point, so it could mask the defect.
+        await tester.tapAt(r.centerRight - const Offset(2, 0));
+        await tester.pumpAndSettle();
+
+        expect(
+          repo.reopened,
+          ['t1'],
+          reason:
+              'tapping the trailing edge of the Reopen button must reopen '
+              'the todo — today the FAB steals that tap and this fails',
+        );
+        expect(
+          find.byKey(const Key('todo-title-field')),
+          findsNothing,
+          reason:
+              'the tap must not have navigated to the edit form (the exact '
+              'reported symptom of #633)',
+        );
+      },
+    );
+
+    testWidgets(
+      'no floating action button ever overlaps the primary action, even '
+      'mid-scroll',
+      (tester) async {
+        // Written as an invariant, not "the FAB is gone": vacuously true
+        // once the FAB is removed by this fix, and still meaningful if a
+        // FAB is ever reintroduced on this screen.
+        final repo = _FakeTodosRepository(
+          _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
+        );
+        await openAt(tester, repo: repo);
+
+        // Unconditional: this fix removes the FAB entirely, so the guarded
+        // loop below over `find.byType(FloatingActionButton)` would
+        // otherwise run zero iterations and assert nothing — passing
+        // whether the fix is present, reverted, or broken. This fails
+        // immediately if a FAB ever reappears on this screen.
+        expect(find.byType(FloatingActionButton), findsNothing);
+
+        final fabs = find.byType(FloatingActionButton);
+        if (fabs.evaluate().isNotEmpty) {
+          final fabRect = tester.getRect(fabs.first);
+          final buttonRect = tester.getRect(
+            find.byKey(const Key('todo-detail-complete-toggle-button')),
+          );
+          await tester.drag(
+            find.byKey(const Key('todo-detail-fields')),
+            Offset(0, fabRect.center.dy - buttonRect.center.dy),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        final primaryRect = tester.getRect(
+          find.byKey(const Key('todo-detail-complete-toggle-button')),
+        );
+        for (final element in find.byType(FloatingActionButton).evaluate()) {
+          final fabRect = tester.getRect(find.byWidget(element.widget));
+          expect(
+            fabRect.overlaps(primaryRect),
+            isFalse,
+            reason:
+                'a FloatingActionButton must never overlap the primary '
+                'complete/reopen action ($fabRect vs $primaryRect)',
+          );
+        }
+      },
+    );
   });
 }
