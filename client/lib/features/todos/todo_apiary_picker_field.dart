@@ -55,6 +55,10 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
 
     return LabeledField(
       label: l10n.todoApiaryFieldLabel,
+      // A GROUP, not one control: the search box plus a list of selectable
+      // rows that each announce their own name. Annotating the label onto it
+      // would fold it into the search box and nest the rows beneath (#629).
+      labelsChild: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

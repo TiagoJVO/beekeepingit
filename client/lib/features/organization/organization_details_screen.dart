@@ -117,40 +117,44 @@ class _OrganizationDetailsScreenState
                     ),
                     const SizedBox(height: 16),
                   ],
-                  TextFormField(
-                    key: const Key('organization-details-name-field'),
-                    controller: _nameController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationNameLabel,
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? l10n.organizationNameRequired
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-details-address-field'),
-                    controller: _addressController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationAddressLabel,
+                  // One label pattern throughout (#629, FR-UX-1): every label
+                  // sits ABOVE its field, never animated into the box border.
+                  LabeledField(
+                    label: l10n.organizationNameLabel,
+                    child: TextFormField(
+                      key: const Key('organization-details-name-field'),
+                      controller: _nameController,
+                      enabled: editable,
+                      onChanged: _markEdited,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.organizationNameRequired
+                          : null,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key(
-                      'organization-details-registration-number-field',
+                  LabeledField(
+                    label: l10n.organizationAddressLabel,
+                    child: TextFormField(
+                      key: const Key('organization-details-address-field'),
+                      controller: _addressController,
+                      enabled: editable,
+                      onChanged: _markEdited,
                     ),
-                    controller: _registrationNumberController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    maxLength: 50,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationRegistrationNumberLabel,
-                      helperText: l10n.organizationRegistrationNumberHint,
+                  ),
+                  const SizedBox(height: 16),
+                  LabeledField(
+                    label: l10n.organizationRegistrationNumberLabel,
+                    child: TextFormField(
+                      key: const Key(
+                        'organization-details-registration-number-field',
+                      ),
+                      controller: _registrationNumberController,
+                      enabled: editable,
+                      onChanged: _markEdited,
+                      maxLength: 50,
+                      decoration: InputDecoration(
+                        helperText: l10n.organizationRegistrationNumberHint,
+                      ),
                     ),
                   ),
                   if (isAdmin) ...[
