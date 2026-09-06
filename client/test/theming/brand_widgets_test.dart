@@ -42,6 +42,54 @@ void main() {
     expect(find.text('Organization'), findsOneWidget);
   });
 
+  // #771 (FR-AX-1, D-18): heading semantics are how a screen-reader user skims
+  // a screen — jumping header to header instead of reading every node in
+  // order. [SectionHeader] is the app's ONE section-header mechanism, so this
+  // single node carries every heading in the app.
+  testWidgets('SectionHeader announces its label as a heading', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(const SectionHeader('Organization', key: Key('header'))),
+    );
+
+    // The REAL node, not a `contains` matcher (#662's discipline): the flag
+    // and the label must sit on the SAME node, or a screen reader announces
+    // an empty heading followed by a stray line of text.
+    final data = tester
+        .getSemantics(find.byKey(const Key('header')))
+        .getSemanticsData();
+    expect(data.flagsCollection.isHeader, isTrue);
+    expect(data.label, 'Organization');
+    handle.dispose();
+  });
+
+  // The other half of #771's third acceptance criterion: only things that ARE
+  // headings become headings. [LabeledField]'s bold 13px label sits above a
+  // field and reads like one, but it names an input — marking it a heading
+  // would put every form field into the screen reader's heading list.
+  testWidgets('LabeledField\'s label is not a heading', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(
+        const LabeledField(
+          label: 'Name',
+          child: TextField(key: Key('lf-child')),
+        ),
+      ),
+    );
+
+    // Since #629 the label is the CHILD's accessible name and the visible
+    // `Text` is excluded from semantics, so the assertion has to look at the
+    // control's node — checking the `Text` would now pass vacuously against
+    // an empty label rather than proving the field is not a heading.
+    final data = tester
+        .getSemantics(find.byKey(const Key('lf-child')))
+        .getSemanticsData();
+    expect(data.label, 'Name');
+    expect(data.flagsCollection.isHeader, isFalse);
+    handle.dispose();
+  });
+
   testWidgets('LabeledField shows the label above its child', (tester) async {
     await tester.pumpWidget(
       _host(
