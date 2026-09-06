@@ -80,15 +80,29 @@ async function login(page: Page) {
 // only the rail's chrome is ever on screen in this suite — the locator has to
 // match the rail's role, not the bar's. It stays chrome-agnostic (`.or(...)`)
 // rather than hard-coding "button" so it keeps working unmodified if a future
-// change narrows this suite's viewport back under 840. The button matcher is
-// anchored (`/^Apiaries$/`, not `/Apiaries/`) — an unanchored substring match
-// against an ARB label that can change independently of this file would let
-// a future same-substring button silently win `.first()` instead of failing
+// change narrows this suite's viewport back under 840.
+//
+// The rail destination's accessible name is NOT the bare label. Flutter's
+// NavigationRail merges a second `Semantics(label: indexLabel)` node into each
+// destination, where `indexLabel` is
+// `MaterialLocalizations.tabLabel(tabIndex:, tabCount:)` — see
+// navigation_rail.dart's `indexLabel:` at the `_RailDestination` call site and
+// the `Semantics(label: widget.indexLabel)` it renders. The compiled node is
+// therefore `<flt-semantics role="button" aria-current="false">` whose text is
+// "Apiaries" + newline + "Tab 1 of 5", which Playwright normalises to the
+// accessible name "Apiaries Tab 1 of 5" — read off the semantics DOM captured
+// in this suite's own failing run, not inferred. NavigationBar instead wraps
+// its destinations in `Semantics(role: SemanticsRole.tab, selected: ...)` and
+// adds no index label, which is why the bar matcher above can stay an exact
+// string while this one cannot. So the button matcher admits that one suffix
+// and nothing else, still anchored at BOTH ends: an unanchored substring match
+// against an ARB label that can change independently of this file would let a
+// future same-substring button silently win `.first()` instead of failing
 // loudly, in this CI-only lane with no fast local feedback.
 async function goToApiariesTab(page: Page) {
   await page
     .getByRole("tab", { name: "Apiaries" })
-    .or(page.getByRole("button", { name: /^Apiaries$/ }))
+    .or(page.getByRole("button", { name: /^Apiaries(?: Tab \d+ of \d+)?$/ }))
     .first()
     .click();
   await page.waitForURL(/\/apiaries/, { timeout: 30_000 });
