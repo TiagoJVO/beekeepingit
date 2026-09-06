@@ -133,8 +133,9 @@ abstract final class AppTheme {
   static ThemeData dark() => _themeFrom(darkScheme);
 
   /// Builds a [ThemeData] from a brand [ColorScheme]: Archivo as the app-wide
-  /// default text family, Playfair Display on the display/headline/title text
-  /// styles (screen titles + brand, per the prototype).
+  /// default text family, Playfair Display on the display/headline tiers and
+  /// `titleLarge` (screen titles + brand, per the prototype). `titleMedium`
+  /// stays on Archivo — see the typography block below (#628).
   static ThemeData _themeFrom(ColorScheme scheme) {
     final base = ThemeData(
       useMaterial3: true,
@@ -148,14 +149,22 @@ abstract final class AppTheme {
     // scheme's brightness first so colors stay correct.
     //
     // `titleMedium` is deliberately *not* in this list (#628). Despite the
-    // name it is Material's form-control tier, not a title tier: it is what
-    // `DropdownButton` resolves for its selected value and menu items (there
-    // is no theme override for that widget — `DropdownMenuThemeData` targets
-    // the unrelated M3 `DropdownMenu`), and also what `PopupMenuButton`
-    // items, `AlertDialog` content and `SnackBar` content default to. Serif
-    // there put a Playfair word inside every sans-serif form, against the
-    // prototype's "Archivo — all UI, labels, inputs, buttons, body"
-    // (docs/design/prototype.md §Typography).
+    // name, the one thing that actually resolves it here is a form control:
+    // `DropdownButton` reads it for its selected value and its menu items
+    // (`dropdown.dart`, unconditionally — no M3 branch, and no theme hook
+    // either, since `DropdownMenuThemeData` targets the unrelated M3
+    // `DropdownMenu` this app does not use). Serif there put a Playfair word
+    // inside every sans-serif form, against the prototype's "Archivo — all
+    // UI, labels, inputs, buttons, body" (docs/design/prototype.md
+    // §Typography).
+    //
+    // Be careful with the folklore that `PopupMenuButton` items, `AlertDialog`
+    // content and `SnackBar` content also ride `titleMedium`: that is the
+    // Material 2 default set, and this theme sets `useMaterial3: true` (below).
+    // Under M3 they resolve `labelLarge`, `bodyMedium` and `bodyMedium`
+    // respectively, so they were never serif and are not affected by this
+    // change — check `_PopupMenuDefaultsM3` / `_DialogDefaultsM3` /
+    // `_SnackBarDefaultsM3` before assuming otherwise.
     //
     // Section headers keep the serif without this tier: [SectionHeader]
     // (theming/brand_widgets.dart) pins [displayFontFamily] itself, and it is

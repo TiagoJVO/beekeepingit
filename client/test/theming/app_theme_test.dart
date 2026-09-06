@@ -116,11 +116,13 @@ void main() {
 
       test('$name: titleMedium is Archivo — it is Material\'s form-control '
           'tier, not a title tier (#628)', () {
-        // `titleMedium` is what Material resolves for controls, not for
-        // titles: DropdownButton's value, PopupMenuButton's items, AlertDialog
-        // content and SnackBar content all default to it. Putting the display
-        // serif here dressed every one of those as a heading — the serif word
-        // sitting inside a sans-serif form that #628 reports. Screen titles
+        // `titleMedium` is what Material resolves for a form control, not
+        // for a title: under this theme's M3 defaults it is `DropdownButton`'s
+        // value and menu items that read it. (`PopupMenuButton`, `AlertDialog`
+        // and `SnackBar` read it only under M2; on M3 they take
+        // `labelLarge`/`bodyMedium`.) Putting the display serif here dressed
+        // the dropdowns as headings — the serif word sitting inside a
+        // sans-serif form that #628 reports. Screen titles
         // ride `titleLarge` and above (asserted just above); section headers
         // ride [SectionHeader], which pins Playfair itself.
         expect(
@@ -177,6 +179,9 @@ void main() {
           _renderedFamilies(tester, 'Language'),
           everyElement(AppTheme.bodyFontFamily),
         );
+        // Same guard: `everyElement` is vacuously true on an empty iterable,
+        // so a renamed/removed label would pass while checking nothing.
+        expect(_renderedFamilies(tester, 'Language'), isNotEmpty);
       });
 
       testWidgets('${entry.key}: the open menu\'s items are Archivo too', (
@@ -194,6 +199,9 @@ void main() {
             _renderedFamilies(tester, label),
             everyElement(AppTheme.bodyFontFamily),
           );
+          // `everyElement` is vacuously true on an empty iterable — without
+          // this, renaming a menu item would leave the loop green and blind.
+          expect(_renderedFamilies(tester, label), isNotEmpty);
         }
       });
     }
