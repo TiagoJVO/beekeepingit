@@ -255,134 +255,210 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              BrandDimens.gutterForm,
-              BrandDimens.gutterForm,
-              BrandDimens.gutterForm,
-              BrandDimens.scrollBottomInset,
-            ),
-            child: Form(
-              key: _formKey,
-              // Any field edit arms the unsaved-changes guard (#345); the
-              // apiary multi-select below (outside the field tree) calls it
-              // directly. It also drops the last save attempt's parity verdict
-              // (#597): the name field autovalidates on interaction, so a
-              // stale message would otherwise sit under a value the user has
-              // already corrected until they press Save again.
-              onChanged: () {
-                markUnsavedChanges();
-                if (_syncErrors.isNotEmpty) {
-                  setState(
-                    () => _syncErrors = const SaveTimeFieldErrors.none(),
-                  );
-                }
-              },
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.isEdit)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        bottom: BrandDimens.gapField,
-                      ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _StatusChip(status: _status),
-                      ),
+          // The fields scroll, the actions stay pinned — the structure
+          // apiary_form_screen.dart adopted for #341 and
+          // journey_quick_create_sheet.dart already used (#357). With the
+          // actions as the last children of the scroll view, reaching Save on
+          // a short viewport meant a swipe that the apiary multi-select's
+          // bounded inner list silently swallows whenever the drag starts
+          // over it. Outside the scrollable they are in the same place at
+          // every scroll offset, picker state, viewport height and text scale
+          // (FR-UX-1, FR-AX-1, D-18).
+          //
+          // No `BrandDimens.scrollBottomInset` here any more: that inset
+          // clears a floating action button, and the shell hides its FAB on a
+          // pushed route like this form (`_ShellFab`'s `canGoBack`) — the
+          // pinned bar below is what the scroll view now has to clear, and it
+          // does so by sitting outside it.
+          //
+          // LayoutBuilder caps that bar at half the body. Edit mode stacks
+          // three field actions (~220px); on a body shorter than that — a
+          // handset in landscape, or a large text scale — an uncapped bar
+          // would take the whole Column, leave the fields 0px, overflow, and
+          // paint the destructive Delete clipped below the 44x44 floor
+          // (D-18). Capped, the bar scrolls internally instead and Save
+          // stays whole at the top of it. At any ordinary height the cap is
+          // slack and the layout is exactly the reference's.
+          child: LayoutBuilder(
+            builder: (context, constraints) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      BrandDimens.gutterForm,
+                      BrandDimens.gutterForm,
+                      BrandDimens.gutterForm,
+                      8,
                     ),
-                  LabeledField(
-                    label: l10n.journeyNameLabel,
-                    child: TextFormField(
-                      key: const Key('journey-name-field'),
-                      controller: _nameController,
-                      maxLength: 200,
-                      autovalidateMode: AutovalidateMode.onUserInteraction,
-                      // The form's own "required" rule first, then whatever
-                      // the shared sync description says about this column
-                      // (#597) — e.g. a name under the field's 200-character
-                      // allowance but over the server's 200-BYTE cap, which
-                      // only a save-time check can catch.
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? l10n.journeyNameRequired
-                          : _syncErrors.messageFor(l10n, 'name'),
-                    ),
-                  ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  LabeledField(
-                    label: l10n.journeyMainActivityTypeLabel,
-                    child: DropdownButtonFormField<String>(
-                      key: const Key('journey-main-activity-type-field'),
-                      initialValue: _mainActivityType,
-                      isExpanded: true,
-                      items: [
-                        for (final type in knownActivityTypes)
-                          DropdownMenuItem(
-                            value: type,
-                            child: Text(activityTypeLabel(l10n, type) ?? type),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _mainActivityType = value;
-                            // A different main_activity_type invalidates the
-                            // old type's default-attribute keys (#385's own
-                            // design decision) — reset rather than carry
-                            // stale/mismatched values forward.
-                            _defaultAttributes.reset();
-                          });
+                    child: Form(
+                      key: _formKey,
+                      // Any field edit arms the unsaved-changes guard (#345); the
+                      // apiary multi-select below (outside the field tree) calls it
+                      // directly. It also drops the last save attempt's parity verdict
+                      // (#597): the name field autovalidates on interaction, so a
+                      // stale message would otherwise sit under a value the user has
+                      // already corrected until they press Save again.
+                      onChanged: () {
+                        markUnsavedChanges();
+                        if (_syncErrors.isNotEmpty) {
+                          setState(
+                            () =>
+                                _syncErrors = const SaveTimeFieldErrors.none(),
+                          );
                         }
                       },
-                      validator: (_) =>
-                          _syncErrors.messageFor(l10n, 'main_activity_type'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.isEdit)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: BrandDimens.gapField,
+                              ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _StatusChip(status: _status),
+                              ),
+                            ),
+                          LabeledField(
+                            label: l10n.journeyNameLabel,
+                            child: TextFormField(
+                              key: const Key('journey-name-field'),
+                              controller: _nameController,
+                              maxLength: 200,
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
+                              // The form's own "required" rule first, then whatever
+                              // the shared sync description says about this column
+                              // (#597) — e.g. a name under the field's 200-character
+                              // allowance but over the server's 200-BYTE cap, which
+                              // only a save-time check can catch.
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? l10n.journeyNameRequired
+                                  : _syncErrors.messageFor(l10n, 'name'),
+                            ),
+                          ),
+                          const SizedBox(height: BrandDimens.gapField),
+                          LabeledField(
+                            label: l10n.journeyMainActivityTypeLabel,
+                            child: DropdownButtonFormField<String>(
+                              key: const Key(
+                                'journey-main-activity-type-field',
+                              ),
+                              initialValue: _mainActivityType,
+                              isExpanded: true,
+                              items: [
+                                for (final type in knownActivityTypes)
+                                  DropdownMenuItem(
+                                    value: type,
+                                    child: Text(
+                                      activityTypeLabel(l10n, type) ?? type,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _mainActivityType = value;
+                                    // A different main_activity_type invalidates the
+                                    // old type's default-attribute keys (#385's own
+                                    // design decision) — reset rather than carry
+                                    // stale/mismatched values forward.
+                                    _defaultAttributes.reset();
+                                  });
+                                }
+                              },
+                              validator: (_) => _syncErrors.messageFor(
+                                l10n,
+                                'main_activity_type',
+                              ),
+                            ),
+                          ),
+                          JourneyDefaultAttributesSection(
+                            type: _mainActivityType,
+                            controller: _defaultAttributes,
+                            onChanged: () => setState(() {}),
+                          ),
+                          const SizedBox(height: BrandDimens.gapField),
+                          ApiaryMultiSelectField(
+                            selectedApiaryIds: _apiaryIds,
+                            onChanged: (ids) {
+                              setState(() {
+                                _apiaryIds = ids;
+                              });
+                              markUnsavedChanges();
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  JourneyDefaultAttributesSection(
-                    type: _mainActivityType,
-                    controller: _defaultAttributes,
-                    onChanged: () => setState(() {}),
+                ),
+                // Pinned action bar. SafeArea (bottom only — the top belongs to the
+                // scroll view) keeps it clear of the home indicator / browser
+                // chrome. Close and Delete are pinned alongside Save rather than
+                // left trailing the scrollable: the same swipe the multi-select
+                // swallows would strand them too. Delete is protected against a
+                // gloved mis-tap by [DeleteJourneyConfirmDialog]; Close, by
+                // this screen's existing design, is not (`_close` writes
+                // straight through, see its own doc comment) — pinning does not
+                // change that, and #752 tracks giving it a confirmation. All
+                // three keep the shared field-action sizing (at least 56px
+                // tall, well over the 44x44 floor — D-18, FR-UX-1) and their
+                // own semantics labels.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: constraints.maxHeight / 2,
                   ),
-                  const SizedBox(height: BrandDimens.gapField),
-                  ApiaryMultiSelectField(
-                    selectedApiaryIds: _apiaryIds,
-                    onChanged: (ids) {
-                      setState(() {
-                        _apiaryIds = ids;
-                      });
-                      markUnsavedChanges();
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  PrimaryActionButton(
-                    key: const Key('journey-save-button'),
-                    label: l10n.saveButton,
-                    busy: _busy,
-                    onPressed: _save,
-                  ),
-                  if (widget.isEdit && !isClosed) ...[
-                    const SizedBox(height: 12),
-                    SecondaryActionButton(
-                      key: const Key('journey-close-button'),
-                      label: l10n.closeJourneyAction,
-                      icon: Icons.lock_outline,
-                      busy: _busy,
-                      onPressed: _close,
+                  child: SingleChildScrollView(
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          BrandDimens.gutterForm,
+                          BrandDimens.gapField / 2,
+                          BrandDimens.gutterForm,
+                          BrandDimens.gapField,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            PrimaryActionButton(
+                              key: const Key('journey-save-button'),
+                              label: l10n.saveButton,
+                              busy: _busy,
+                              onPressed: _save,
+                            ),
+                            if (widget.isEdit && !isClosed) ...[
+                              const SizedBox(height: 12),
+                              SecondaryActionButton(
+                                key: const Key('journey-close-button'),
+                                label: l10n.closeJourneyAction,
+                                icon: Icons.lock_outline,
+                                busy: _busy,
+                                onPressed: _close,
+                              ),
+                            ],
+                            if (widget.isEdit) ...[
+                              const SizedBox(height: 12),
+                              SecondaryActionButton(
+                                key: const Key('journey-delete-button'),
+                                label: l10n.deleteJourney,
+                                icon: Icons.delete_outline,
+                                destructive: true,
+                                busy: _busy,
+                                onPressed: _confirmDelete,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
-                  if (widget.isEdit) ...[
-                    const SizedBox(height: 12),
-                    SecondaryActionButton(
-                      key: const Key('journey-delete-button'),
-                      label: l10n.deleteJourney,
-                      icon: Icons.delete_outline,
-                      destructive: true,
-                      busy: _busy,
-                      onPressed: _confirmDelete,
-                    ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
