@@ -105,7 +105,14 @@ class _JourneyDetailBody extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          // The shared reserved band, not a local 96 (#631) — see
+          // BrandDimens.scrollBottomInset.
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
