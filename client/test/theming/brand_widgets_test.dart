@@ -78,7 +78,13 @@ void main() {
       ),
     );
 
-    final data = tester.getSemantics(find.text('Name')).getSemanticsData();
+    // Since #629 the label is the CHILD's accessible name and the visible
+    // `Text` is excluded from semantics, so the assertion has to look at the
+    // control's node — checking the `Text` would now pass vacuously against
+    // an empty label rather than proving the field is not a heading.
+    final data = tester
+        .getSemantics(find.byKey(const Key('lf-child')))
+        .getSemanticsData();
     expect(data.label, 'Name');
     expect(data.flagsCollection.isHeader, isFalse);
     handle.dispose();

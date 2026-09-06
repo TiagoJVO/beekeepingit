@@ -127,7 +127,22 @@ class SectionHeader extends StatelessWidget {
         color: Theme.of(context).colorScheme.onSurface,
       ),
     );
-    return padding == null ? child : Padding(padding: padding!, child: child);
+    // Announced as a HEADING (#771, FR-AX-1, D-18). This is the app's one
+    // section-header mechanism, so this single line is what lets a
+    // screen-reader user skim by jumping header to header instead of reading
+    // a long screen top to bottom. `Semantics` merges the child `Text`'s
+    // label into this node, so the flag and the words stay together — a
+    // heading node with no label would announce as an empty heading followed
+    // by a stray line of text.
+    //
+    // Deliberately NOT applied to [LabeledField]'s label: that also renders
+    // bold above its content, but it names an input rather than titling a
+    // section, and marking it would put every form field into the screen
+    // reader's heading list.
+    final heading = Semantics(header: true, child: child);
+    return padding == null
+        ? heading
+        : Padding(padding: padding!, child: heading);
   }
 }
 
