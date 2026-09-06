@@ -162,13 +162,7 @@ class _TasksSection extends StatelessWidget {
       countUrgent: true,
       rows: [
         for (final attention in section.preview)
-          BrandRowCard(
-            key: Key('home-todo-${attention.todo.id}'),
-            title: attention.todo.title,
-            subtitle: _todoSubtitle(l10n, formatting, attention.todo),
-            trailing: _todoBadge(l10n, attention),
-            onTap: () => context.go('/todos/${attention.todo.id}'),
-          ),
+          _todoRow(context, l10n, formatting, attention),
       ],
       // D-35 asks for a link "to that list screen filtered to the same set",
       // and the Todos tab cannot express this section's set: it is "overdue
@@ -213,24 +207,55 @@ class _TasksSection extends StatelessWidget {
     return '$dueText · $priorityLabel';
   }
 
-  /// The trailing badge, derived from the bucket the summary carried — this
-  /// widget never calls [todoDueBucket] itself.
-  Widget _todoBadge(AppLocalizations l10n, AttentionTodo attention) {
+  /// One task row. The badge's spoken form is handed to the row as
+  /// [BrandRowCard.trailingSemanticLabel] rather than left on the badge
+  /// itself: a row announces as one composed label with its children's
+  /// semantics excluded (#662, [BrandCard]), so "5 days overdue" — the only
+  /// thing separating an overdue row from a due-soon one — reaches a screen
+  /// reader only if it is spelled into that label (FR-AX-1).
+  Widget _todoRow(
+    BuildContext context,
+    AppLocalizations l10n,
+    LocaleFormatting formatting,
+    AttentionTodo attention,
+  ) {
+    final badge = _todoBadge(l10n, attention);
+    return BrandRowCard(
+      key: Key('home-todo-${attention.todo.id}'),
+      title: attention.todo.title,
+      subtitle: _todoSubtitle(l10n, formatting, attention.todo),
+      trailing: badge.widget,
+      trailingSemanticLabel: badge.rowLabel,
+      onTap: () => context.go('/todos/${attention.todo.id}'),
+    );
+  }
+
+  /// The trailing badge and what its row announces for it, derived from the
+  /// bucket the summary carried — this widget never calls [todoDueBucket]
+  /// itself.
+  ({Widget widget, String rowLabel}) _todoBadge(
+    AppLocalizations l10n,
+    AttentionTodo attention,
+  ) {
     final badgeKey = Key('home-todo-badge-${attention.todo.id}');
     return switch (attention.bucket) {
-      TodoDueBucket.overdue => _AttentionBadge(
-        badgeKey: badgeKey,
-        icon: Icons.warning_amber_outlined,
-        label: l10n.homeTodoOverdueBadge(_daysLate(attention.todo)),
-        semanticLabel: l10n.homeTodoOverdueLabel(_daysLate(attention.todo)),
-        urgent: true,
+      TodoDueBucket.overdue => (
+        widget: _AttentionBadge(
+          badgeKey: badgeKey,
+          icon: Icons.warning_amber_outlined,
+          label: l10n.homeTodoOverdueBadge(_daysLate(attention.todo)),
+          urgent: true,
+        ),
+        rowLabel: l10n.homeTodoOverdueLabel(_daysLate(attention.todo)),
       ),
-      TodoDueBucket.dueSoon => _AttentionBadge(
-        badgeKey: badgeKey,
-        icon: Icons.schedule,
-        label: l10n.homeTodoDueSoonBadge,
-        semanticLabel: l10n.homeTodoDueSoonLabel,
-        urgent: false,
+      TodoDueBucket.dueSoon => (
+        widget: _AttentionBadge(
+          badgeKey: badgeKey,
+          icon: Icons.schedule,
+          label: l10n.homeTodoDueSoonBadge,
+          urgent: false,
+        ),
+        rowLabel: l10n.homeTodoDueSoonLabel,
       ),
     };
   }
@@ -320,13 +345,7 @@ class _StaleApiariesSection extends StatelessWidget {
       countUrgent: false,
       rows: [
         for (final recency in section.preview)
-          BrandRowCard(
-            key: Key('home-apiary-${recency.apiary.id}'),
-            title: recency.apiary.name,
-            subtitle: _apiarySubtitle(l10n, formatting, recency),
-            trailing: _apiaryBadge(l10n, recency),
-            onTap: () => context.go('/apiaries/${recency.apiary.id}'),
-          ),
+          _apiaryRow(context, l10n, formatting, recency),
       ],
     );
   }
@@ -343,29 +362,58 @@ class _StaleApiariesSection extends StatelessWidget {
     return l10n.homeApiaryLastVisitSubtitle(formatting.date(lastVisit));
   }
 
-  /// Built from the carried [ApiaryVisitRecency.daysSinceLastVisit] — this
-  /// widget re-derives no date difference of its own.
-  static Widget _apiaryBadge(
+  /// One apiary row, badge and announcement together — the same seam
+  /// `_TasksSection._todoRow` documents (#662).
+  static Widget _apiaryRow(
+    BuildContext context,
+    AppLocalizations l10n,
+    LocaleFormatting formatting,
+    ApiaryVisitRecency recency,
+  ) {
+    final badge = _apiaryBadge(l10n, recency);
+    return BrandRowCard(
+      key: Key('home-apiary-${recency.apiary.id}'),
+      title: recency.apiary.name,
+      subtitle: _apiarySubtitle(l10n, formatting, recency),
+      trailing: badge.widget,
+      trailingSemanticLabel: badge.rowLabel,
+      onTap: () => context.go('/apiaries/${recency.apiary.id}'),
+    );
+  }
+
+  /// The trailing badge and what its row announces for it, built from the
+  /// carried [ApiaryVisitRecency.daysSinceLastVisit] — this widget re-derives
+  /// no date difference of its own.
+  ///
+  /// The never-visited badge announces NOTHING of its own ([rowLabel] null):
+  /// its abbreviated text expands to exactly the sentence
+  /// [_apiarySubtitle] already gives that row, so spelling it into the label
+  /// too would have the row say "No activity recorded yet" twice (#662).
+  static ({Widget widget, String? rowLabel}) _apiaryBadge(
     AppLocalizations l10n,
     ApiaryVisitRecency recency,
   ) {
     final badgeKey = Key('home-apiary-badge-${recency.apiary.id}');
     final days = recency.daysSinceLastVisit;
     if (recency.neverVisited || days == null) {
-      return _AttentionBadge(
-        badgeKey: badgeKey,
-        icon: Icons.event_busy_outlined,
-        label: l10n.homeApiaryNeverVisitedBadge,
-        semanticLabel: l10n.homeApiaryNeverVisitedSubtitle,
-        urgent: false,
+      return (
+        widget: _AttentionBadge(
+          badgeKey: badgeKey,
+          icon: Icons.event_busy_outlined,
+          label: l10n.homeApiaryNeverVisitedBadge,
+          urgent: false,
+        ),
+        rowLabel: null,
       );
     }
-    return _AttentionBadge(
-      badgeKey: badgeKey,
-      icon: Icons.schedule,
-      label: l10n.homeApiaryStaleBadge(days),
-      semanticLabel: l10n.homeApiaryStaleLabel(days),
-      urgent: false,
+    return (
+      widget: _AttentionBadge(
+        badgeKey: badgeKey,
+        icon: Icons.schedule,
+        label: l10n.homeApiaryStaleBadge(days),
+        urgent: false,
+      ),
+      rowLabel: l10n.homeApiaryStaleLabel(days),
     );
   }
 }
@@ -495,21 +543,25 @@ class _CountBadge extends StatelessWidget {
 
 /// A row's trailing badge — icon **and** text together, never colour alone
 /// (WCAG 2.2 AA 1.4.1), so it survives greyscale and a gloved glance. Follows
-/// `_OverdueBadge` (todo_list_widgets.dart), with [semanticLabel] spelling
-/// out the abbreviated visual text for a screen reader.
+/// `_OverdueBadge` (todo_list_widgets.dart).
+///
+/// **Visual only, by design.** Its [label] is abbreviated for a narrow row
+/// ("5d", "Never"), which is meaningless read aloud, and the row it sits in
+/// announces itself as one composed label anyway (#662, [BrandCard]). So the
+/// badge excludes itself from semantics, and its spoken expansion travels to
+/// the row as [BrandRowCard.trailingSemanticLabel] — see `_todoBadge` and
+/// `_apiaryBadge`, which return the two together.
 class _AttentionBadge extends StatelessWidget {
   const _AttentionBadge({
     required this.badgeKey,
     required this.icon,
     required this.label,
-    required this.semanticLabel,
     required this.urgent,
   });
 
   final Key badgeKey;
   final IconData icon;
   final String label;
-  final String semanticLabel;
   final bool urgent;
 
   @override
@@ -522,27 +574,24 @@ class _AttentionBadge extends StatelessWidget {
         ? theme.colorScheme.onErrorContainer
         : theme.colorScheme.onSurfaceVariant;
 
-    return Semantics(
-      label: semanticLabel,
-      child: ExcludeSemantics(
-        child: Container(
-          key: badgeKey,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: foreground),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(color: foreground),
-              ),
-            ],
-          ),
+    return ExcludeSemantics(
+      child: Container(
+        key: badgeKey,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(color: foreground),
+            ),
+          ],
         ),
       ),
     );
