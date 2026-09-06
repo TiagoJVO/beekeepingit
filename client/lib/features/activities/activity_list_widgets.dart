@@ -301,6 +301,50 @@ class ActivityListView extends ConsumerWidget {
 /// screen behind it.
 const double _kCompactRowBelowWidth = 600;
 
+/// A [ListTile], deliberately, not a [BrandRowCard] — settled in #758
+/// (FR-AC-5, FR-UX-1, D-18) after #662 landed, which was the only reason
+/// PR #755 left the question open instead of answering it. Four reasons this
+/// row stays put, so the question stops reopening:
+///
+/// Structural: [BrandRowCard] is a fixed two-line row — a `String` title and
+/// subtitle, `maxLines: 2` hardcoded on the subtitle (`brand_widgets.dart`)
+/// — with no responsive variant. This row is three capped single lines below
+/// [_kCompactRowBelowWidth], and one line plus a trailing [Chip] above it.
+/// Adopting would mean adding a third-line slot, a `subtitleMaxLines`
+/// override and a compact/wide variant to a widget three OTHER screens
+/// share, for this one caller. `todo_list_widgets.dart`'s `_TodoTile`
+/// declined the same widget for the same class of reason (there, a
+/// strikethrough title `BrandRowCard`'s plain `String` has no room for).
+///
+/// Density, as numbers: [BrandCard]'s fixed `padCard` (32px total, and it
+/// does not scale with text) plus the `gapCard` (10px) separator cards
+/// require between them takes this row's on-screen pitch from ~89px to
+/// ~109px at a 375px width — a ~22% loss on the screen #632 existed to make
+/// dense (at current `padCard`/`gapCard` values — re-measure rather than
+/// assume if those tokens move). `activity_row_density_test.dart`'s "at
+/// least eight rows" assertion would NOT catch this: it measures a single
+/// row's own height, not the list's pitch, and the loss here lives entirely
+/// in the gap a card imposes between rows.
+///
+/// Nesting: this tile renders inside `apiary_detail_screen.dart`'s card
+/// `Container` AND inside `journey_detail_screen.dart`'s `_ApiaryCard`
+/// [BrandCard] (~line 454) — a [BrandRowCard] in either spot is a card
+/// inside a card. The current `ListTile` + `Divider(height: 1)` composition
+/// is the same pattern `MenuListCard` uses for its own grouped rows, so this
+/// row is already speaking the shared vocabulary's container dialect, not
+/// lacking one.
+///
+/// Accessibility: the row already announces once and is already guarded —
+/// `a11y_field_ux_test.dart` (~line 751) covers it in the same sweep as the
+/// [BrandCard] rows, so the announce-once contract does not live only in
+/// [BrandRowCard]. Adopting would INVERT this: [BrandCard]'s
+/// `ExcludeSemantics` would silence [_AttributionLine]'s and the [Chip]'s
+/// own `Semantics` labels, which would then need re-routing through
+/// `trailingSemanticLabel`.
+///
+/// This flips if [BrandRowCard] ever grows a genuine responsive three-line
+/// variant for reasons of its own — another caller needing it — adopt then.
+/// What was rejected here is adding those params for this caller alone.
 class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
     required this.activity,

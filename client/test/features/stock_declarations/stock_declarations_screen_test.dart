@@ -5,10 +5,14 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_repository.dart';
 import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/a11y_matchers.dart';
+import '../../support/bottom_chrome.dart';
 
 /// FR-AP-10 (#298): the stock-declaration log screen.
 ///
@@ -303,6 +307,110 @@ void _recordFlowTests() {
       expect(find.text(expected), findsOneWidget);
     });
 
+    // #629 (FR-UX-1, FR-AX-1): the record dialog is a form like any other —
+    // both its fields floated their labels while the screens around it wear
+    // theirs above.
+    group('one field-label pattern (#629, FR-UX-1)', () {
+      Future<void> openDialog(WidgetTester tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            orgRegistrationNumber: 'PT-111',
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('stock-declarations-record-PT-111')),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('neither field paints a floating Material label', (
+        tester,
+      ) async {
+        await openDialog(tester);
+
+        expectNoFloatingFieldLabels(tester, find.byType(AlertDialog));
+      });
+
+      testWidgets('every label sits above its field, via LabeledField', (
+        tester,
+      ) async {
+        await openDialog(tester);
+
+        for (final label in const ['Declaration date', 'Note (optional)']) {
+          expect(
+            find.descendant(
+              of: find.byType(LabeledField),
+              matching: find.text(label),
+            ),
+            findsOneWidget,
+            reason: '"$label" must be a LabeledField label',
+          );
+        }
+      });
+
+      testWidgets(
+        'both fields stay reachable on a short phone at a large OS text '
+        'scale — a label above each field costs the dialog two more lines, '
+        'and its body has a hard height budget (FR-AX-1, D-18)',
+        (tester) async {
+          tester.view.physicalSize = const Size(360, 640);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          await tester.pumpWidget(
+            MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+              child: _buildScreen(
+                orgRegistrationNumber: 'PT-111',
+                apiaries: const [
+                  Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+                ],
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('stock-declarations-record-PT-111')),
+          );
+          await tester.pumpAndSettle();
+
+          // A RenderFlex overflow here is not cosmetic: the clipped part is
+          // the Note field, and clipped content cannot be tapped.
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const Key('stock-declaration-notes-field')),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
+        'the fields keep the accessible name their floating labels used to '
+        'give them (FR-AX-1)',
+        (tester) async {
+          final handle = tester.ensureSemantics();
+          await openDialog(tester);
+
+          expectFieldAccessibleName(
+            tester,
+            const Key('stock-declaration-date-field'),
+            'Declaration date',
+          );
+          expectFieldAccessibleName(
+            tester,
+            const Key('stock-declaration-notes-field'),
+            'Note (optional)',
+          );
+          handle.dispose();
+        },
+      );
+    });
+
     testWidgets('cancelling writes nothing', (tester) async {
       await tester.pumpWidget(
         _buildScreen(
@@ -364,5 +472,61 @@ void _recordFlowTests() {
         );
       }
     });
+  });
+
+  // #773 (FR-UX-2, FR-AX-1): the log is a plain `ListView` that reserved
+  // nothing at the bottom, so the "Declaration recorded" toast this screen
+  // raises landed on the last registration-number card — the very block it
+  // was confirming a save to. Outside the shell (no bottom navigation, no
+  // FAB), so the band it needs is the toast's own height.
+  group('the bottom chrome band (#773, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the last registration-number card, at '
+        '${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+          await tester.pumpWidget(
+            _buildScreen(
+              apiaries: const [
+                Apiary(
+                  id: 'a1',
+                  name: 'Serra Norte',
+                  hiveCount: 10,
+                  registrationNumber: 'PT-111',
+                ),
+                Apiary(
+                  id: 'a2',
+                  name: 'Monte Alto',
+                  hiveCount: 20,
+                  registrationNumber: 'PT-222',
+                ),
+                Apiary(
+                  id: 'a3',
+                  name: 'Vale Fundo',
+                  hiveCount: 30,
+                  registrationNumber: 'PT-333',
+                ),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(ListView));
+
+          // `stockDeclarationSaved` — the copy this screen actually shows
+          // once a declaration is recorded (app_en.arb).
+          await showToast(tester, message: 'Declaration recorded');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('stock-declarations-group-PT-333')),
+            reason:
+                'the save toast must land in the band the log reserves, not '
+                'on the declaration block it is reporting on',
+          );
+        },
+      );
+    }
   });
 }

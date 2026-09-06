@@ -14,12 +14,14 @@ import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../support/a11y_matchers.dart';
+import '../../support/reveal_order_matchers.dart';
 
 /// A no-op [LocalStoreEngine] — [_FakeActivitiesRepository] overrides every
 /// method the form touches, so the superclass's store is never actually
@@ -362,12 +364,14 @@ Future<void> _openAddActivityForm(
   WidgetTester tester, {
   _FakeJourneysRepository? journeysRepo,
   Apiary apiary = _apiary,
+  bool portuguese = false,
 }) async {
   await tester.pumpWidget(
     _buildApp(
       repo: _FakeActivitiesRepository(),
       journeysRepo: journeysRepo,
       apiary: apiary,
+      portuguese: portuguese,
     ),
   );
   await tester.pumpAndSettle();
@@ -416,6 +420,110 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  // #629 (FR-UX-1, FR-AX-1): every field on this form floated its label,
+  // including the ones the adaptive attribute list builds from private
+  // helpers — so the sweep runs per activity type, not per named key.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> selectType(WidgetTester tester, String type) async {
+      await tester.tap(find.byKey(const Key('activity-type-field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(type).last);
+      await tester.pumpAndSettle();
+    }
+
+    // Harvest is the default; the others swap the attribute list wholesale,
+    // and each one has to come out of the switch label-above too.
+    for (final type in const ['Harvest', 'Feeding', 'Treatment', 'Generic']) {
+      testWidgets('no field paints a floating Material label — $type', (
+        tester,
+      ) async {
+        await _openAddActivityForm(tester);
+        if (type != 'Harvest') await selectType(tester, type);
+
+        expectNoFloatingFieldLabels(tester, find.byType(AddActivityScreen));
+      });
+    }
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await _openAddActivityForm(tester);
+
+      for (final label in const [
+        'Activity type',
+        'Date',
+        'Honey supers harvested',
+        'Honey harvested (kg)',
+        'Hives involved',
+        'Lot / batch identifier',
+        'Notes',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets(
+      'the fields keep the accessible name their floating labels used to '
+      'give them (FR-AX-1)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await _openAddActivityForm(tester);
+
+        expectFieldAccessibleName(
+          tester,
+          const Key('activity-type-field'),
+          'Activity type',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('activity-honey-kg-field'),
+          'Honey harvested (kg)',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('activity-notes-field'),
+          'Notes',
+        );
+        // The tappable date row had no accessible name at all while its
+        // label was painted by InputDecorator; wearing the label above hands
+        // it one.
+        expectFieldAccessibleName(
+          tester,
+          const Key('activity-occurred-at-field'),
+          'Date',
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets('a treatment\'s dropdowns keep their names too (FR-AX-1)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _openAddActivityForm(tester);
+      await selectType(tester, 'Treatment');
+
+      expectFieldAccessibleName(
+        tester,
+        const Key('activity-treatment-context-field'),
+        'Treatment context',
+      );
+      expectFieldAccessibleName(
+        tester,
+        const Key('activity-treatment-type-field'),
+        'Treatment product',
+      );
+      handle.dispose();
+    });
+  });
 
   group(
     'adaptive attribute form (#39 AC: the form adapts to the selected type)',
@@ -501,6 +609,16 @@ void main() {
 
       testWidgets('treatment only shows the disease field once a disease-tied context is chosen '
           '(conditional requirement, D-19)', (tester) async {
+        // Tall viewport, for the same reason as the disease-vocabulary test
+        // just below: the treatment fields sit below the #46 journey section,
+        // and every field now carries its label ABOVE the box (#629), which
+        // costs each one another line. On the default 800x600 test viewport
+        // the context dropdown falls off the bottom and its menu never opens.
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
         await _openAddActivityForm(tester);
 
         await tester.tap(find.byKey(const Key('activity-type-field')));
@@ -518,6 +636,109 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('activity-disease-field')), findsOneWidget);
+      });
+
+      group('the revealed disease field sits directly under its trigger, not '
+          'after treatment-type (#637)', () {
+        Future<void> revealDiseaseField(
+          WidgetTester tester,
+          String treatmentContextOptionText, {
+          bool portuguese = false,
+        }) async {
+          useViewport(tester, size: const Size(1200, 2400));
+
+          await _openAddActivityForm(tester, portuguese: portuguese);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.text(portuguese ? 'Tratamento' : 'Treatment').last,
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('activity-disease-field')), findsNothing);
+
+          await tester.tap(
+            find.byKey(const Key('activity-treatment-context-field')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(treatmentContextOptionText).last);
+          await tester.pumpAndSettle();
+        }
+
+        testWidgets(
+          'via "Specific disease/condition" (context → disease → product)',
+          (tester) async {
+            await revealDiseaseField(tester, 'Specific disease/condition');
+
+            expectRevealedDirectlyBelow(
+              tester,
+              revealed: find.byKey(const Key('activity-disease-field')),
+              trigger: find.byKey(
+                const Key('activity-treatment-context-field'),
+              ),
+              notBetween: [
+                find.byKey(const Key('activity-treatment-type-field')),
+                find.byKey(const Key('activity-hives-involved-field')),
+                find.byKey(const Key('activity-notes-field')),
+              ],
+              reason:
+                  'the disease field must render directly below the '
+                  'treatment-context dropdown that reveals it, not below '
+                  'treatment-type (#637)',
+            );
+          },
+        );
+
+        testWidgets('via "Detection only (no treatment yet)" — the second '
+            'requiresDisease trigger', (tester) async {
+          await revealDiseaseField(tester, 'Detection only (no treatment yet)');
+
+          expectRevealedDirectlyBelow(
+            tester,
+            revealed: find.byKey(const Key('activity-disease-field')),
+            trigger: find.byKey(const Key('activity-treatment-context-field')),
+            notBetween: [
+              find.byKey(const Key('activity-treatment-type-field')),
+              find.byKey(const Key('activity-hives-involved-field')),
+              find.byKey(const Key('activity-notes-field')),
+            ],
+            reason:
+                'the disease field must render directly below the '
+                'treatment-context dropdown for the detection-only '
+                'trigger too — requiresDisease has two triggering values '
+                'and the AC must hold for both (#637)',
+          );
+        });
+
+        testWidgets(
+          'holds with Portuguese labels too (not accidentally coupled to '
+          'label width)',
+          (tester) async {
+            await revealDiseaseField(
+              tester,
+              'Doença/condição específica',
+              portuguese: true,
+            );
+
+            expectRevealedDirectlyBelow(
+              tester,
+              revealed: find.byKey(const Key('activity-disease-field')),
+              trigger: find.byKey(
+                const Key('activity-treatment-context-field'),
+              ),
+              notBetween: [
+                find.byKey(const Key('activity-treatment-type-field')),
+                find.byKey(const Key('activity-hives-involved-field')),
+                find.byKey(const Key('activity-notes-field')),
+              ],
+              reason:
+                  'the ordering must hold in Portuguese too — "Contexto do '
+                  'tratamento" / "Doença/condição específica" / "Produto '
+                  'de tratamento" / "Doença / condição" (#637)',
+            );
+          },
+        );
       });
 
       testWidgets(

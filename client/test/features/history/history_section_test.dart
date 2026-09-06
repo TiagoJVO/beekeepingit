@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/bottom_chrome.dart';
+
 /// Fixtures mirroring apiary_detail_screen_test.dart's own (file-private
 /// there, so re-declared here — this suite's own convention).
 class _CompleteProfileController extends ProfileController {
@@ -292,5 +294,62 @@ void main() {
       );
       handle.dispose();
     });
+  });
+
+  // #773 (FR-UX-2, FR-AX-1): the full history screen's list padded
+  // `EdgeInsets.zero`, so a toast landed on its oldest entry. Unlike the three
+  // screens #773 fixes alongside it, this one IS inside the shell — pushed, so
+  // the shell hides its FAB, but the bottom navigation is still there, and
+  // `MediaQuery` inside that body reports no bottom inset, so the band it
+  // reserves is the bare `scrollBottomInset`.
+  //
+  // Asserted structurally rather than by raising a toast, because this screen
+  // raises none of its own: the only toasts that reach it are the shell's
+  // superseded/rejected notices, and at 200% text on a 375pt phone those
+  // measure 268 — past any fixed band, which is a property of the message,
+  // not of this screen (#631 measured that trade and accepted it; see #790).
+  group('the bottom chrome band (#773, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'the timeline reserves the bottom chrome band under its oldest '
+        'entry, at ${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+          await _openDetail(
+            tester,
+            history: [
+              for (var i = 0; i < 12; i++)
+                _entry(
+                  id: 'h$i',
+                  recordedAt: DateTime.utc(
+                    2026,
+                    7,
+                    19,
+                    10,
+                  ).subtract(Duration(days: i)),
+                ),
+            ],
+          );
+          await _scrollToHistory(tester);
+          await tester.ensureVisible(
+            find.byKey(const Key('history-view-all-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('history-view-all-button')));
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(ListView));
+
+          expectReservesBottomBand(
+            tester,
+            lastRow: find.byKey(const Key('history-entry-h11')),
+            scrollable: find.byType(ListView),
+            reason:
+                'the timeline must leave the shell chrome a band of its own, '
+                'not end flush against the bottom navigation',
+          );
+        },
+      );
+    }
   });
 }

@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/option_row.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
@@ -49,6 +48,9 @@ class TodoAssigneePickerField extends ConsumerWidget {
 
     return LabeledField(
       label: l10n.todoAssigneeFieldLabel,
+      // A GROUP, not one control: a roster of selectable rows that each
+      // announce their own member name (#629).
+      labelsChild: false,
       child: memberNamesAsync.when(
         loading: () => const Padding(
           padding: EdgeInsets.all(16),
@@ -117,9 +119,10 @@ class _RosterList extends StatelessWidget {
       child: ListView(
         shrinkWrap: true,
         children: [
-          _TodoOptionTile(
+          OptionRow(
             key: const Key('todo-assignee-option-none'),
             label: l10n.todoAssigneeUnassigned,
+            mode: OptionRowMode.singleSelect,
             selected: selected == null || selected.isEmpty,
             onTap: () => onChanged(null),
           ),
@@ -132,84 +135,15 @@ class _RosterList extends StatelessWidget {
           else
             for (final entry in entries.entries) ...[
               Divider(height: 1, color: brand.cardBorder),
-              _TodoOptionTile(
+              OptionRow(
                 key: Key('todo-assignee-option-${entry.key}'),
                 label: entry.value,
+                mode: OptionRowMode.singleSelect,
                 selected: selected == entry.key,
                 onTap: () => onChanged(entry.key),
               ),
             ],
         ],
-      ),
-    );
-  }
-}
-
-/// One selectable, single-select row — deliberately duplicated from
-/// todo_apiary_picker_field.dart's own private `_TodoOptionTile` (same
-/// small-duplication precedent this codebase already accepts for minor,
-/// self-contained widgets, e.g. each journey/activity detail screen's own
-/// `_HeaderRow`).
-class _TodoOptionTile extends StatelessWidget {
-  const _TodoOptionTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: kMinTapTarget),
-            child: ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: AppTheme.bodyFontFamily,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          fontSize: 16,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      selected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: selected
-                          ? theme.colorScheme.tertiary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -94,6 +94,15 @@ class _OrganizationWaitingScreenState
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.organizationWaitingTitle)),
+      // Deliberately still a `Center`, unlike the screens #630/#769
+      // top-aligned. This is a short holding page — one paragraph, one hint
+      // card, three actions — with nothing to scroll and nothing to fill the
+      // height with, and it sits outside the app shell (no bottom nav). Top
+      // aligned, its content would cling to the header with the rest of a
+      // tall phone left empty below; centred, the "Check again" action it
+      // exists to offer lands squarely in thumb reach. The dead band #769 is
+      // about is only a defect where content wants to start at the top and
+      // grow; here it is the layout (FR-UX-1, #769).
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),

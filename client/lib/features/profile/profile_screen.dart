@@ -244,23 +244,27 @@ class _ProfileFormFields extends StatelessWidget {
           ),
           const SizedBox(height: 16),
         ],
-        TextFormField(
-          key: const Key('profile-name-field'),
-          controller: nameController,
-          autofocus: showOnboardingIntro,
-          // Per-field, so a blocked save's "enter your name" error clears the
-          // moment the field holds one instead of waiting for the next save
-          // (#649, FR-UX-1) — matching journey/todo. Field-level rather than
-          // on the Form, which would validate every field as soon as any one
-          // of them is touched.
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          onChanged: (_) => onFieldEdited('name'),
-          decoration: InputDecoration(
-            labelText: l10n.profileNameLabel,
-            errorText: fieldErrors['name'],
+        // One label pattern throughout (#629, FR-UX-1): the label sits ABOVE
+        // the field, like the account email below it and every other form in
+        // the app — never animated into the box border.
+        LabeledField(
+          label: l10n.profileNameLabel,
+          child: TextFormField(
+            key: const Key('profile-name-field'),
+            controller: nameController,
+            autofocus: showOnboardingIntro,
+            // Per-field, so a blocked save's "enter your name" error clears
+            // the moment the field holds one instead of waiting for the next
+            // save (#649, FR-UX-1) — matching journey/todo. Field-level
+            // rather than on the Form, which would validate every field as
+            // soon as any one of them is touched.
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            onChanged: (_) => onFieldEdited('name'),
+            decoration: InputDecoration(errorText: fieldErrors['name']),
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? l10n.profileNameRequired
+                : null,
           ),
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? l10n.profileNameRequired : null,
         ),
         const SizedBox(height: 16),
         // Read-only: the account address comes from the verified token and is
@@ -269,6 +273,10 @@ class _ProfileFormFields extends StatelessWidget {
         // reader, so this is a labelled value with its own semantics.
         LabeledField(
           label: l10n.profileAccountEmailLabel,
+          // Supplies its own combined label below ("Account email: <address>")
+          // so the address is announced once, with its name — layering the
+          // field label on top would say it twice (#629).
+          labelsChild: false,
           child: Semantics(
             readOnly: true,
             label: l10n.profileAccountEmailSemantics(accountEmail),
@@ -294,22 +302,27 @@ class _ProfileFormFields extends StatelessWidget {
           onPressed: onManageAccount,
         ),
         const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          key: const Key('profile-locale-field'),
-          initialValue: locale,
-          decoration: InputDecoration(labelText: l10n.profileLocaleLabel),
-          // Endonyms with the supported BCP 47 tags as values (D-34) —
-          // `en-GB`/`pt-PT`, never the generic `en`/`pt`.
-          items: const [
-            DropdownMenuItem(value: kDefaultLocaleTag, child: Text('English')),
-            DropdownMenuItem(
-              value: kPortugueseLocaleTag,
-              child: Text('Português'),
-            ),
-          ],
-          onChanged: (v) {
-            if (v != null) onLocaleChanged(v);
-          },
+        LabeledField(
+          label: l10n.profileLocaleLabel,
+          child: DropdownButtonFormField<String>(
+            key: const Key('profile-locale-field'),
+            initialValue: locale,
+            // Endonyms with the supported BCP 47 tags as values (D-34) —
+            // `en-GB`/`pt-PT`, never the generic `en`/`pt`.
+            items: const [
+              DropdownMenuItem(
+                value: kDefaultLocaleTag,
+                child: Text('English'),
+              ),
+              DropdownMenuItem(
+                value: kPortugueseLocaleTag,
+                child: Text('Português'),
+              ),
+            ],
+            onChanged: (v) {
+              if (v != null) onLocaleChanged(v);
+            },
+          ),
         ),
         const SizedBox(height: 24),
         PrimaryActionButton(

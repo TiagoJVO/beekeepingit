@@ -99,7 +99,14 @@ class _OrganizationDetailsScreenState
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.organizationDetailsTitle)),
-      body: Center(
+      // Horizontally centred (so the 480px column stays middle-of-page on a
+      // wide window) but TOP-aligned, the shape #630 settled on for profile
+      // and new-organization (#769, FR-UX-1). A plain `Center` split the
+      // leftover height into equal bands and left a measured 178.5px of dead
+      // space under the header on a 375x812 phone — this three-field form is
+      // shorter than a handset viewport, so the band was always on screen.
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
@@ -117,40 +124,44 @@ class _OrganizationDetailsScreenState
                     ),
                     const SizedBox(height: 16),
                   ],
-                  TextFormField(
-                    key: const Key('organization-details-name-field'),
-                    controller: _nameController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationNameLabel,
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? l10n.organizationNameRequired
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('organization-details-address-field'),
-                    controller: _addressController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationAddressLabel,
+                  // One label pattern throughout (#629, FR-UX-1): every label
+                  // sits ABOVE its field, never animated into the box border.
+                  LabeledField(
+                    label: l10n.organizationNameLabel,
+                    child: TextFormField(
+                      key: const Key('organization-details-name-field'),
+                      controller: _nameController,
+                      enabled: editable,
+                      onChanged: _markEdited,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.organizationNameRequired
+                          : null,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key(
-                      'organization-details-registration-number-field',
+                  LabeledField(
+                    label: l10n.organizationAddressLabel,
+                    child: TextFormField(
+                      key: const Key('organization-details-address-field'),
+                      controller: _addressController,
+                      enabled: editable,
+                      onChanged: _markEdited,
                     ),
-                    controller: _registrationNumberController,
-                    enabled: editable,
-                    onChanged: _markEdited,
-                    maxLength: 50,
-                    decoration: InputDecoration(
-                      labelText: l10n.organizationRegistrationNumberLabel,
-                      helperText: l10n.organizationRegistrationNumberHint,
+                  ),
+                  const SizedBox(height: 16),
+                  LabeledField(
+                    label: l10n.organizationRegistrationNumberLabel,
+                    child: TextFormField(
+                      key: const Key(
+                        'organization-details-registration-number-field',
+                      ),
+                      controller: _registrationNumberController,
+                      enabled: editable,
+                      onChanged: _markEdited,
+                      maxLength: 50,
+                      decoration: InputDecoration(
+                        helperText: l10n.organizationRegistrationNumberHint,
+                      ),
                     ),
                   ),
                   if (isAdmin) ...[

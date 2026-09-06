@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/option_row.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../apiaries/apiary_search_decoration.dart';
 
 /// The todo/apiary association picker (#293, #51, FR-TD-1) — a SINGLE-select
 /// variant of journey_form_screen.dart's `ApiaryMultiSelectField` (same
@@ -55,17 +55,17 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
 
     return LabeledField(
       label: l10n.todoApiaryFieldLabel,
+      // A GROUP, not one control: the search box plus a list of selectable
+      // rows that each announce their own name. Annotating the label onto it
+      // would fold it into the search box and nest the rows beneath (#629).
+      labelsChild: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             key: const Key('todo-apiary-search-field'),
             controller: _searchController,
-            decoration: InputDecoration(
-              hintText: l10n.apiariesSearchHint,
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-            ),
+            decoration: apiarySearchDecoration(l10n),
             onChanged: (v) => setState(() => _query = v),
           ),
           const SizedBox(height: 8),
@@ -92,9 +92,10 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    _TodoOptionTile(
+                    OptionRow(
                       key: const Key('todo-apiary-option-none'),
                       label: l10n.todoApiaryNone,
+                      mode: OptionRowMode.singleSelect,
                       selected: widget.selectedApiaryId == null,
                       onTap: () => widget.onChanged(null),
                     ),
@@ -112,9 +113,10 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
                     else
                       for (final apiary in filtered) ...[
                         Divider(height: 1, color: brand.cardBorder),
-                        _TodoOptionTile(
+                        OptionRow(
                           key: Key('todo-apiary-option-${apiary.id}'),
                           label: apiary.name,
+                          mode: OptionRowMode.singleSelect,
                           selected: widget.selectedApiaryId == apiary.id,
                           onTap: () => widget.onChanged(apiary.id),
                         ),
@@ -125,76 +127,6 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
             },
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// One selectable, single-select row shared by [TodoApiaryPickerField] — a
-/// full [kMinTapTarget] tap target, `Semantics(button:, selected:, label:)`
-/// so a screen-reader user hears e.g. "Serra Norte, selected, button",
-/// mirroring apiary_multi_select_field.dart's own `_ApiaryCheckTile` but with
-/// a radio (single-select) rather than a checkbox (multi-select) affordance.
-class _TodoOptionTile extends StatelessWidget {
-  const _TodoOptionTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: kMinTapTarget),
-            child: ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: AppTheme.bodyFontFamily,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          fontSize: 16,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      selected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: selected
-                          ? theme.colorScheme.tertiary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -250,7 +250,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // Reachable from the create form, which is where the router lands them.
-    await tester.tap(find.byKey(const Key('organization-join-instead-button')));
+    // Scrolled into view first: the form's labels sit ABOVE their fields now
+    // (#629), which costs each field a line and pushes this last action —
+    // deliberately below Save, for the a11y focus order — off the default
+    // 800x600 test viewport.
+    final joinInstead = find.byKey(
+      const Key('organization-join-instead-button'),
+    );
+    await tester.ensureVisible(joinInstead);
+    await tester.pumpAndSettle();
+    await tester.tap(joinInstead);
     await tester.pumpAndSettle();
 
     expect(

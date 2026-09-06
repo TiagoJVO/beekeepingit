@@ -30,13 +30,52 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
-  `120` at the bottom to clear the FAB (`BrandDimens.scrollBottomInset`).
-  That inset is for screens a FAB actually floats over — a tab root, or a
-  pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
+  `136` at the bottom (`BrandDimens.scrollBottomInset`) to clear the FAB **and
+  the confirmation toast** — a toast covering the card it just confirmed a save
+  to is `#631`. That inset is for screens a FAB actually floats over — a tab
+  root, or a pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
   full-screen **form** is a pushed route with no FAB at all (the shell hides
   its own on any pushed route), and its pinned action bar sits outside the
   scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
-  the bar do the clearing.
+  the bar do the clearing. Where the inset does apply, use the constant: four
+  detail screens carrying their own smaller `96` is how `#631` got in. Inside
+  the shell the constant and `scrollBottomInsetOf(context)` are equal, so the
+  screens already passing the bare constant are correct and need no churn;
+  off the shell they are not — see **The bottom band, off the shell**.
+- **The bottom band, off the shell:** a scrollable reserves that band for the
+  toast as much as for the FAB, so a screen with **neither** still reserves it
+  — the members list, the stock-declaration log, the needs-fix list and the
+  full history timeline all did not, which is `#773`. Take it from
+  `BrandDimens.scrollBottomInsetOf(context)`, never the bare constant: outside
+  the shell there is no bottom navigation for `Scaffold` to strip the window's
+  bottom padding against, so a fixed `SnackBar` carries the home-indicator
+  inset **inside its own bar** and covers that much more of the body (measured
+  142 rather than 108 at 200% text on a 375×812 phone). Read off the
+  `MediaQuery` the `Scaffold` hands the body, that inset is `0` inside the
+  shell and the real value outside it, so the one call is right on both sides.
+  A screen that genuinely needs nothing says so in a comment where the padding
+  would have gone — a silent flat gutter reads as an oversight, because that
+  is what `#773` was.
+- **Toasts:** nothing positions them — every `showSnackBar` call site hands the
+  bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
+  of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
+  its `bottomNavigationBar` slot so that anchor lands clear of the navigation
+  bar instead of on its top edge (`#631`). Do **not** reach for
+  `SnackBarBehavior.floating` to get the same gap: with a FAB on screen Flutter
+  anchors a floating bar above the _FAB_, which is 194px up into the content.
+
+  That gutter is **permanent, not toast-only** — it has to be, because the
+  `Scaffold` computes its bottom-chrome height once, not per toast. It costs
+  14px of body height on every tab. On a screen whose content sits on the
+  scaffold background the band is the same colour as the content above it and
+  is invisible; on a **full-bleed** screen it is not. `apiary_map_screen.dart`
+  fills the tab body with a `Stack`, so the map ends 14px above the plum
+  navigation bar with a cream strip between them, permanently. That is an
+  accepted trade (`#631`): the toast is the app's only "your save worked"
+  signal, and separating it from the navigation bar was judged worth a thin
+  band on one tab. Weigh it before adding another full-bleed tab — and do not
+  "fix" it by painting the gutter the navigation bar's colour, which restores
+  exactly the two-dark-bars-read-as-one-block symptom `#631` set out to remove.
 
 ## Widgets (`brand_widgets.dart`) — compose these
 
@@ -57,6 +96,14 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **`SectionHeader(text)`** — Playfair 19 serif header between content blocks.
 - **`LabeledField(label:, child:)`** — label _above_ the field (the prototype
   pattern), not a floating Material label. Wrap `TextFormField`/`DropdownButton`.
+  It also hands the label to the wrapped control as that control's **accessible
+  name** — the name `InputDecoration.labelText` used to put on the input's own
+  semantics node, and what `client/e2e`'s `getByLabel(...)` reads — and excludes
+  the visible `Text` from semantics so it is announced once, not twice. Pass
+  `labelsChild: false` when the child is a **group** rather than one control (a
+  picker's search box plus its result list, a block with its own buttons, a
+  read-only value supplying its own combined label); annotating a group folds
+  the label into whichever descendant node comes first.
 - **`HeroCard(child:)`** — the plum detail/settings header (radius 20, white
   foreground via `context.brand.onHeroSurface`).
 - **`BrandCard(child:, onTap:)`** — white card on the 1px hairline; tappable
@@ -96,6 +143,25 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   `primary`, so in light mode they are plum-filled with a white on-colour
   (9.62:1) rather than honey-filled. That is the point: honey marks the one
   action to take, so it can't also mark every "this one is selected".
+- **One field-label pattern, app-wide** — every form field wears its label
+  above the box via `LabeledField`; `InputDecoration.labelText` is not used on
+  a form (`#629`). List screens' compact filter/sort bars and their
+  hint-only search boxes are not form fields and keep their own treatment.
+  A label above a field also means a submit button cannot share the field's
+  row: aligned to the row's top it rides up level with the label, and any
+  fixed nudge back down breaks at a larger OS text scale — put it underneath.
+- **Content starts at the top, not the middle** — a screen whose body is a
+  scrollable column wraps it in `Align(alignment: Alignment.topCenter, ...)`
+  around the usual `ConstrainedBox(maxWidth: 480)`, never a plain `Center`
+  (`#630`, `#769`). `Center` splits the leftover height into equal bands, so a
+  screen shorter than its viewport starts mid-page with dead space under the
+  header. Two deliberate exceptions: a `loading`/`error` branch keeps its own
+  `Center` — a lone spinner or message does belong in the middle, which is why
+  the `.when` sits outside the alignment wrapper rather than around it — and a
+  short informational holding page with nothing to scroll
+  (`organization_waiting_screen.dart`) stays centred on purpose. A body that is
+  a `Column(mainAxisSize.max)` around an `Expanded` — the pinned-action form
+  screens — already fills the height, so its wrapper is inert either way.
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.

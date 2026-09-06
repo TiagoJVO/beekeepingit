@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
@@ -13,9 +15,12 @@ import 'package:beekeepingit_client/features/settings/sync_settings_repository.d
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// An in-memory [LocalPrefs] fake — same convention as
 /// `profile_repository_test.dart`/`auth_controller_test.dart` — backing the
@@ -101,6 +106,20 @@ class _FakeProfileController extends ProfileController {
   }
 }
 
+/// A [ProfileController] that never resolves, so the screen stays on its
+/// `loading` branch — the branch #769 must leave vertically centred.
+class _LoadingProfileController extends ProfileController {
+  @override
+  Future<Profile> build() => Completer<Profile>().future;
+}
+
+/// A [ProfileController] that fails, so the screen stays on its `error`
+/// branch — the other branch #769 must leave vertically centred.
+class _FailingProfileController extends ProfileController {
+  @override
+  Future<Profile> build() async => throw Exception('boom');
+}
+
 Widget _buildScreen(
   ProfileController controller, {
   String orgRole = 'admin',
@@ -157,6 +176,68 @@ Widget _buildScreen(
 }
 
 void main() {
+  // #629 (FR-UX-1, FR-AX-1): the account screen's profile form floated both
+  // its labels while the screens it links to wear theirs above.
+  group('one field-label pattern (#629, FR-UX-1)', () {
+    Future<void> pumpForm(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'no field in the profile form paints a floating Material label',
+      (tester) async {
+        await pumpForm(tester);
+
+        expectNoFloatingFieldLabels(tester, find.byType(Form));
+      },
+    );
+
+    testWidgets('every label sits above its field, via LabeledField', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      for (final label in const ['Name', 'Preferred language']) {
+        expect(
+          find.descendant(
+            of: find.byType(LabeledField),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '"$label" must be a LabeledField label',
+        );
+      }
+    });
+
+    testWidgets(
+      'the fields keep the accessible name their floating labels used to '
+      'give them (FR-AX-1)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpForm(tester);
+
+        expectFieldAccessibleName(
+          tester,
+          const Key('account-name-field'),
+          'Name',
+        );
+        expectFieldAccessibleName(
+          tester,
+          const Key('account-locale-field'),
+          'Preferred language',
+        );
+        handle.dispose();
+      },
+    );
+  });
+
   testWidgets('renders current profile fields and the change-password action', (
     tester,
   ) async {
@@ -667,6 +748,140 @@ void main() {
         NotificationPreferencesRepository(prefs: prefs)
             .isEnabled(notificationEventSyncFailure),
         isFalse,
+      );
+    });
+  });
+
+  // #769 (FR-UX-1): this screen hung its 480px column off a plain `Center`,
+  // the shape #630 replaced on profile and new-organization. `Center` splits
+  // the leftover vertical space into equal bands above and below the
+  // content, so a screen shorter than its viewport starts mid-page instead
+  // of under the header.
+  group('layout at 375x812 (#769, FR-UX-1)', () {
+    // A FORWARD guard, not a reproduction. Measured on this fixture, the
+    // account screen's content is ~2285px tall, so at 375x812 (and at every
+    // realistic viewport) the scroll view already fills the body and the
+    // gap is 0px before AND after the change — the `Center` here was a
+    // latent wrong idiom rather than a visible band. What this pins is that
+    // the content never starts below the header, whatever the screen's
+    // length becomes as sections are added or removed.
+    testWidgets('the content starts immediately under the header', (
+      tester,
+    ) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      final scroll = find.ancestor(
+        of: find.byKey(const Key('account-name-field')),
+        matching: find.byType(SingleChildScrollView),
+      );
+      // Guarded before getRect so a second wrapping scroll view fails here
+      // rather than with an opaque "matched N widgets".
+      expect(scroll, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(scroll).top;
+
+      expect(
+        contentTop - headerBottom,
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the account screen must start its content just under the header '
+            'like every other screen; it started '
+            '${contentTop - headerBottom}px below it',
+      );
+    });
+
+    // The other half of the change: only the `data` branch is top-aligned.
+    // A lone spinner still belongs in the middle of the body, so this fails
+    // if the alignment wrapper is ever hoisted above `profileAsync.when`.
+    testWidgets('the loading spinner stays vertically centred', (tester) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(_buildScreen(_LoadingProfileController()));
+      await tester.pump();
+
+      final spinner = find.byType(CircularProgressIndicator);
+      expect(spinner, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      // READ from the test view rather than assuming kHandsetViewport, the
+      // rule `expectWithinThumbReach` documents in a11y_matchers.dart: an
+      // assertion that hardcodes 812 silently measures against the wrong
+      // centre the moment a caller passes `useViewport` another size.
+      final viewportHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final bodyCentre = (headerBottom + viewportHeight) / 2;
+
+      expect(
+        (tester.getCenter(spinner).dy - bodyCentre).abs(),
+        lessThan(1.0),
+        reason:
+            'a lone spinner must stay in the middle of the body; it '
+            'rendered at ${tester.getCenter(spinner).dy}, body centre '
+            '$bodyCentre',
+      );
+    });
+
+    // Same for the error branch — AC 5 names spinners AND error messages.
+    testWidgets('the error message stays vertically centred', (tester) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(_buildScreen(_FailingProfileController()));
+      await tester.pumpAndSettle();
+
+      final message = find.textContaining('boom');
+      expect(message, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final viewportHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final bodyCentre = (headerBottom + viewportHeight) / 2;
+
+      expect(
+        (tester.getCenter(message).dy - bodyCentre).abs(),
+        lessThan(1.0),
+        reason:
+            'a lone error message must stay in the middle of the body; it '
+            'rendered at ${tester.getCenter(message).dy}, body centre '
+            '$bodyCentre',
+      );
+    });
+
+    // The guard that actually FAILS if `Align(topCenter)` is reverted to
+    // `Center` on this screen. 375x3000 is not a device — it is the smallest
+    // round viewport taller than the ~2285px this screen's stacked sections
+    // measure, and nothing shorter can tell the two alignments apart here
+    // (which is exactly why the 375x812 case above is only a forward guard).
+    // Under `Center` the leftover 659px splits into two ~329.5px bands; under
+    // `Align(topCenter)` it all falls below the content.
+    testWidgets('the content stays under the header on a viewport taller '
+        'than the screen itself', (tester) async {
+      useViewport(tester, size: const Size(375, 3000));
+
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      final scroll = find.ancestor(
+        of: find.byKey(const Key('account-name-field')),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(scroll, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(scroll).top;
+
+      expect(
+        contentTop - headerBottom,
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'once the viewport is taller than the content, a plain `Center` '
+            'splits the slack into equal bands; the content started '
+            '${contentTop - headerBottom}px below the header',
       );
     });
   });

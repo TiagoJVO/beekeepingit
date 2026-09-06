@@ -42,6 +42,54 @@ void main() {
     expect(find.text('Organization'), findsOneWidget);
   });
 
+  // #771 (FR-AX-1, D-18): heading semantics are how a screen-reader user skims
+  // a screen — jumping header to header instead of reading every node in
+  // order. [SectionHeader] is the app's ONE section-header mechanism, so this
+  // single node carries every heading in the app.
+  testWidgets('SectionHeader announces its label as a heading', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(const SectionHeader('Organization', key: Key('header'))),
+    );
+
+    // The REAL node, not a `contains` matcher (#662's discipline): the flag
+    // and the label must sit on the SAME node, or a screen reader announces
+    // an empty heading followed by a stray line of text.
+    final data = tester
+        .getSemantics(find.byKey(const Key('header')))
+        .getSemanticsData();
+    expect(data.flagsCollection.isHeader, isTrue);
+    expect(data.label, 'Organization');
+    handle.dispose();
+  });
+
+  // The other half of #771's third acceptance criterion: only things that ARE
+  // headings become headings. [LabeledField]'s bold 13px label sits above a
+  // field and reads like one, but it names an input — marking it a heading
+  // would put every form field into the screen reader's heading list.
+  testWidgets('LabeledField\'s label is not a heading', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(
+        const LabeledField(
+          label: 'Name',
+          child: TextField(key: Key('lf-child')),
+        ),
+      ),
+    );
+
+    // Since #629 the label is the CHILD's accessible name and the visible
+    // `Text` is excluded from semantics, so the assertion has to look at the
+    // control's node — checking the `Text` would now pass vacuously against
+    // an empty label rather than proving the field is not a heading.
+    final data = tester
+        .getSemantics(find.byKey(const Key('lf-child')))
+        .getSemanticsData();
+    expect(data.label, 'Name');
+    expect(data.flagsCollection.isHeader, isFalse);
+    handle.dispose();
+  });
+
   testWidgets('LabeledField shows the label above its child', (tester) async {
     await tester.pumpWidget(
       _host(
@@ -53,6 +101,73 @@ void main() {
     );
     expect(find.text('Name'), findsOneWidget);
     expect(find.byKey(const Key('lf-child')), findsOneWidget);
+  });
+
+  testWidgets(
+    'LabeledField lends its label to the field it wraps as that field\'s '
+    'ACCESSIBLE name (#629, FR-AX-1) — moving the label out of the box '
+    'border must not cost the input the name InputDecoration.labelText '
+    'used to put on its own semantics node',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          const LabeledField(
+            label: 'Name',
+            child: TextField(key: Key('lf-child')),
+          ),
+        ),
+      );
+
+      final semantics = tester.getSemantics(find.byKey(const Key('lf-child')));
+      expect(
+        semantics.label,
+        'Name',
+        reason:
+            'a bare Text sibling is invisible to a screen reader focused on '
+            'the input: the label has to land on the field node itself, the '
+            'way labelText did',
+      );
+      expect(
+        semantics.flagsCollection.isTextField,
+        isTrue,
+        reason:
+            'the label must merge INTO the field node, not wrap it in an '
+            'extra container node that the input would not inherit',
+      );
+      expect(
+        find.bySemanticsLabel('Name'),
+        findsOneWidget,
+        reason:
+            'exactly one announced "Name" — the visible Text is excluded '
+            'from semantics once the field carries the name, or a screen '
+            'reader reads the label twice',
+      );
+      handle.dispose();
+    },
+  );
+
+  testWidgets('LabeledField(labelsChild: false) leaves the wrapped subtree\'s '
+      'semantics untouched — the opt-out for groups whose controls each own '
+      'their name already (pickers, a read-only value, a field sharing its '
+      'row with a button) (#629)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(
+        const LabeledField(
+          label: 'Apiaries',
+          labelsChild: false,
+          child: TextField(key: Key('lf-child')),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSemantics(find.byKey(const Key('lf-child'))).label,
+      isEmpty,
+    );
+    expect(find.text('Apiaries'), findsOneWidget);
+    handle.dispose();
   });
 
   testWidgets('HeroCard and NotesCard render their content', (tester) async {
