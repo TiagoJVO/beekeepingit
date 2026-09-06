@@ -184,7 +184,14 @@ class _JourneyStatsDetailBody extends ConsumerWidget {
             );
 
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 96),
+              // The shared reserved band, not a local 96 (#631) — see
+              // BrandDimens.scrollBottomInset.
+              padding: const EdgeInsets.fromLTRB(
+                24,
+                16,
+                24,
+                BrandDimens.scrollBottomInset,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

@@ -9,6 +9,7 @@ import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_filters.dart';
@@ -130,7 +131,17 @@ class _ApiaryDetailBody extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          // The bottom inset is the shared reserved band, not a local 96
+          // (#631): the last card here is the change history — the very thing
+          // a "saved" toast is confirming — and 96 was narrower than the toast
+          // measures at the larger text sizes the field UX supports, so the
+          // toast clipped it.
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

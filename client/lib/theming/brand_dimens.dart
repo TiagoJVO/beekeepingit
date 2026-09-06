@@ -117,7 +117,28 @@ abstract final class BrandDimens {
   /// Hero-card interior padding.
   static const double padHero = 20;
 
-  /// Bottom padding that clears the floating action button on scrollable
-  /// screens (the prototype's `padding-bottom:120px`).
-  static const double scrollBottomInset = 120;
+  /// Bottom padding a scrollable screen leaves under its last card, so the
+  /// bottom chrome never lands on content (the prototype's
+  /// `padding-bottom:120px`).
+  ///
+  /// The chrome it has to clear is the floating action button *and* the
+  /// confirmation toast (#631) — the toast is the app's only "your save
+  /// worked" signal, so the card it is reporting on has to stay visible under
+  /// it. 120 covered the FAB at the default text size; a two-line toast at the
+  /// 200% text scale the field UX supports (FR-AX-1) measures ~108 on a 375pt
+  /// screen, and [gapToastNav] sits under it, so the band is widened to keep
+  /// the last card clear at that scale too.
+  static const double scrollBottomInset = 136;
+
+  /// Gap between a confirmation toast and the bottom navigation under it
+  /// (#631) — the prototype floats its toast at `bottom:110px` over a ~96px
+  /// tab bar rather than resting it on the bar's top edge, which on this
+  /// palette would abut a plum-950 toast against the plum-800 navigation and
+  /// read as one block.
+  ///
+  /// This is *only* the gap. How far above the window bottom it lands the
+  /// toast is the `Scaffold`'s own arithmetic — it anchors a fixed `SnackBar`
+  /// at the top of its bottom chrome, whatever that chrome measures — so no
+  /// navigation-bar height is encoded here or anywhere else.
+  static const double gapToastNav = 14;
 }

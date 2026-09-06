@@ -30,7 +30,17 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
-  `120` at the bottom to clear the FAB (`BrandDimens.scrollBottomInset`).
+  `136` at the bottom to clear the FAB **and the confirmation toast**
+  (`BrandDimens.scrollBottomInset`) — a toast covering the card it just
+  confirmed a save to is `#631`. Always use the constant; a screen with its own
+  smaller number is how that bug got in.
+- **Toasts:** nothing positions them — every `showSnackBar` call site hands the
+  bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
+  of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
+  its `bottomNavigationBar` slot so that anchor lands clear of the navigation
+  bar instead of on its top edge (`#631`). Do **not** reach for
+  `SnackBarBehavior.floating` to get the same gap: with a FAB on screen Flutter
+  anchors a floating bar above the _FAB_, which is 194px up into the content.
 
 ## Widgets (`brand_widgets.dart`) — compose these
 
