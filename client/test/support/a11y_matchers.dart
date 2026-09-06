@@ -67,3 +67,28 @@ void expectHasSemanticsLabel(WidgetTester tester, Key key) {
     reason: 'expectHasSemanticsLabel: no semantics label for $key',
   );
 }
+
+/// Asserts [finder]'s rendered rectangle sits entirely inside the viewport —
+/// the concrete, checkable form of the checklist's "the primary action is
+/// pinned, never scrolled to" item (`#341`, `#357`): a control the user can
+/// see and hit right now, without first finding a drag some inner scrollable
+/// will not swallow.
+///
+/// Compares against the LOGICAL viewport (`physicalSize / devicePixelRatio`),
+/// which is the coordinate space `tester.getRect` reports in — so it is
+/// correct whatever device pixel ratio the test sets.
+void expectFullyOnScreen(
+  WidgetTester tester,
+  Finder finder, {
+  required String reason,
+}) {
+  final rect = tester.getRect(finder);
+  final viewport =
+      Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
+  expect(
+    viewport.contains(rect.topLeft) &&
+        viewport.contains(rect.bottomRight - const Offset(1, 1)),
+    isTrue,
+    reason: '$reason (rendered at $rect, viewport $viewport)',
+  );
+}

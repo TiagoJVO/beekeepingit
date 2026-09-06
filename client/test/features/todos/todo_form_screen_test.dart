@@ -226,10 +226,13 @@ Widget _buildApp({
   );
 }
 
-/// The todo form's content (title/description/due date/priority/assignee
-/// picker/apiary picker/save/complete-reopen/delete) exceeds the default
-/// 800x600 test viewport — mirrors journey_form_screen_test.dart's/
-/// add_activity_screen_test.dart's own fix.
+/// The todo form's fields (title/description/due date/priority/assignee
+/// picker/apiary picker) exceed the default 800x600 test viewport — mirrors
+/// journey_form_screen_test.dart's/add_activity_screen_test.dart's own fix.
+///
+/// The ACTIONS need no such help since #357 pinned them outside the scroll
+/// view; `_pinnedActionTests` below deliberately uses a short viewport
+/// instead, which is where that matters.
 void _useTallViewport(WidgetTester tester) {
   tester.view.physicalSize = const Size(1200, 3600);
   tester.view.devicePixelRatio = 1.0;
@@ -1001,5 +1004,208 @@ void main() {
       expect(repo.created, hasLength(1));
       expect(find.text('Title: this text is too long.'), findsNothing);
     });
+  });
+
+  _pinnedActionTests();
+}
+
+/// Sets an explicit [viewport] rather than [_useTallViewport]'s — the
+/// pinning tests below need the form laid out at a height a real phone in
+/// the field actually has.
+void _useViewport(WidgetTester tester, Size viewport) {
+  tester.view.physicalSize = viewport;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// #357 — the actions live in a bar pinned OUTSIDE the scroll view, so they
+/// are on screen at every scroll offset. The hazard here is the milder
+/// sibling of #341's: this form embeds no gesture-swallowing map, but its
+/// assignee and apiary pickers are bounded, inner-scrollable lists that trap
+/// a drag started over them, so an action parked at the end of the outer
+/// scrollable is a fight to reach on a short viewport (FR-UX-1, FR-AX-1,
+/// D-18).
+void _pinnedActionTests() {
+  group('the primary action stays pinned at a short viewport '
+      '(FR-UX-1, FR-AX-1, D-18, #357)', () {
+    // A 400x640 phone held at arm's length in a bee suit — shorter than this
+    // form's content, which is exactly the case the pinning exists for.
+    const shortViewport = Size(400, 640);
+
+    Future<void> goToNewFormShort(
+      WidgetTester tester,
+      _FakeTodosRepository repo,
+    ) async {
+      _useViewport(tester, shortViewport);
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      GoRouter.of(tester.element(find.byType(AppShell))).go('/todos/new');
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'Save is on-screen and actually creates the todo without scrolling',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await goToNewFormShort(tester, repo);
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Rever alças',
+        );
+        await tester.pump();
+
+        // Deliberately NO ensureVisible before any of this — that is the
+        // whole point of a pinned action bar.
+        final save = find.byKey(const Key('todo-save-button'));
+        expectFullyOnScreen(
+          tester,
+          save,
+          reason: 'Save must be fully on-screen on a short viewport',
+        );
+        expectMinTapTarget(tester, save);
+        expectHasSemanticsLabel(tester, const Key('todo-save-button'));
+
+        await tester.tap(save);
+        await _pumpBounded(tester);
+
+        expect(
+          repo.created,
+          hasLength(1),
+          reason:
+              'tapping the pinned Save must create the todo, not silently '
+              'no-op',
+        );
+        expect(repo.created.single.title, 'Rever alças');
+      },
+    );
+
+    testWidgets(
+      'Save stays on-screen mid-scroll, with the drag that would reach it '
+      'swallowed by the assignee picker',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await goToNewFormShort(tester, repo);
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Rever alças',
+        );
+        await tester.pump();
+
+        // Park the form mid-scroll, then keep dragging — but over the
+        // assignee picker's own bounded list, which consumes the gesture
+        // instead of passing it to the form. That is the trap: the user
+        // swipes up and the form does not move, so a trailing action never
+        // arrives.
+        await tester.drag(
+          find.byKey(const Key('todo-title-field')),
+          const Offset(0, -300),
+        );
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const Key('todo-assignee-list')),
+          const Offset(0, -400),
+        );
+        await tester.pumpAndSettle();
+
+        final save = find.byKey(const Key('todo-save-button'));
+        expectFullyOnScreen(
+          tester,
+          save,
+          reason:
+              'Save must stay on-screen when the drag that would reach it is '
+              'swallowed by the inner picker',
+        );
+        expectMinTapTarget(tester, save);
+
+        await tester.tap(save);
+        await _pumpBounded(tester);
+
+        expect(repo.created, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'the edit form pins the complete toggle and Delete alongside Save',
+      (tester) async {
+        final repo = _FakeTodosRepository(
+          existing: const Todo(
+            id: 't1',
+            title: 'Existing todo',
+            description: 'Some notes',
+            priority: 'low',
+            status: 'open',
+          ),
+        );
+        _useViewport(tester, shortViewport);
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        GoRouter.of(tester.element(find.byType(AppShell))).go('/todos/t1/edit');
+        await tester.pumpAndSettle();
+
+        for (final key in const [
+          Key('todo-save-button'),
+          Key('todo-complete-toggle-button'),
+          Key('todo-delete-button'),
+        ]) {
+          final finder = find.byKey(key);
+          expectFullyOnScreen(
+            tester,
+            finder,
+            reason: '$key must be pinned on-screen on a short viewport',
+          );
+          expectMinTapTarget(tester, finder);
+        }
+      },
+    );
+
+    testWidgets(
+      'the three-action edit bar fits a short landscape body instead of '
+      'overflowing and clipping Delete',
+      (tester) async {
+        // A handset in landscape leaves the shell body shorter than the
+        // edit-mode bar's own height. A fixed-height bar in a Column would
+        // hand the scroll view 0px, overflow the Column, and paint the
+        // destructive Delete clipped under the navigation bar — below the
+        // 44x44 floor (D-18) this very pinning is meant to protect.
+        _useViewport(tester, const Size(740, 360));
+        final repo = _FakeTodosRepository(
+          existing: const Todo(
+            id: 't1',
+            title: 'Existing todo',
+            description: 'Some notes',
+            priority: 'low',
+            status: 'open',
+          ),
+        );
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        GoRouter.of(tester.element(find.byType(AppShell))).go('/todos/t1/edit');
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'the pinned bar must not overflow its Column',
+        );
+
+        // Save is what the user came for — it stays reachable without
+        // scrolling even here.
+        expectFullyOnScreen(
+          tester,
+          find.byKey(const Key('todo-save-button')),
+          reason: 'Save must stay on-screen in a short landscape body',
+        );
+        for (final key in const [
+          Key('todo-save-button'),
+          Key('todo-complete-toggle-button'),
+          Key('todo-delete-button'),
+        ]) {
+          expectMinTapTarget(tester, find.byKey(key));
+        }
+      },
+    );
   });
 }
