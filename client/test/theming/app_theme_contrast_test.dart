@@ -131,6 +131,94 @@ void _checkBadgeTextPair(String themeName, ColorScheme scheme) {
   );
 }
 
+/// The two roles an **outlined** control is made of, each checked against the
+/// ground it sits on (`surface`): its label/icon draws `primary` and its
+/// border draws `outline` (Material 3's `OutlinedButton` defaults). Neither
+/// pair was in the list above, which is how light mode ended up rendering
+/// secondary buttons as honey-on-cream at ~1.84:1 (#627) — honey is a *fill*
+/// color (it pairs with the dark `onHoney` ink), never a foreground on a light
+/// ground. Asserting them here applies `brand_tokens.dart`'s own "AppTheme
+/// picks a different token for that role" rule to the roles Material sprays
+/// across every accent icon, link-style label and outlined control.
+///
+/// The label is text, so it takes the 4.5:1 bar; the border is a UI-component
+/// boundary, so it takes SC 1.4.11's 3:1 non-text floor.
+void _checkOutlinedControlRoles(String themeName, ColorScheme scheme) {
+  _expectAaContrast(
+    '$themeName surface/primary (outlined control label + accent icons)',
+    scheme.primary,
+    scheme.surface,
+  );
+  _expectAaContrast(
+    '$themeName surface/outline (control borders: buttons, inputs, chips)',
+    scheme.outline,
+    scheme.surface,
+    minRatio: _kMinNonTextContrast,
+  );
+}
+
+/// A focused field's border must clear the same 3:1 boundary floor **and**
+/// stay at least as strong as the resting border it replaces — a focus ring
+/// that is dimmer than the unfocused state reads as losing focus, not gaining
+/// it. `AppTheme`'s `inputDecorationTheme` draws the resting border from
+/// `outline` and the focus ring from a brighter role per brightness.
+void _checkFocusRing(String themeName, ThemeData theme) {
+  final scheme = theme.colorScheme;
+  final focused =
+      theme.inputDecorationTheme.focusedBorder! as OutlineInputBorder;
+  final enabled =
+      theme.inputDecorationTheme.enabledBorder! as OutlineInputBorder;
+  _expectAaContrast(
+    '$themeName focused field border',
+    focused.borderSide.color,
+    scheme.surface,
+    minRatio: _kMinNonTextContrast,
+  );
+  final focusRatio = _contrastRatio(focused.borderSide.color, scheme.surface);
+  final restRatio = _contrastRatio(enabled.borderSide.color, scheme.surface);
+  expect(
+    focusRatio,
+    greaterThanOrEqualTo(restRatio),
+    reason:
+        '$themeName: the focus ring ($focusRatio:1) must not be dimmer than '
+        'the resting border it replaces ($restRatio:1)',
+  );
+}
+
+/// The colors the **secondary action button** actually resolves to — the
+/// `outlinedButtonTheme` foreground/side the theme ships, not just the raw
+/// scheme roles — measured against the surface it is drawn on. This is the
+/// pair #627 reported: it must read as outlined plum, never honey-on-cream.
+void _checkSecondaryButtonStyle(String themeName, ThemeData theme) {
+  final style = theme.outlinedButtonTheme.style;
+  final scheme = theme.colorScheme;
+  final foreground = style?.foregroundColor?.resolve(<WidgetState>{});
+  final side = style?.side?.resolve(<WidgetState>{});
+  expect(
+    foreground,
+    isNotNull,
+    reason:
+        '$themeName: outlinedButtonTheme must pin the secondary action\'s '
+        'foreground rather than inheriting whatever `primary` happens to be',
+  );
+  expect(
+    side,
+    isNotNull,
+    reason: '$themeName: the secondary action button needs a visible border',
+  );
+  _expectAaContrast(
+    '$themeName secondary button label',
+    foreground!,
+    scheme.surface,
+  );
+  _expectAaContrast(
+    '$themeName secondary button border',
+    side!.color,
+    scheme.surface,
+    minRatio: _kMinNonTextContrast,
+  );
+}
+
 void _checkTertiaryPair(
   String themeName,
   ColorScheme scheme, {
@@ -187,6 +275,36 @@ void main() {
       AppTheme.dark().colorScheme,
       minRatio: _kMinNormalTextContrast,
     );
+  });
+
+  test('outlined-control roles (surface/primary, surface/outline) are legible '
+      'on the surface in both brightnesses (#627)', () {
+    // An outlined secondary button's label draws `primary` and its border
+    // draws `outline`. In light mode `primary` was honey — 1.84:1 on cream —
+    // so the label was effectively invisible in the sunlight the field app is
+    // used in, and `outline` (the prototype's #D8D1C0 hairline) sat at 1.37:1,
+    // below SC 1.4.11's 3:1 floor for a control boundary.
+    _checkOutlinedControlRoles('light', AppTheme.light().colorScheme);
+    _checkOutlinedControlRoles('dark', AppTheme.dark().colorScheme);
+  });
+
+  test('the secondary action button resolves to outlined plum, legible on the '
+      'surface in both brightnesses (#627)', () {
+    // Honey is reserved for the single primary action per screen
+    // (docs/design/prototype.md: "Honey is the only primary action. Secondary
+    // = outlined plum."), so the secondary button pins its own foreground
+    // instead of inheriting whichever role Material's defaults reach for.
+    _checkSecondaryButtonStyle('light', AppTheme.light());
+    _checkSecondaryButtonStyle('dark', AppTheme.dark());
+  });
+
+  test('a focused field border clears the 3:1 boundary floor and is never '
+      'dimmer than the resting border (#627)', () {
+    // Lifting the dark `outline` to plum 500 without touching the focus ring
+    // would have inverted the two in dark mode: focusing a field would have
+    // made its border dimmer (2.06:1) than when unfocused (3.51:1).
+    _checkFocusRing('light', AppTheme.light());
+    _checkFocusRing('dark', AppTheme.dark());
   });
 
   // --- BrandTheme extension roles (hero surface, notes callout, activity-type

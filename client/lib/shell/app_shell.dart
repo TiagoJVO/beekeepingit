@@ -579,13 +579,16 @@ class _SyncStatusPill extends StatelessWidget {
     // online/up-to-date. Amber doubles as "offline"/"waiting"/"syncing" (all
     // in-progress, not-yet-settled states), red flags "error" (a beekeeper
     // whose uploads keep failing needs to notice this, not read it as plain
-    // offline), green is reserved for "online and caught up". Amber == the
-    // theme primary (BrandTokens honey); green == BrandTokens.online (#243).
+    // offline), green is reserved for "online and caught up". Amber ==
+    // BrandTokens.honey; green == BrandTokens.online (#243). Honey is named
+    // directly rather than taken from `colorScheme.primary`: this dot sits on
+    // the *plum* header (4.73:1), which is a ground honey reads on — unlike
+    // the light surface `primary` now has to stay legible against (#627).
     final color = status.hasError && !status.syncing
         ? theme.colorScheme.error
         : status.isOnline && !status.syncing
         ? BrandTokens.online
-        : theme.colorScheme.primary;
+        : BrandTokens.honey;
     final label = status.syncing
         ? l10n.syncStatusSyncing
         : status.hasError
@@ -675,7 +678,9 @@ class _OfflineBanner extends ConsumerWidget {
           Icon(
             status.hasError ? Icons.error_outline : Icons.cloud_off,
             size: 18,
-            color: status.hasError ? colorScheme.error : colorScheme.primary,
+            // Honey by name, not via `colorScheme.primary`: the banner ground
+            // is plum 800, a ground honey reads on (#627).
+            color: status.hasError ? colorScheme.error : BrandTokens.honey,
           ),
           const SizedBox(width: 8),
           Expanded(

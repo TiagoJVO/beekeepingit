@@ -5,23 +5,50 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Brand-wiring assertions for `AppTheme` (FR-UX-1, FR-AX-1, D-18, EPIC-11
 /// #243): the theme is built from the Melargil tokens, honey is the single
-/// primary, and the bundled fonts are wired the way the prototype asks
+/// primary *action's* fill (never the surface-legible `primary` accent role,
+/// #627), and the bundled fonts are wired the way the prototype asks
 /// ("Archivo for all UI/body, Playfair Display for display/screen titles").
 /// Contrast is covered separately in `app_theme_contrast_test.dart`.
 void main() {
   group('brand color wiring', () {
-    test('light primary is BrandTokens.honey (the one primary action)', () {
+    test('light primary is plum, not honey — honey is a fill, and `primary` '
+        'is drawn on the light surface (#627)', () {
       final scheme = AppTheme.light().colorScheme;
-      // "Honey is the only primary action" — PrimaryActionButton/FilledButton
-      // and the shell FAB all draw scheme.primary, so this pins them to the
-      // single honey hex rather than two uncoordinated ones (#243).
-      expect(scheme.primary, BrandTokens.honey);
-      // White-on-honey fails AA, so on-primary is the dark ink the FAB uses.
-      expect(scheme.onPrimary, BrandTokens.onHoney);
+      // Material draws `primary` as a foreground (outlined/text-button
+      // labels, accent icons) on the surface, and honey-on-cream is 1.84:1.
+      // Plum is the brand hue that reads there; the honey fill is pinned on
+      // the one primary action instead (see below).
+      expect(scheme.primary, BrandTokens.plum700);
+      expect(scheme.onPrimary, BrandTokens.paper);
+      expect(scheme.primary, isNot(BrandTokens.honey));
     });
 
-    test('dark primary is also honey (accent carries across modes)', () {
-      expect(AppTheme.dark().colorScheme.primary, BrandTokens.honey);
+    test(
+      'dark primary is honey — on plum it reads as a foreground (8.02:1)',
+      () {
+        expect(AppTheme.dark().colorScheme.primary, BrandTokens.honey);
+        // White-on-honey fails AA, so on-primary is the dark ink the FAB uses.
+        expect(AppTheme.dark().colorScheme.onPrimary, BrandTokens.onHoney);
+      },
+    );
+
+    test('the honey fill is pinned on the FAB in both brightnesses ("honey is '
+        'the only primary action")', () {
+      // The two places the single primary action lives are the FAB theme and
+      // PrimaryActionButton (covered in
+      // test/core/widgets/field_action_button_test.dart). Neither may drift
+      // to a second honey-ish hex, and neither may follow `primary` now that
+      // the light scheme's accent is plum (#243, #627).
+      for (final theme in [AppTheme.light(), AppTheme.dark()]) {
+        expect(
+          theme.floatingActionButtonTheme.backgroundColor,
+          BrandTokens.honey,
+        );
+        expect(
+          theme.floatingActionButtonTheme.foregroundColor,
+          BrandTokens.onHoney,
+        );
+      }
     });
 
     test('light surface ground is cream and body text is ink', () {

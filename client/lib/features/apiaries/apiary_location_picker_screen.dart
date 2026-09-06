@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart' as ll;
 
 import '../../core/geo/device_location.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_tokens.dart';
 import 'map_chrome.dart';
 import 'map_tile_sources.dart';
 
@@ -131,7 +132,6 @@ class _ApiaryLocationPickerScreenState
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
     final location = _location;
     return Scaffold(
       key: const Key('apiary-fullscreen-picker'),
@@ -194,9 +194,13 @@ class _ApiaryLocationPickerScreenState
                         point: location,
                         width: 48,
                         height: 48,
-                        child: Icon(
+                        // Honey by name, not via `colorScheme.primary`: a pin
+                        // is a highlight over map imagery, the role honey
+                        // keeps now that `primary` is the accent that has to
+                        // read on a light surface (#627).
+                        child: const Icon(
                           Icons.location_on,
-                          color: theme.colorScheme.primary,
+                          color: BrandTokens.honey,
                           size: 40,
                         ),
                       ),
