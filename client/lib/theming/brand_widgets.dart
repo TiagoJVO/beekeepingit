@@ -489,28 +489,52 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 40, color: scheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-            ],
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: AppTheme.bodyFontFamily,
-                fontSize: 15,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
           ],
-        ),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTheme.bodyFontFamily,
+              fontSize: 15,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
+    );
+
+    // Centred when it fits, scrollable when it does not (#797, FR-AX-1).
+    //
+    // A plain `Center > Padding > Column` overflowed by 181px at the 200%
+    // text scale D-18 commits to: the message wraps to many more lines, the
+    // 80px of vertical padding stays, and a bounded parent — an `Expanded`,
+    // a `SliverFillRemaining` — has no more room to give. A `RenderFlex`
+    // overflow is a hard error in tests, so this also made the shell
+    // untestable at 200%, because its `IndexedStack` builds every tab and any
+    // empty one threw during layout.
+    //
+    // The constraint check matters: this widget is also dropped straight into
+    // unbounded `Column`s, where a `SingleChildScrollView` would itself throw
+    // for want of a bounded height. Bounded, it scrolls and stays centred via
+    // the `minHeight`; unbounded, it behaves exactly as before.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedHeight) return Center(child: content);
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: content),
+          ),
+        );
+      },
     );
   }
 }
