@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../support/bottom_chrome.dart';
+
 /// #634 (FR-UX-2, FR-AC-2): the Activities tab's own quick-add, and the
 /// apiary -> type -> fields flow it opens. Boots the REAL app (shell +
 /// router) rather than a hand-built MaterialApp, so the FAB wiring, the
@@ -518,5 +520,70 @@ void main() {
       );
       expect(size.height, greaterThanOrEqualTo(44.0));
     }
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): the apiary step padded a flat 24 at the bottom,
+  // so its last apiary ended all but flush against the shell's bottom chrome
+  // — and unlike the static rows #789's other screens end on, every row here
+  // is a tap target: a toast landing on the last apiary blocks choosing it.
+  //
+  // NOT because a FAB is on screen, which is what #789's own description
+  // assumed. This is a pushed route, so `canGoBack` is true and the shell
+  // renders no FAB at all — the first test below pins that, so the band's
+  // justification here stays the toast and only the toast. Inside the shell
+  // `MediaQuery` reports no bottom inset, so the band is the bare
+  // `scrollBottomInset`.
+  //
+  // Structural rather than behavioural: this screen raises no toast of its
+  // own. The bars that reach it are re-presented from the screen the user
+  // came from (`ScaffoldMessengerState._register`), so probing with one would
+  // measure that message rather than what this step reserves.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    final manyApiaries = <Apiary>[
+      for (var i = 0; i < 12; i++)
+        Apiary(id: 'many-$i', name: 'Apiary $i', hiveCount: 3),
+    ];
+
+    testWidgets('the apiary step has no FAB over it to clear', (tester) async {
+      await _openActivitiesTab(tester);
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('shell-fab')),
+        findsNothing,
+        reason:
+            'the shell hides its quick-add on a pushed route, so the band '
+            'this step reserves is for a toast, not for a FAB',
+      );
+    });
+
+    // 1x only, deliberately. At 200% text this step's header (title, prompt
+    // and search field) consumes the whole column and the `Expanded` list
+    // collapses to a measured 21 logical pixels with NOT ONE apiary row
+    // built — there is no last row for a band to sit under, because there is
+    // no row at all. That is a separate FR-AX-1 defect — #796 — filed rather
+    // than absorbed here.
+    testWidgets(
+      'the apiary step reserves the bottom chrome band under its last apiary',
+      (tester) async {
+        useFieldPhone(tester);
+        await _openActivitiesTab(tester, apiaries: manyApiaries);
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+
+        final list = find.byKey(const Key('new-activity-apiary-list'));
+        await scrollToEnd(tester, list);
+
+        expectReservesBottomBand(
+          tester,
+          lastRow: find.byKey(const Key('new-activity-apiary-option-many-11')),
+          scrollable: list,
+          reason:
+              'the apiary step must leave the shell chrome a band of its '
+              'own, not end flush against the bottom navigation',
+        );
+      },
+    );
   });
 }

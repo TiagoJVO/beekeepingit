@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import 'organization_repository.dart';
 
@@ -96,18 +97,44 @@ class _OrganizationWaitingScreenState
       appBar: AppBar(title: Text(l10n.organizationWaitingTitle)),
       // Deliberately still a `Center`, unlike the screens #630/#769
       // top-aligned. This is a short holding page — one paragraph, one hint
-      // card, three actions — with nothing to scroll and nothing to fill the
-      // height with, and it sits outside the app shell (no bottom nav). Top
-      // aligned, its content would cling to the header with the rest of a
-      // tall phone left empty below; centred, the "Check again" action it
-      // exists to offer lands squarely in thumb reach. The dead band #769 is
-      // about is only a defect where content wants to start at the top and
-      // grow; here it is the layout (FR-UX-1, #769).
+      // card, three actions — with little to fill the height with, and it
+      // sits outside the app shell (no bottom nav). Top aligned, its content
+      // would cling to the header with the rest of a tall phone left empty
+      // below; centred, the "Check again" action it exists to offer lands
+      // squarely in thumb reach. The dead band #769 is about is only a defect
+      // where content wants to start at the top and grow; here it is the
+      // layout (FR-UX-1, #769). It still centres wherever the content plus
+      // the band below fits — a tablet, a desktop window — but no longer on a
+      // 375x812 phone; see the band's own note.
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            // The bottom gutter is the chrome band, not a gutter (#789): the
+            // one toast this page raises ("Could not check for an invitation
+            // right now. Try again.") wraps to two lines even at 1x and
+            // covered the Log out row by a measured 57 — and out here, with
+            // no bottom navigation and no account screen to reach, Log out is
+            // this page's only escape hatch. The band is the toast's own
+            // height, which off the shell includes the home-indicator inset
+            // the toast's bar carries; `scrollBottomInsetOf` adds it.
+            //
+            // It costs the `Center` above on a phone: content plus this band
+            // overruns a 375x812 viewport, so the page top-aligns and scrolls
+            // where it used to sit centred. Everything still renders above the
+            // fold — the band is what scrolls into view, not the actions — and
+            // a toast covering the only way off this screen is the worse of
+            // the two.
+            //
+            // It does not clear that message at 200% text, where it wraps to
+            // seven lines and measures 302, past any fixed band. That is
+            // #790, not something padding here can close.
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

@@ -34,6 +34,22 @@ class LoginScreen extends ConsumerWidget {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+            // No bottom chrome band here, deliberately (#789, FR-UX-2). Two
+            // independent reasons, either one sufficient.
+            //
+            // There is nothing to clear: this route sits outside the shell,
+            // so no FAB and no bottom navigation, and it raises no toast —
+            // a failed sign-in surfaces inline under the button
+            // ([loginErrorProvider]), not through `ScaffoldMessenger`. It is
+            // also the first screen of a cold boot, so no earlier screen's
+            // bar can be re-presented over it.
+            //
+            // And `BrandDimens.scrollBottomInsetOf` would be the wrong call
+            // even if it did. The only context this screen has to read is its
+            // own `build` context, which sits ABOVE the `SafeArea` wrapping
+            // this scroll view — and that `SafeArea` has already consumed the
+            // window's bottom inset, so the padding would count the home
+            // indicator a second time. See that helper's second precondition.
             padding: const EdgeInsets.all(32),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),

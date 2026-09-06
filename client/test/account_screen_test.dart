@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/a11y_matchers.dart';
+import 'support/bottom_chrome.dart';
 
 /// An in-memory [LocalPrefs] fake — same convention as
 /// `profile_repository_test.dart`/`auth_controller_test.dart` — backing the
@@ -884,5 +885,45 @@ void main() {
             '${contentTop - headerBottom}px below the header',
       );
     });
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): the account screen padded a flat 24 at the
+  // bottom over ~2285px of stacked sections, so it is *always* scrolled to
+  // its end at some point — and the five toasts it raises ("Profile saved.",
+  // "Sync requested.", …) landed on the Log out row that ends it. Outside the
+  // shell (no bottom navigation, no FAB), so the band is the toast's own
+  // height plus the home-indicator inset its bar carries out here.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the Log out row, at ${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+
+          await tester.pumpWidget(
+            _buildScreen(_FakeProfileController(_profile())),
+          );
+          await tester.pumpAndSettle();
+
+          final scroll = find.ancestor(
+            of: find.byKey(const Key('account-name-field')),
+            matching: find.byType(SingleChildScrollView),
+          );
+          await scrollToEnd(tester, scroll);
+
+          // `profileSaveSuccess` — the copy this screen actually shows once
+          // the profile form at its top is saved (app_en.arb).
+          await showToast(tester, message: 'Profile saved.');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('account-logout-button')),
+            reason:
+                'a confirmation toast must land in the band this screen '
+                'reserves, not on the Log out action that ends it',
+          );
+        },
+      );
+    }
   });
 }

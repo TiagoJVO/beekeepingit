@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/bottom_chrome.dart';
+
 /// Counts [refresh] calls and controls what the next one resolves to.
 ///
 /// The count is the load-bearing assertion of this file: it proves the
@@ -159,4 +161,63 @@ void main() {
       );
     },
   );
+
+  // #789 (FR-UX-2, FR-AX-1): this holding page padded a flat 24 at the
+  // bottom, so its one toast — "Could not check for an invitation right now.
+  // Try again.", a two-line message even at 1x — landed on the Log out row
+  // that ends it. That row is this screen's only escape hatch: it sits
+  // outside the shell, so there is no bottom navigation and no account screen
+  // to reach past it. No FAB either, so the band is the toast's own height
+  // plus the home-indicator inset its bar carries out here.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    testWidgets('a toast does not cover the Log out row', (tester) async {
+      useFieldPhone(tester);
+
+      await tester.pumpWidget(_buildScreen(_CountingOrganizationController()));
+      await tester.pumpAndSettle();
+
+      await scrollToEnd(tester, find.byType(SingleChildScrollView));
+
+      // `organizationWaitingCheckError` — the copy this screen actually shows
+      // when the check cannot reach the server (app_en.arb). Two lines even
+      // at 1x, which is why a flat 24 was not enough: it covered the Log out
+      // row by a measured 57.
+      await showToast(
+        tester,
+        message: 'Could not check for an invitation right now. Try again.',
+      );
+
+      expectToastClearsLastRow(
+        tester,
+        find.byKey(const Key('organization-waiting-logout-button')),
+        reason:
+            'the check-failed toast must land in the band this page '
+            'reserves, not on the only escape hatch it offers',
+      );
+    });
+
+    // The 200% case is asserted structurally, not by raising that same
+    // message: at 200% text on a 375pt phone it wraps to seven lines and
+    // measures 302, past any fixed band. That is a property of the sentence,
+    // not of what this page reserves — #790, deliberately not fixed here.
+    testWidgets('the page reserves the bottom chrome band under Log out, at '
+        '2x text', (tester) async {
+      useFieldPhone(tester, textScale: 2);
+
+      await tester.pumpWidget(_buildScreen(_CountingOrganizationController()));
+      await tester.pumpAndSettle();
+
+      final scroll = find.byType(SingleChildScrollView);
+      await scrollToEnd(tester, scroll);
+
+      expectReservesBottomBand(
+        tester,
+        lastRow: find.byKey(const Key('organization-waiting-logout-button')),
+        scrollable: scroll,
+        reason:
+            'the page must leave a toast a band of its own below Log out, '
+            'not end flush against the window bottom',
+      );
+    });
+  });
 }

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/a11y_matchers.dart';
+import 'support/bottom_chrome.dart';
 
 /// A fake controller so tests drive [OrganizationScreen] without a real
 /// [ApiClient]/network call, matching profile_screen_test.dart's
@@ -391,5 +392,39 @@ void main() {
         label: 'the create-organization action',
       );
     });
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): the onboarding org form padded a flat 24 at the
+  // bottom, so the "Organization created." toast it raises landed on the
+  // "I'm waiting for an invitation" row underneath its create action — the
+  // one escape hatch out of a screen the user is stuck on until they pick.
+  // Outside the shell (no bottom navigation, no FAB), so the band is the
+  // toast's own height plus the home-indicator inset its bar carries.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the join-instead row, at ${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+
+          await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(SingleChildScrollView));
+
+          // `organizationSaveSuccess` — the copy this screen actually shows
+          // once the organization is created (app_en.arb).
+          await showToast(tester, message: 'Organization created.');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('organization-join-instead-button')),
+            reason:
+                'the create toast must land in the band the form reserves, '
+                'not on the join-instead escape hatch below it',
+          );
+        },
+      );
+    }
   });
 }

@@ -164,6 +164,9 @@ Widget _buildList({
   String? Function(String apiaryId)? apiaryNameOf,
   double? rowWidth,
   TextScaler textScaler = TextScaler.noScaling,
+  // The embedded-preview shape (#42/#308): built up front inside an outer
+  // scroll view, the way the apiary and journey detail pages mount it.
+  bool shrinkWrap = false,
 }) {
   final list = ActivityListView(
     viewModel: AsyncValue.data(
@@ -172,6 +175,7 @@ Widget _buildList({
     emptyText: 'empty',
     showApiary: apiaryNameOf != null,
     apiaryNameOf: apiaryNameOf,
+    shrinkWrap: shrinkWrap,
   );
   return ProviderScope(
     overrides: [
@@ -191,11 +195,15 @@ Widget _buildList({
         child: child!,
       ),
       home: Scaffold(
-        body: rowWidth == null
-            ? list
-            : Center(
-                child: SizedBox(width: rowWidth, child: list),
-              ),
+        body: switch ((shrinkWrap, rowWidth)) {
+          // The detail pages' shape: a block inside the page's own scroll
+          // view, which is what makes the list shrink-wrap in the first place.
+          (true, _) => SingleChildScrollView(child: Column(children: [list])),
+          (false, null) => list,
+          (false, final width) => Center(
+            child: SizedBox(width: width, child: list),
+          ),
+        },
       ),
     ),
   );
@@ -800,5 +808,43 @@ void main() {
         );
       });
     }
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): the bottom chrome band [ActivityListView] now
+  // reserves belongs to the FULL-SCREEN list only. The same widget is also
+  // embedded, shrink-wrapped, as a preview block inside the apiary and
+  // journey detail pages, where the page's own scroll view already reserves
+  // the band once — reserving it again there would open a 136px hole in the
+  // middle of a card.
+  //
+  // A FORWARD guard, not a reproduction: the unpadded list reserved nothing
+  // in either shape, so this passed before #789 too. What it pins is that the
+  // fix stayed gated on `reserveBottomChrome` instead of padding every
+  // instance, which is the way a sweep would have broken the detail pages.
+  group('the bottom chrome band is the full-screen list\'s only (#789)', () {
+    testWidgets('the embedded, shrink-wrapped preview reserves nothing', (
+      tester,
+    ) async {
+      _useViewport(tester, const Size(375, 812));
+      await tester.pumpWidget(
+        _buildList(
+          locale: const Locale('en'),
+          activities: [for (var i = 0; i < 3; i++) _activity(id: 'a$i')],
+          shrinkWrap: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final list = tester.getRect(find.byKey(const Key('activity-list')));
+      final lastRow = tester.getRect(_row('a2'));
+
+      expect(
+        list.bottom - lastRow.bottom,
+        0.0,
+        reason:
+            'an embedded preview must end where its last row ends; the band '
+            'is the enclosing page\'s to reserve, once, for the whole page',
+      );
+    });
   });
 }

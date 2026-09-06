@@ -58,6 +58,17 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   A screen that genuinely needs nothing says so in a comment where the padding
   would have gone — a silent flat gutter reads as an oversight, because that
   is what `#773` was.
+
+  `#789` finished that sweep across the remaining scrollables (account,
+  profile, the three organization screens, the shared activity list and the
+  new-activity apiary step). **One screen genuinely needs nothing and says so:**
+  `login_screen.dart`. It raises no toast — a failed sign-in renders inline —
+  and it is the one place `scrollBottomInsetOf` would be actively wrong, since
+  a `SafeArea` sits between the read and the scroll view and has already
+  consumed the window's bottom inset. Never read the helper from **above** a
+  `SafeArea` or a `MediaQuery.removePadding`: below one it correctly
+  contributes `0`, above one the padding counts the home indicator twice.
+
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
   of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside

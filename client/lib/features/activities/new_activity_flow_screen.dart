@@ -275,7 +275,21 @@ class _ApiaryStepState extends State<_ApiaryStep> {
               ? EmptyState(message: l10n.apiariesSearchNoResults)
               : ListView.separated(
                   key: const Key('new-activity-apiary-list'),
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  // The bottom gutter is the chrome band, not a gutter
+                  // (#789). Not for a FAB — this is a pushed route, so the
+                  // shell hides its quick-add — but for a toast: every row
+                  // here is a tap target, and a bar re-presented from the
+                  // screen the user came from would sit on the last apiary
+                  // and block choosing it. Inside the shell `MediaQuery`
+                  // reports no bottom inset, so this resolves to the bare
+                  // constant; `scrollBottomInsetOf` is still the right call,
+                  // because it is right on either side of the shell.
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    0,
+                    16,
+                    BrandDimens.scrollBottomInsetOf(context),
+                  ),
                   itemCount: filtered.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {

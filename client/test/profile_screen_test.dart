@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'support/a11y_matchers.dart';
+import 'support/bottom_chrome.dart';
 
 Profile _profile({
   String name = '',
@@ -681,5 +682,45 @@ void main() {
         label: 'Save profile',
       );
     });
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): this form padded a flat 24 at the bottom, so the
+  // "Profile saved." toast it raises landed on the Save button it was
+  // reporting on — and at 200% text on a field phone the form scrolls, so the
+  // button is exactly where the toast lands. Outside the shell (no bottom
+  // navigation, no FAB), so the band is the toast's own height plus the
+  // home-indicator inset its bar carries out here.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the Save button, at ${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+
+          await tester.pumpWidget(
+            _buildScreen(
+              _FakeProfileController(
+                _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(SingleChildScrollView));
+
+          // `profileSaveSuccess` — the copy this screen actually shows once a
+          // profile edit is stored (app_en.arb).
+          await showToast(tester, message: 'Profile saved.');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('profile-save-button')),
+            reason:
+                'the save toast must land in the band the form reserves, not '
+                'on the Save button it is reporting on',
+          );
+        },
+      );
+    }
   });
 }
