@@ -236,4 +236,25 @@ abstract final class BrandDimens {
   /// margin over 600 is wider still. Do not narrow this constant without
   /// re-checking the 688px worst case against `_kCompactRowBelowWidth`.
   static const double maxWidthList = 720;
+
+  // --- Layout breakpoints (#650) ---
+
+  /// The window width, in logical pixels off `MediaQuery.sizeOf(context)
+  /// .width`, at or above which the shell swaps its bottom [NavigationBar]
+  /// for a side [NavigationRail] (`app_shell.dart`).
+  ///
+  /// 840, not Material 3's more commonly cited 600 tablet breakpoint, for two
+  /// load-bearing reasons. First, Material 3's *expanded* window size class
+  /// starts at 840 — 600-840 is tablet-portrait/split-screen, where D-35's
+  /// thumb-reachable bottom bar is still the field-correct chrome; only a
+  /// genuinely wide, desktop-shaped window earns the rail. Second, and just
+  /// as binding in practice: Flutter's default widget-test surface is
+  /// 800x600 logical. A 600 breakpoint would flip the *entire* existing shell
+  /// test suite to the rail and break every `shell-tab-*` tap across it
+  /// (~30 in `apiary_detail_screen_test.dart` alone). At 840 every existing
+  /// test — which never sets an explicit viewport — keeps the
+  /// `NavigationBar` untouched, and only tests that explicitly opt into a
+  /// desktop-sized viewport (`app_shell_test.dart`'s desktop group) see the
+  /// rail. Do not change this number without re-auditing both reasons.
+  static const double breakpointExpanded = 840;
 }

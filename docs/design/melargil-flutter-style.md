@@ -112,6 +112,20 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
   "fix" it by painting the gutter the navigation bar's colour, which restores
   exactly the two-dark-bars-read-as-one-block symptom `#631` set out to remove.
 
+  At expanded window widths (`>= BrandDimens.breakpointExpanded`, `840`,
+  `#650`) the shell swaps its `bottomNavigationBar` for a side
+  `NavigationRail` and sets the slot to `null` — there is no bottom chrome
+  left for the `Scaffold` to strip padding against, and so no `gapToastNav`
+  gutter either. A fixed toast there anchors straight at the window bottom,
+  spanning the rail's own width rather than starting clear of it. This is an
+  **accepted trade**, the same shape as the full-bleed-tab trade two
+  paragraphs up: fixing it would mean a per-viewport toast inset, which is
+  exactly the kind of screen-by-screen positioning this section's first
+  sentence says nothing should need. Do not re-derive this from scratch —
+  `client/test/shell/toast_placement_test.dart`'s desktop case only asserts
+  the toast still renders fully inside the viewport, not that it clears the
+  rail.
+
 ## Widgets (`brand_widgets.dart`) — compose these
 
 - **`BrandMark({size, borderRadius})`** — the app's **one** brand mark: the
