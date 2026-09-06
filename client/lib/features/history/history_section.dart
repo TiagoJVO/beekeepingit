@@ -157,9 +157,16 @@ class HistoryTimelineList extends ConsumerWidget {
     final list = ListView.builder(
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: EdgeInsets.zero,
+      // The full screen is a scrollable of its own and reserves the bottom
+      // chrome band (#773); the embedded preview is a block inside the detail
+      // page's scroll view, which reserves that band once for the whole page,
+      // so reserving it again here would open a 120px hole mid-card.
+      padding: shrinkWrap
+          ? EdgeInsets.zero
+          : EdgeInsets.only(bottom: BrandDimens.scrollBottomInsetOf(context)),
       itemCount: visible.length,
       itemBuilder: (context, i) => _HistoryEntryTile(
+        key: Key('history-entry-${visible[i].id}'),
         entry: visible[i],
         currentUserId: currentUserId,
         memberNames: memberNames,
@@ -199,6 +206,7 @@ class HistoryTimelineList extends ConsumerWidget {
 /// is not interactive, so it carries no button/tap semantics.
 class _HistoryEntryTile extends StatelessWidget {
   const _HistoryEntryTile({
+    super.key,
     required this.entry,
     required this.currentUserId,
     required this.memberNames,

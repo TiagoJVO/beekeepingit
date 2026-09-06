@@ -37,6 +37,20 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   its own on any pushed route), and its pinned action bar sits outside the
   scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
   the bar do the clearing.
+- **The bottom band, off the shell:** a scrollable reserves that band for the
+  toast as much as for the FAB, so a screen with **neither** still reserves it
+  — the members list, the stock-declaration log, the needs-fix list and the
+  full history timeline all did not, which is `#773`. Take it from
+  `BrandDimens.scrollBottomInsetOf(context)`, never the bare constant: outside
+  the shell there is no bottom navigation for `Scaffold` to strip the window's
+  bottom padding against, so a fixed `SnackBar` carries the home-indicator
+  inset **inside its own bar** and covers that much more of the body (measured
+  142 rather than 108 at 200% text on a 375×812 phone). Read off the
+  `MediaQuery` the `Scaffold` hands the body, that inset is `0` inside the
+  shell and the real value outside it, so the one call is right on both sides.
+  A screen that genuinely needs nothing says so in a comment where the padding
+  would have gone — a silent flat gutter reads as an oversight, because that
+  is what `#773` was.
 
 ## Widgets (`brand_widgets.dart`) — compose these
 

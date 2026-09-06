@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
 import '../organization/organization_repository.dart';
@@ -34,7 +35,19 @@ class StockDeclarationsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: Text(l10n.stockDeclarationsTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        // The bottom gutter is the chrome band, not a gutter (#773): the
+        // "Declaration recorded" toast this screen raises used to land on the
+        // registration-number card it had just been recorded against. No FAB
+        // and no bottom navigation here — the route is declared outside the
+        // shell — so the band is the toast's own height, which out here
+        // includes the home-indicator inset the toast's bar carries;
+        // `scrollBottomInsetOf` adds it.
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          BrandDimens.scrollBottomInsetOf(context),
+        ),
         children: [
           Text(
             l10n.stockDeclarationsIntro,

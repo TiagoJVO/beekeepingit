@@ -1,4 +1,8 @@
-import 'package:flutter/painting.dart' show BorderRadius, Radius;
+// `widgets` rather than `painting` only for [BrandDimens.scrollBottomInsetOf],
+// the one measurement here that a screen cannot know without asking its own
+// `MediaQuery`. Everything else in this file is still a plain number.
+import 'package:flutter/widgets.dart'
+    show BorderRadius, BuildContext, MediaQuery, Radius;
 
 /// Melargil layout scale — radii, control heights and spacing (FR-UX-1,
 /// FR-AX-1, D-18, EPIC-11).
@@ -120,4 +124,30 @@ abstract final class BrandDimens {
   /// Bottom padding that clears the floating action button on scrollable
   /// screens (the prototype's `padding-bottom:120px`).
   static const double scrollBottomInset = 120;
+
+  /// [scrollBottomInset] as the screen at [context] actually has to reserve
+  /// it — the constant plus whatever bottom inset the *window* adds to that
+  /// screen's own bottom chrome (#773, FR-UX-2/FR-AX-1).
+  ///
+  /// The constant sizes the chrome itself. On a screen with a bottom
+  /// navigation bar that is the whole story: `Scaffold` strips the window's
+  /// bottom padding from the body **and** from the toast it places over it —
+  /// literally the same `removeBottomPadding: bottomNavigationBar != null ||
+  /// persistentFooterButtons != null` flag feeds both slots — so the toast's
+  /// opaque bar ends exactly where the body does.
+  ///
+  /// On a screen with neither (every route declared outside the shell in
+  /// `app_router.dart` — the members list, the stock-declaration log, the
+  /// needs-fix list) nothing is stripped from either, so a fixed `SnackBar`
+  /// carries the home-indicator inset *inside* its own bar and covers that
+  /// much more body: measured 142 rather than 108 at the 200% text scale
+  /// FR-AX-1 supports, on a 375x812 phone with a 34pt inset. Reserving the
+  /// bare constant there under-reserves by exactly the inset.
+  ///
+  /// Reading the inset off the [MediaQuery] the `Scaffold` handed the body
+  /// resolves to 0 inside the shell and to the real inset outside it, so this
+  /// one expression is correct on both sides of the shell — which is why it
+  /// is a derivation here rather than a second constant.
+  static double scrollBottomInsetOf(BuildContext context) =>
+      scrollBottomInset + MediaQuery.paddingOf(context).bottom;
 }
