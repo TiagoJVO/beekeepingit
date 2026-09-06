@@ -48,11 +48,13 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   `136` at the bottom (`BrandDimens.scrollBottomInset`) to clear the FAB **and
   the confirmation toast** — a toast covering the card it just confirmed a save
   to is `#631`. That inset is for screens a FAB actually floats over — a tab
-  root, or a pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
-  full-screen **form** is a pushed route with no FAB at all (the shell hides
-  its own on any pushed route), and its pinned action bar sits outside the
-  scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
-  the bar do the clearing. Where the inset does apply, use the constant: four
+  root, or a pushed screen with its own FAB (e.g.
+  `activity_detail_screen.dart`). A pushed screen with a pinned action bar
+  instead — a full-screen **form** (`#341`/`#357`) or a read-focused detail
+  screen like `todo_detail_screen.dart` (`#633`) — has no FAB at all (the
+  shell hides its own on any pushed route), and the bar sits outside the
+  scroll view — so it pads a plain `8` at the bottom and lets the bar do the
+  clearing. Where the inset does apply, use the constant: four
   detail screens carrying their own smaller `96` is how `#631` got in. Inside
   the shell the constant and `scrollBottomInsetOf(context)` are equal, so the
   screens already passing the bare constant are correct and need no churn;
