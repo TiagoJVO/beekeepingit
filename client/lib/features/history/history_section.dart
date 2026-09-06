@@ -113,12 +113,26 @@ class HistoryTimelineList extends ConsumerWidget {
     super.key,
     required this.entries,
     this.shrinkWrap = false,
+    bool? reserveBottomChrome,
     this.maxItems,
     this.onViewAll,
-  });
+  }) : reserveBottomChrome = reserveBottomChrome ?? !shrinkWrap;
 
   final List<HistoryEntry> entries;
   final bool shrinkWrap;
+
+  /// Whether this list reserves the bottom chrome band itself (#773).
+  ///
+  /// Separate from [shrinkWrap] on purpose. The two happen to coincide for
+  /// today's two callers — the embedded preview shrink-wraps inside a page
+  /// that already reserves the band, the full screen does neither — but they
+  /// mean unrelated things: one is "build every row up front", the other is
+  /// "nobody above me has reserved the toast's landing space". Defaulting one
+  /// from the other keeps both call sites unchanged; naming it separately
+  /// means a future caller that wants a shrink-wrapped list somewhere nothing
+  /// else reserves the band can say so, instead of silently getting no
+  /// padding because of a layout flag.
+  final bool reserveBottomChrome;
   final int? maxItems;
   final VoidCallback? onViewAll;
 
@@ -161,9 +175,9 @@ class HistoryTimelineList extends ConsumerWidget {
       // chrome band (#773); the embedded preview is a block inside the detail
       // page's scroll view, which reserves that band once for the whole page,
       // so reserving it again here would open a 120px hole mid-card.
-      padding: shrinkWrap
-          ? EdgeInsets.zero
-          : EdgeInsets.only(bottom: BrandDimens.scrollBottomInsetOf(context)),
+      padding: reserveBottomChrome
+          ? EdgeInsets.only(bottom: BrandDimens.scrollBottomInsetOf(context))
+          : EdgeInsets.zero,
       itemCount: visible.length,
       itemBuilder: (context, i) => _HistoryEntryTile(
         key: Key('history-entry-${visible[i].id}'),

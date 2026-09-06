@@ -144,10 +144,21 @@ abstract final class BrandDimens {
   /// FR-AX-1 supports, on a 375x812 phone with a 34pt inset. Reserving the
   /// bare constant there under-reserves by exactly the inset.
   ///
-  /// Reading the inset off the [MediaQuery] the `Scaffold` handed the body
-  /// resolves to 0 inside the shell and to the real inset outside it, so this
-  /// one expression is correct on both sides of the shell — which is why it
-  /// is a derivation here rather than a second constant.
+  /// Reading the inset off the ambient [MediaQuery] resolves to 0 inside the
+  /// shell and to the real inset outside it, so this one expression is
+  /// correct on both sides of the shell — which is why it is a derivation
+  /// here rather than a second constant.
+  ///
+  /// Precisely what that correctness rests on, since it is easy to overstate:
+  /// **no `Scaffold` with a `bottomNavigationBar` sits between the caller and
+  /// the shell.** It does *not* rest on reading the context from inside a
+  /// `body:` slot — every call site today reads its own `build` context,
+  /// which is above its screen's local `Scaffold`, and is right anyway
+  /// because none of those local `Scaffold`s sets a `bottomNavigationBar`;
+  /// only the shell's outer one does, and that is an ancestor either way. A
+  /// future screen nested in the shell that gives itself a local
+  /// `bottomNavigationBar` would break that assumption — reserve from a
+  /// context below that bar's `Scaffold`, or reserve the bare constant.
   static double scrollBottomInsetOf(BuildContext context) =>
       scrollBottomInset + MediaQuery.paddingOf(context).bottom;
 }
