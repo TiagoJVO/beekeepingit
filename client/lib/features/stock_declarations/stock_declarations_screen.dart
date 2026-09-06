@@ -306,43 +306,51 @@ class _RecordDeclarationDialogState extends State<_RecordDeclarationDialog> {
 
     return AlertDialog(
       title: Text(l10n.stockDeclarationRecordDialogTitle),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.stockDeclarationHiveTotal(widget.totalHives)),
-          const SizedBox(height: 16),
-          // One label pattern app-wide (#629, FR-UX-1): both labels sit ABOVE
-          // their field, never animated into the box border.
-          LabeledField(
-            label: l10n.stockDeclarationDateLabel,
-            // A tappable row rather than a bare text button so the target
-            // comfortably clears the 44x44 gloves-friendly minimum (D-18).
-            child: InkWell(
-              key: const Key('stock-declaration-date-field'),
-              onTap: _pickDate,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  suffixIcon: Icon(Icons.calendar_today_outlined),
+      // Scrollable content: the dialog's body has a hard height budget on a
+      // short viewport, and it was already over it at a large OS text scale
+      // (a bare Column overflowed by 30px at 360x640 / 1.5x before #629, and
+      // the two labels this issue moves above their fields cost it more).
+      // A RenderFlex overflow does not just look wrong — the clipped part is
+      // unreachable, which here is the Note field (FR-AX-1, D-18).
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.stockDeclarationHiveTotal(widget.totalHives)),
+            const SizedBox(height: 16),
+            // One label pattern app-wide (#629, FR-UX-1): both labels sit ABOVE
+            // their field, never animated into the box border.
+            LabeledField(
+              label: l10n.stockDeclarationDateLabel,
+              // A tappable row rather than a bare text button so the target
+              // comfortably clears the 44x44 gloves-friendly minimum (D-18).
+              child: InkWell(
+                key: const Key('stock-declaration-date-field'),
+                onTap: _pickDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    suffixIcon: Icon(Icons.calendar_today_outlined),
+                  ),
+                  child: Text(formatting.date(_declaredOn)),
                 ),
-                child: Text(formatting.date(_declaredOn)),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          LabeledField(
-            label: l10n.stockDeclarationNotesLabel,
-            child: TextField(
-              key: const Key('stock-declaration-notes-field'),
-              controller: _notesController,
-              maxLength: 2000,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: l10n.stockDeclarationNotesHint,
+            const SizedBox(height: 16),
+            LabeledField(
+              label: l10n.stockDeclarationNotesLabel,
+              child: TextField(
+                key: const Key('stock-declaration-notes-field'),
+                controller: _notesController,
+                maxLength: 2000,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: l10n.stockDeclarationNotesHint,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(

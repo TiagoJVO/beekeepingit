@@ -352,6 +352,43 @@ void _recordFlowTests() {
       });
 
       testWidgets(
+        'both fields stay reachable on a short phone at a large OS text '
+        'scale — a label above each field costs the dialog two more lines, '
+        'and its body has a hard height budget (FR-AX-1, D-18)',
+        (tester) async {
+          tester.view.physicalSize = const Size(360, 640);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          await tester.pumpWidget(
+            MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+              child: _buildScreen(
+                orgRegistrationNumber: 'PT-111',
+                apiaries: const [
+                  Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+                ],
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('stock-declarations-record-PT-111')),
+          );
+          await tester.pumpAndSettle();
+
+          // A RenderFlex overflow here is not cosmetic: the clipped part is
+          // the Note field, and clipped content cannot be tapped.
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const Key('stock-declaration-notes-field')),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
         'the fields keep the accessible name their floating labels used to '
         'give them (FR-AX-1)',
         (tester) async {
