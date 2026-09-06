@@ -653,4 +653,64 @@ void main() {
       );
     });
   });
+
+  // #769 (FR-UX-1): this screen hung its 480px column off a plain `Center`,
+  // the shape #630 replaced on profile and new-organization. Measured at
+  // 375x812 the three-field form left a 178.5px dead band under the header.
+  group('layout at 375x812 (#769, FR-UX-1)', () {
+    Future<void> pumpDetails(WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeOrganizationController(
+            name: 'Apiarios do Montargil',
+            address: 'Montargil, Ponte de Sor',
+            registrationNumber: 'PT-123456',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the form starts immediately under the header', (tester) async {
+      useViewport(tester);
+      await pumpDetails(tester);
+
+      final scroll = find.ancestor(
+        of: find.byKey(_nameField),
+        matching: find.byType(SingleChildScrollView),
+      );
+      // Guarded before getRect so a second wrapping scroll view fails here
+      // rather than with an opaque "matched N widgets".
+      expect(scroll, findsOneWidget);
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(scroll).top;
+
+      expect(
+        contentTop - headerBottom,
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the organization details form must start just under the header '
+            'like every other form screen; it started '
+            '${contentTop - headerBottom}px below it',
+      );
+    });
+
+    // A FORWARD guard, not a reproduction — Save cleared both bars before
+    // the change too. It protects the opposite failure: top-aligning a short
+    // form hard enough to float its primary action up into the top third,
+    // out of a one-handed thumb's reach.
+    testWidgets('Save stays within comfortable thumb reach', (tester) async {
+      useViewport(tester);
+      await pumpDetails(tester);
+
+      expectWithinThumbReach(
+        tester,
+        find.byKey(_saveButton),
+        label: 'Save organization details',
+      );
+    });
+  });
 }

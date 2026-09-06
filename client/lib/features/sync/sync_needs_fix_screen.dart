@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/validation/sync_op_validator.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'sync_rejected_repository.dart';
@@ -65,7 +66,19 @@ class SyncNeedsFixScreen extends ConsumerWidget {
             );
           }
           return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            // This screen raises no toast of its own, and it still reserves
+            // the band (#773): a `ScaffoldMessenger` re-presents its queue in
+            // whatever `Scaffold` is up, so the toast raised on the account
+            // screen this list is reached from is still there when the list
+            // replaces it — and what it would cover is a rejected write, the
+            // one thing here the user has to act on. Outside the shell, so
+            // the band carries the home-indicator inset too.
+            padding: EdgeInsets.fromLTRB(
+              0,
+              8,
+              0,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
             itemCount: ops.length,
             separatorBuilder: (_, _) => const SizedBox(height: 4),
             itemBuilder: (context, i) => _RejectedTile(op: ops[i]),
@@ -196,15 +209,23 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
                 ],
               ),
               const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              // [OverflowBar], not a [Row]: at the 200% text scale the field
+              // UX supports (FR-AX-1) "Dismiss" + "Fix" no longer fit side by
+              // side on a 375pt phone, and a Row answers that by clipping the
+              // Fix action behind an overflow stripe. The bar stacks them
+              // instead, which is what a two-action group is supposed to do
+              // when the text outgrows the row (#773).
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 4,
+                overflowAlignment: OverflowBarAlignment.end,
+                overflowSpacing: 4,
                 children: [
                   TextButton(
                     key: Key('needs-fix-dismiss-${op.id}'),
                     onPressed: _dismissing ? null : _dismiss,
                     child: Text(l10n.syncNeedsFixDismissAction),
                   ),
-                  const SizedBox(width: 4),
                   FilledButton.tonalIcon(
                     key: Key('needs-fix-fix-${op.id}'),
                     onPressed: () => _navigateToFix(context, op),

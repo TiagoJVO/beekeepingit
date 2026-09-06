@@ -258,6 +258,7 @@ Widget _buildApp({
 /// [DeviceLocationService]). Location is mandatory (#341), so create tests
 /// must set one before saving.
 Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('apiary-toggle-map-button')));
   await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-use-current-location-button')));
@@ -575,6 +576,9 @@ void main() {
       // Tapping "set on map" expands the embedded map picker (#252 AC:
       // "placing/dragging a pin on an embedded map picker") and reveals its
       // controls including "use current location".
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('apiary-location-picker')), findsOneWidget);
@@ -729,6 +733,9 @@ void main() {
       );
 
       // Expand the map first (collapsed by default now).
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
       final picker = find.byKey(const Key('apiary-location-picker'));
@@ -875,6 +882,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -911,6 +921,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -953,6 +966,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('apiary-toggle-map-button')),
+      );
       await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
       await tester.pumpAndSettle();
 
@@ -1005,6 +1021,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1051,6 +1070,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1100,6 +1122,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1137,6 +1162,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1233,6 +1261,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -1297,6 +1328,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 
@@ -1368,6 +1402,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('apiary-toggle-map-button')),
+        );
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
 

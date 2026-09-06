@@ -99,7 +99,14 @@ class _OrganizationDetailsScreenState
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.organizationDetailsTitle)),
-      body: Center(
+      // Horizontally centred (so the 480px column stays middle-of-page on a
+      // wide window) but TOP-aligned, the shape #630 settled on for profile
+      // and new-organization (#769, FR-UX-1). A plain `Center` split the
+      // leftover height into equal bands and left a measured 178.5px of dead
+      // space under the header on a 375x812 phone — this three-field form is
+      // shorter than a handset viewport, so the band was always on screen.
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(

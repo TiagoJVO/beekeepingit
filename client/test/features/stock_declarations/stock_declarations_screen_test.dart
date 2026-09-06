@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/a11y_matchers.dart';
+import '../../support/bottom_chrome.dart';
 
 /// FR-AP-10 (#298): the stock-declaration log screen.
 ///
@@ -471,5 +472,61 @@ void _recordFlowTests() {
         );
       }
     });
+  });
+
+  // #773 (FR-UX-2, FR-AX-1): the log is a plain `ListView` that reserved
+  // nothing at the bottom, so the "Declaration recorded" toast this screen
+  // raises landed on the last registration-number card — the very block it
+  // was confirming a save to. Outside the shell (no bottom navigation, no
+  // FAB), so the band it needs is the toast's own height.
+  group('the bottom chrome band (#773, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the last registration-number card, at '
+        '${textScale}x text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+          await tester.pumpWidget(
+            _buildScreen(
+              apiaries: const [
+                Apiary(
+                  id: 'a1',
+                  name: 'Serra Norte',
+                  hiveCount: 10,
+                  registrationNumber: 'PT-111',
+                ),
+                Apiary(
+                  id: 'a2',
+                  name: 'Monte Alto',
+                  hiveCount: 20,
+                  registrationNumber: 'PT-222',
+                ),
+                Apiary(
+                  id: 'a3',
+                  name: 'Vale Fundo',
+                  hiveCount: 30,
+                  registrationNumber: 'PT-333',
+                ),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(ListView));
+
+          // `stockDeclarationSaved` — the copy this screen actually shows
+          // once a declaration is recorded (app_en.arb).
+          await showToast(tester, message: 'Declaration recorded');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('stock-declarations-group-PT-333')),
+            reason:
+                'the save toast must land in the band the log reserves, not '
+                'on the declaration block it is reporting on',
+          );
+        },
+      );
+    }
   });
 }
