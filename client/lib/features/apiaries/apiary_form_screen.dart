@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart' as ll;
 
 import '../../core/geo/device_location.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -579,6 +580,12 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   // allowance but over the server's 200-BYTE
                                   // cap, which only a save-time check can
                                   // catch.
+                                  // Announced, not just painted (#750,
+                                  // FR-AX-1, D-18) — including a save-time
+                                  // sync-validation message, which is never
+                                  // the FIRST error the SDK announces once
+                                  // another field also failed.
+                                  errorBuilder: announcedFieldError,
                                   validator: (v) =>
                                       (v == null || v.trim().isEmpty)
                                       ? l10n.apiaryNameRequired
@@ -598,6 +605,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   decoration: InputDecoration(
                                     hintText: l10n.apiaryPlaceLabelHint,
                                   ),
+                                  // Announced, not just painted (#750,
+                                  // FR-AX-1, D-18).
+                                  errorBuilder: announcedFieldError,
                                   validator: (_) => _syncErrors.messageFor(
                                     l10n,
                                     'place_label',
@@ -739,6 +749,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   decoration: InputDecoration(
                                     hintText: l10n.apiaryNotesHint,
                                   ),
+                                  // Announced, not just painted (#750,
+                                  // FR-AX-1, D-18).
+                                  errorBuilder: announcedFieldError,
                                   validator: (_) =>
                                       _syncErrors.messageFor(l10n, 'notes'),
                                 ),
@@ -767,6 +780,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   decoration: InputDecoration(
                                     hintText: l10n.apiaryRegistrationNumberHint,
                                   ),
+                                  // Announced, not just painted (#750,
+                                  // FR-AX-1, D-18).
+                                  errorBuilder: announcedFieldError,
                                   validator: (_) => _syncErrors.messageFor(
                                     l10n,
                                     'registration_number',

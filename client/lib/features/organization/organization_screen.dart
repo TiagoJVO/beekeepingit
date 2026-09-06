@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
 import 'organization_repository.dart';
@@ -38,12 +39,14 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
 
   /// Drops the last save's server verdict for [field] once its value changes
   /// (#649) — the same rule apiary_form_screen.dart applies in its
-  /// `Form.onChanged`. Server errors arrive as `InputDecoration.errorText`,
-  /// which `InputDecoration.copyWith` preserves whenever the local validator
-  /// passes, so autovalidation alone would leave a rejected-value message
-  /// sitting under a value the user has already rewritten. The client can't
-  /// know the new value satisfies the server, so this clears on edit rather
-  /// than on validity: the next save re-asks.
+  /// `Form.onChanged`. Server errors arrive as `FormField.forceErrorText`
+  /// (#750), which the field holds onto until the property itself changes:
+  /// autovalidation cannot clear it, because `forceErrorText` overrides the
+  /// validator entirely. Without this the rejected-value message would sit
+  /// under a value the user has already rewritten AND keep
+  /// `Form.validate()` false, so the save button would stay dead. The client
+  /// can't know the new value satisfies the server, so this clears on edit
+  /// rather than on validity: the next save re-asks.
   void _clearFieldError(String field) {
     if (!_fieldErrors.containsKey(field)) return;
     setState(() => _fieldErrors = {..._fieldErrors}..remove(field));
@@ -144,9 +147,19 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                       // address.
                       autovalidateMode: AutovalidateMode.onUserInteraction,
                       onChanged: (_) => _clearFieldError('name'),
-                      decoration: InputDecoration(
-                        errorText: _fieldErrors['name'],
-                      ),
+                      // Both messages — the local validator's and the
+                      // server's 422 — are announced, not just painted
+                      // (#750, FR-AX-1, D-18). The server one travels as
+                      // `forceErrorText:` so it also sets
+                      // `FormFieldState.hasError`, which is what marks the
+                      // field `validationResult: invalid`; a decoration-only
+                      // `error:`/`errorText:` would leave it reading as
+                      // VALID under a visibly red message. It overrides the
+                      // validator and blocks the next save until the value
+                      // changes — see field_error.dart, and `onChanged`
+                      // above, which is what releases it.
+                      forceErrorText: _fieldErrors['name'],
+                      errorBuilder: announcedFieldError,
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? l10n.organizationNameRequired
                           : null,
@@ -159,9 +172,14 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                       key: const Key('organization-address-field'),
                       controller: _addressController,
                       onChanged: (_) => _clearFieldError('address'),
-                      decoration: InputDecoration(
-                        errorText: _fieldErrors['address'],
-                      ),
+                      // No local validator (the address is optional), but
+                      // the server can still reject it — that 422 message
+                      // must be announced AND mark the field invalid (#750,
+                      // FR-AX-1, D-18), which only `forceErrorText` does.
+                      // `errorBuilder` renders it, and stays wired for the
+                      // day a validator is added.
+                      forceErrorText: _fieldErrors['address'],
+                      errorBuilder: announcedFieldError,
                     ),
                   ),
                   const SizedBox(height: 24),

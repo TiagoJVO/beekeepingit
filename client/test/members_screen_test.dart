@@ -7,6 +7,7 @@ import 'package:beekeepingit_client/features/members/members_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -314,6 +315,112 @@ void main() {
       find.textContaining('already has a pending invitation'),
       findsOneWidget,
     );
+  });
+
+  // #750 (FR-AX-1, D-18): a 422 that names the `email` field is rendered
+  // under the field rather than in a snackbar, so — unlike the 409 above —
+  // it never passes through `Form.validate()` and the SDK's own
+  // announcement path never sees it. It has to carry the live region
+  // itself, AND mark the field invalid, or a screen-reader user gets a red
+  // rectangle and an `aria-invalid="false"` field.
+  testWidgets('a mocked 422 email field error is announced and marks the '
+      'field invalid', (tester) async {
+    final handle = tester.ensureSemantics();
+    final controller = _FakeMembersController(
+      const MembersState(members: [], invitations: []),
+      onInvite: ({required email, role = 'user'}) async {
+        throw const ApiException(
+          statusCode: 422,
+          code: 'validation.failed',
+          detail: 'one or more fields are invalid',
+          fieldErrors: [
+            ApiFieldError(
+              field: 'email',
+              code: 'not_allowed',
+              message: 'that domain is not allowed',
+            ),
+          ],
+        );
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('invite-email-field')),
+      'blocked@example.com',
+    );
+    await tester.tap(find.byKey(const Key('invite-submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('that domain is not allowed'), findsOneWidget);
+    expectLiveRegion(tester, find.text('that domain is not allowed'));
+    // The message only — the field's name is already announced by its own
+    // node and must not be folded in a second time (#629).
+    expect(
+      tester.getSemantics(find.text('that domain is not allowed')).label,
+      'that domain is not allowed',
+    );
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('invite-email-field')))
+          .getSemanticsData()
+          .validationResult,
+      SemanticsValidationResult.invalid,
+    );
+    handle.dispose();
+  });
+
+  // The counterpart: `forceErrorText` makes the field genuinely invalid, so
+  // `Form.validate()` returns false while the server's verdict stands. The
+  // verdict must therefore be dropped the moment the user edits the address
+  // it judged (#649's rule) — otherwise the invite button is dead for the
+  // rest of the session (#750).
+  testWidgets('editing the email after a 422 lets the next invite through '
+      '(#750, #649)', (tester) async {
+    var invites = 0;
+    final controller = _FakeMembersController(
+      const MembersState(members: [], invitations: []),
+      onInvite: ({required email, role = 'user'}) async {
+        invites++;
+        if (invites == 1) {
+          throw const ApiException(
+            statusCode: 422,
+            code: 'validation.failed',
+            detail: 'one or more fields are invalid',
+            fieldErrors: [
+              ApiFieldError(
+                field: 'email',
+                code: 'not_allowed',
+                message: 'that domain is not allowed',
+              ),
+            ],
+          );
+        }
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('invite-email-field')),
+      'blocked@example.com',
+    );
+    await tester.tap(find.byKey(const Key('invite-submit-button')));
+    await tester.pumpAndSettle();
+    expect(invites, 1);
+    expect(find.text('that domain is not allowed'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('invite-email-field')),
+      'ok@example.com',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('that domain is not allowed'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('invite-submit-button')));
+    await tester.pumpAndSettle();
+    expect(invites, 2);
   });
 
   testWidgets('revoking a pending invitation shows success', (tester) async {

@@ -17,6 +17,7 @@ import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -334,6 +335,10 @@ void main() {
   testWidgets('surfaces a mocked 422 field error from the server', (
     tester,
   ) async {
+    // The semantics tree has to be alive for the announcement assertions
+    // below: a message that is painted without being announced, on a field
+    // that still reads as valid, is exactly the #750 bug.
+    final handle = tester.ensureSemantics();
     final controller = _FakeProfileController(
       _profile(),
       onSubmit: ({name, email, locale}) async {
@@ -358,6 +363,77 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('name must not be empty'), findsOneWidget);
+
+    // #750 (FR-AX-1, D-18): a server-supplied field error never passes
+    // through `Form.validate()`, so the SDK's own announcement path never
+    // sees it — the message node has to carry the live region itself, and
+    // announce the MESSAGE only, not the field's name a second time (#629).
+    expectLiveRegion(tester, find.text('name must not be empty'));
+    expect(
+      tester.getSemantics(find.text('name must not be empty')).label,
+      'name must not be empty',
+    );
+    // And the field has to READ as failing. Only `forceErrorText` sets
+    // `FormFieldState._errorText`, which is what `validationResult` is
+    // derived from.
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('account-name-field')))
+          .getSemanticsData()
+          .validationResult,
+      SemanticsValidationResult.invalid,
+    );
+    handle.dispose();
+  });
+
+  // The counterpart of the block above: because `forceErrorText` makes the
+  // field genuinely invalid, `Form.validate()` returns false while the
+  // server's verdict stands — so the verdict MUST be dropped the moment the
+  // user edits the value it judged (#649's rule, which profile and
+  // organization already applied), or the Save button is dead for the rest
+  // of the session (#750).
+  testWidgets('editing the name after a server field error lets the next '
+      'save through (#750, #649)', (tester) async {
+    var submissions = 0;
+    final controller = _FakeProfileController(
+      _profile(),
+      onSubmit: ({name, email, locale}) async {
+        submissions++;
+        if (submissions == 1) {
+          throw const ApiException(
+            statusCode: 422,
+            code: 'validation.failed',
+            detail: 'one or more fields are invalid',
+            fieldErrors: [
+              ApiFieldError(
+                field: 'name',
+                code: 'reserved',
+                message: 'that name is reserved',
+              ),
+            ],
+          );
+        }
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('account-name-field')),
+      'Reserved',
+    );
+    await tester.tap(find.byKey(const Key('account-save-button')));
+    await tester.pumpAndSettle();
+    expect(submissions, 1);
+    expect(find.text('that name is reserved'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('account-name-field')), 'Ana');
+    await tester.pumpAndSettle();
+    expect(find.text('that name is reserved'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('account-save-button')));
+    await tester.pumpAndSettle();
+    expect(submissions, 2);
   });
 
   testWidgets('org admins see the manage-members action (#172, #197)', (

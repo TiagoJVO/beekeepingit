@@ -814,6 +814,168 @@ void main() {
       }
     });
   });
+
+  // A blocked save paints its errors in red under the fields — a signal a
+  // screen-reader user never receives. The SDK's own `InputDecorator` wraps
+  // the message in `Semantics(liveRegion: !supportsAnnounce)`, and
+  // `supportsAnnounce` is TRUE on web and iOS (this app ships as a Flutter
+  // Web PWA, D-10), so on our target platform that live region is switched
+  // OFF; the SDK instead relies on `FormState.validate()` announcing the
+  // FIRST error only — which never covers a server-supplied 422 error, the
+  // 2nd..nth error of one blocked save, or an error raised by per-field
+  // `autovalidateMode.onUserInteraction` (#649).
+  //
+  // Note these assertions read the REAL `SemanticsNode`'s flags and compare
+  // labels with `==`. `contains` is what hid the duplicate-announcement
+  // defect while #658 was being written (see the #662 group above), and the
+  // same discipline is what proves the fix here announces the MESSAGE and
+  // not the field's name a second time.
+  group('form validation errors are announced (#750, FR-AX-1, D-18)', () {
+    testWidgets('profile: the validator error is a live region', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _pumpProfileForm(tester);
+      await _submitProfile(tester);
+
+      expect(find.text(_profileNameRequired), findsOneWidget);
+      // The error node must be a live region so a screen reader speaks the
+      // message when it appears (#750 AC1).
+      expectLiveRegion(tester, find.text(_profileNameRequired));
+      handle.dispose();
+    });
+
+    // AC2's guard: the announcement has to come from the MESSAGE node, not
+    // from the field. A live region on the field's own node would re-read
+    // the whole field — name, value, error — on every keystroke.
+    testWidgets('profile: the field node itself is NOT a live region', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _pumpProfileForm(tester);
+      await _submitProfile(tester);
+
+      expectLiveRegion(
+        tester,
+        find.byKey(const Key('profile-name-field')),
+        isLiveRegion: false,
+      );
+      handle.dispose();
+    });
+
+    // #629 guard: the field already owns "Name" as its accessible name
+    // (LabeledField annotates it). If the fix folded the message into that
+    // node — or the field's name into the message node — the field would be
+    // announced twice.
+    testWidgets('profile: the field announces its name and the error node '
+        'announces only the message (#629)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpProfileForm(tester);
+      await _submitProfile(tester);
+
+      expect(
+        tester.getSemantics(find.byKey(const Key('profile-name-field'))).label,
+        'Name',
+      );
+      expect(
+        tester.getSemantics(find.text(_profileNameRequired)).label,
+        _profileNameRequired,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('organization: the validator error is a live region', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _withMaterial(
+          const OrganizationScreen(),
+          overrides: [
+            organizationProvider.overrideWith(_EmptyOrganizationController.new),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('organization-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(_organizationNameRequired), findsOneWidget);
+      expectLiveRegion(tester, find.text(_organizationNameRequired));
+      expect(
+        tester
+            .getSemantics(find.byKey(const Key('organization-name-field')))
+            .label,
+        'Organization name',
+      );
+      expect(
+        tester.getSemantics(find.text(_organizationNameRequired)).label,
+        _organizationNameRequired,
+      );
+      handle.dispose();
+    });
+
+    // AC2, behaviourally: typing more invalid input leaves the message
+    // unchanged, so there must still be exactly ONE node carrying it, still
+    // a live region, still labelled only with the message. The announcement
+    // is driven by the message CHANGING, never by keystrokes.
+    testWidgets('profile: typing more invalid input leaves exactly one, '
+        'unchanged error node', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpProfileForm(tester);
+      await _submitProfile(tester);
+
+      // Whitespace only — the validator trims, so the same message stays up.
+      await tester.enterText(
+        find.byKey(const Key('profile-name-field')),
+        '   ',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(_profileNameRequired), findsOneWidget);
+      expect(
+        tester.getSemantics(find.text(_profileNameRequired)).label,
+        _profileNameRequired,
+      );
+      expectLiveRegion(tester, find.text(_profileNameRequired));
+      expectLiveRegion(
+        tester,
+        find.byKey(const Key('profile-name-field')),
+        isLiveRegion: false,
+      );
+      handle.dispose();
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Announced-field-error helpers (#750).
+// ---------------------------------------------------------------------------
+
+/// The localized `profileNameRequired` / `organizationNameRequired` strings,
+/// spelled out so the assertions can compare the announced label with `==`.
+const _profileNameRequired = 'Enter your name.';
+const _organizationNameRequired = 'Enter an organization name.';
+
+Future<void> _pumpProfileForm(WidgetTester tester) async {
+  await tester.pumpWidget(
+    _withMaterial(
+      const ProfileScreen(),
+      overrides: [
+        profileProvider.overrideWith(_IncompleteProfileController.new),
+      ],
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// Saves the profile form with an empty name, raising the required-name
+/// validator error.
+Future<void> _submitProfile(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('profile-save-button')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('profile-save-button')));
+  await tester.pumpAndSettle();
 }
 
 // ---------------------------------------------------------------------------
