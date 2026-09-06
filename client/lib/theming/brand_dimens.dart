@@ -201,4 +201,39 @@ abstract final class BrandDimens {
   /// double-counts it. `login_screen.dart` is exactly that shape.
   static double scrollBottomInsetOf(BuildContext context) =>
       scrollBottomInset + MediaQuery.paddingOf(context).bottom;
+
+  // --- Content width caps (#650) ---
+
+  /// The narrow single-column content cap — 480px.
+  ///
+  /// Names the convention ~18 call sites already hand-roll as a bare
+  /// `maxWidth: 480` (forms, auth screens, hero cards): the width at which a
+  /// single field/card column stays readable without turning into a
+  /// full-bleed desktop slab. Use this constant for new call sites instead of
+  /// repeating the literal; see `git grep -n "maxWidth: 480" -- client/lib`
+  /// for the existing ones (some, like `login_screen.dart`'s 360 and
+  /// `apiary_map_screen.dart`'s 124, are deliberately different concepts and
+  /// stay as their own literals).
+  static const double maxWidthContent = 480;
+
+  /// The list-screen content cap — 720px, deliberately *not* [maxWidthContent].
+  ///
+  /// List rows need more breathing room than a single form column, but the
+  /// number is bounded above by
+  /// `activity_list_widgets.dart`'s `_kCompactRowBelowWidth` (600): that
+  /// widget measures its compact-vs-wide layout switch against the row's own
+  /// incoming constraints, not the window. A content column of 480 would
+  /// leave an activity row only `480 - 2*gutter` = 448px wide — under 600 —
+  /// and would silently flip every desktop activity row into the compact
+  /// three-line phone layout that #632 shipped specifically to distinguish
+  /// from wide. The worst-case bound is 720 minus the widest gutter any list
+  /// screen applies ([gutter], 16px each side): 688px, ~15% of clearance
+  /// above the 600px compact threshold. That is a conservative floor, not a
+  /// measurement of either call site that actually embeds the activity row
+  /// today — `activities_list_screen.dart` and `apiary_activities_screen
+  /// .dart` apply no horizontal padding around `ActivityListView` at all, so
+  /// the row's real incoming width there is the full 720, and the real
+  /// margin over 600 is wider still. Do not narrow this constant without
+  /// re-checking the 688px worst case against `_kCompactRowBelowWidth`.
+  static const double maxWidthList = 720;
 }

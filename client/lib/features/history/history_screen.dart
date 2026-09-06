@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'history_repository.dart';
 import 'history_section.dart';
@@ -42,20 +43,25 @@ class HistoryScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.historyScreenTitle)),
-      body: historyAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (err, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              l10n.historyError('$err'),
-              key: const Key('history-screen-error'),
-              textAlign: TextAlign.center,
+      // ContentColumn (#650): caps the timeline at BrandDimens.maxWidthList
+      // on a wide desktop viewport rather than stretching it across the
+      // window.
+      body: ContentColumn(
+        child: historyAsync.when(
+          loading: () =>
+              const Center(child: CircularProgressIndicator.adaptive()),
+          error: (err, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                l10n.historyError('$err'),
+                key: const Key('history-screen-error'),
+                textAlign: TextAlign.center,
+              ),
             ),
           ),
+          data: (entries) => HistoryTimelineList(entries: entries),
         ),
-        data: (entries) => HistoryTimelineList(entries: entries),
       ),
     );
   }

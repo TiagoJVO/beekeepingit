@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
 import '../../core/validation/sync_op_validator.dart';
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -50,40 +51,45 @@ class SyncNeedsFixScreen extends ConsumerWidget {
         ),
         title: Text(l10n.syncNeedsFixTitle),
       ),
-      body: rejected.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(l10n.syncNeedsFixLoadError('$err')),
-          ),
-        ),
-        data: (ops) {
-          if (ops.isEmpty) {
-            return EmptyState(
-              key: const Key('needs-fix-empty'),
-              message: l10n.syncNeedsFixEmpty,
-            );
-          }
-          return ListView.separated(
-            // This screen raises no toast of its own, and it still reserves
-            // the band (#773): a `ScaffoldMessenger` re-presents its queue in
-            // whatever `Scaffold` is up, so the toast raised on the account
-            // screen this list is reached from is still there when the list
-            // replaces it — and what it would cover is a rejected write, the
-            // one thing here the user has to act on. Outside the shell, so
-            // the band carries the home-indicator inset too.
-            padding: EdgeInsets.fromLTRB(
-              0,
-              8,
-              0,
-              BrandDimens.scrollBottomInsetOf(context),
+      // ContentColumn (#650): caps the list at BrandDimens.maxWidthList on a
+      // wide desktop viewport rather than stretching it across the window.
+      body: ContentColumn(
+        child: rejected.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(l10n.syncNeedsFixLoadError('$err')),
             ),
-            itemCount: ops.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 4),
-            itemBuilder: (context, i) => _RejectedTile(op: ops[i]),
-          );
-        },
+          ),
+          data: (ops) {
+            if (ops.isEmpty) {
+              return EmptyState(
+                key: const Key('needs-fix-empty'),
+                message: l10n.syncNeedsFixEmpty,
+              );
+            }
+            return ListView.separated(
+              // This screen raises no toast of its own, and it still
+              // reserves the band (#773): a `ScaffoldMessenger`
+              // re-presents its queue in whatever `Scaffold` is up, so the
+              // toast raised on the account screen this list is reached
+              // from is still there when the list replaces it — and what
+              // it would cover is a rejected write, the one thing here the
+              // user has to act on. Outside the shell, so the band carries
+              // the home-indicator inset too.
+              padding: EdgeInsets.fromLTRB(
+                0,
+                8,
+                0,
+                BrandDimens.scrollBottomInsetOf(context),
+              ),
+              itemCount: ops.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 4),
+              itemBuilder: (context, i) => _RejectedTile(op: ops[i]),
+            );
+          },
+        ),
       ),
     );
   }

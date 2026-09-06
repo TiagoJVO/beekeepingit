@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
@@ -38,29 +39,36 @@ class ApiaryActivitiesScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(apiary?.name ?? l10n.activitiesTitle)),
-      body: Column(
-        children: [
-          ActivityFilterBar(
-            type: type,
-            dateRange: dateRange,
-            onTypeChanged: (v) =>
-                ref.read(activityTypeFilterProvider(apiaryId).notifier).state =
-                    v,
-            onDateRangeChanged: (v) =>
-                ref
-                        .read(
-                          activityDateRangeFilterProvider(apiaryId).notifier,
-                        )
-                        .state =
-                    v,
-          ),
-          Expanded(
-            child: ActivityListView(
-              viewModel: viewModel,
-              emptyText: l10n.apiaryActivitiesEmpty,
+      // ContentColumn (#650): caps the list at BrandDimens.maxWidthList on a
+      // wide desktop viewport rather than stretching it across the window —
+      // same rationale as activities_list_screen.dart's own wrap.
+      body: ContentColumn(
+        child: Column(
+          children: [
+            ActivityFilterBar(
+              type: type,
+              dateRange: dateRange,
+              onTypeChanged: (v) =>
+                  ref
+                          .read(activityTypeFilterProvider(apiaryId).notifier)
+                          .state =
+                      v,
+              onDateRangeChanged: (v) =>
+                  ref
+                          .read(
+                            activityDateRangeFilterProvider(apiaryId).notifier,
+                          )
+                          .state =
+                      v,
             ),
-          ),
-        ],
+            Expanded(
+              child: ActivityListView(
+                viewModel: viewModel,
+                emptyText: l10n.apiaryActivitiesEmpty,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
