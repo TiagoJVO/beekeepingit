@@ -124,10 +124,18 @@ abstract final class BrandDimens {
   /// The chrome it has to clear is the floating action button *and* the
   /// confirmation toast (#631) — the toast is the app's only "your save
   /// worked" signal, so the card it is reporting on has to stay visible under
-  /// it. 120 covered the FAB at the default text size; a two-line toast at the
-  /// 200% text scale the field UX supports (FR-AX-1) measures ~108 on a 375pt
-  /// screen, and [gapToastNav] sits under it, so the band is widened to keep
-  /// the last card clear at that scale too.
+  /// it. A two-line toast at the 200% text scale the field UX supports
+  /// (FR-AX-1) measures ~108 on a 375pt screen.
+  ///
+  /// This number is a **heuristic margin, not derived arithmetic**. Do not
+  /// reconstruct it as `108 + gapToastNav`: [gapToastNav] sits *below* the
+  /// body, not inside it — the body ends at the gutter's top edge, which is
+  /// also where a fixed toast's bottom lands, so the band only ever has to
+  /// cover the toast's own height. 120 already cleared ~108 by 12. The extra
+  /// 16 buys headroom for the cases the measurement does not cover: a
+  /// narrower screen, or a message long enough to wrap to three lines
+  /// (`syncSupersededNotice` is far longer than "Apiary saved"), either of
+  /// which overruns 136 as easily as 120. Re-measure before tuning it.
   static const double scrollBottomInset = 136;
 
   /// Gap between a confirmation toast and the bottom navigation under it

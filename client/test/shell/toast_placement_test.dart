@@ -149,9 +149,20 @@ void main() {
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   }
 
-  /// The toast's *visible* bar. `SnackBar` wraps its [Material] in the
-  /// safe-area/margin padding that positions it, so the SnackBar's own rect
-  /// would measure that padding too and hide the very gap under test.
+  /// The toast's *visible* bar.
+  ///
+  /// For a `floating` SnackBar this indirection matters — the safe-area and
+  /// margin padding that positions it sits outside the [Material], so the
+  /// SnackBar's own rect would measure that padding and hide the gap under
+  /// test. This app uses `fixed`, where the `SafeArea` goes *inside* the
+  /// [Material] and the Scaffold passes `removeBottomPadding` whenever there
+  /// is a bottom navigation bar, so the two rects are measurably identical
+  /// (shell 636..684, account 730..812).
+  ///
+  /// Kept anyway, deliberately: it costs nothing, and it keeps these
+  /// assertions measuring the bar the user actually sees if the behaviour
+  /// ever changes. It is a guard, not a correction — do not cite it as
+  /// evidence that the plain SnackBar rect would be wrong today.
   Rect toastRect(WidgetTester tester) => tester.getRect(
     find
         .descendant(of: find.byType(SnackBar), matching: find.byType(Material))
