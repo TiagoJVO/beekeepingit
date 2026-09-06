@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -122,118 +123,124 @@ class _JourneysListScreenState extends ConsumerState<JourneysListScreen> {
     final dateRange = ref.watch(journeyDateRangeFilterProvider);
     final viewModelAsync = ref.watch(journeysViewModelProvider);
 
-    return Column(
-      children: [
-        JourneyFilterBar(
-          type: type,
-          status: status,
-          dateRange: dateRange,
-          onTypeChanged: (v) =>
-              ref.read(journeyTypeFilterProvider.notifier).state = v,
-          onStatusChanged: (v) =>
-              ref.read(journeyStatusFilterProvider.notifier).state = v,
-          onDateRangeChanged: (v) =>
-              ref.read(journeyDateRangeFilterProvider.notifier).state = v,
-        ),
-        Expanded(
-          child: viewModelAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(l10n.journeysError('$err')),
-              ),
-            ),
-            data: (vm) {
-              if (!vm.hasAnyJourneys) {
-                return EmptyState(
-                  message: l10n.journeysEmpty,
-                  icon: Icons.route_outlined,
-                );
-              }
-              // The current filters matched nothing (#47 AC: "an empty
-              // result set shows a clear empty state") — distinct from the
-              // "no journeys at all yet" state above, mirroring
-              // activities_list_screen.dart's own two-empty-states split.
-              if (vm.filtered.isEmpty) {
-                return EmptyState(message: l10n.journeysFilterNoResults);
-              }
-              return ListView.separated(
-                key: const Key('journeys-list'),
-                padding: const EdgeInsets.fromLTRB(
-                  BrandDimens.gutter,
-                  4,
-                  BrandDimens.gutter,
-                  BrandDimens.scrollBottomInset,
-                ),
-                itemCount: vm.filtered.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(height: BrandDimens.gapCard),
-                itemBuilder: (context, i) {
-                  final journey = vm.filtered[i];
-                  final typeLabel =
-                      activityTypeLabel(l10n, journey.mainActivityType) ??
-                      journey.mainActivityType;
-                  final statusLabel =
-                      journeyStatusLabel(l10n, journey.status) ??
-                      journey.status;
-                  final progress = vm.progressByJourney[journey.id];
-                  // The journey's main activity type drives its leading tile
-                  // accent, so a Cresta journey reads the same gold as its
-                  // own activities do elsewhere in the app (the shared
-                  // activity_list_widgets.dart mapping, not a local switch).
-                  final visual = activityTypeVisual(
-                    context,
-                    journey.mainActivityType,
-                  );
-                  return BrandRowCard(
-                    key: Key('journey-${journey.id}'),
-                    title: journey.name,
-                    subtitle: typeLabel,
-                    leading: LeadingIconTile(
-                      icon: activityTypeIcon(journey.mainActivityType),
-                      color: visual.color,
-                      tint: visual.tint,
-                    ),
-                    // The row announces as one composed label with its
-                    // children's semantics excluded (#662, BrandCard), so
-                    // the two badges — the row's ONLY open/closed and
-                    // progress signals — reach a screen reader through here
-                    // or not at all (FR-AX-1).
-                    trailingSemanticLabel: [
-                      l10n.journeyStatusSemanticLabel(statusLabel),
-                      if (progress != null && progress.planned > 0)
-                        l10n.journeyProgressBadge(
-                          progress.done,
-                          progress.planned,
-                        ),
-                    ].join('. '),
-                    trailing: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _StatusBadge(
-                          label: statusLabel,
-                          closed: !journey.isOpen,
-                        ),
-                        // Only shown once the journey has at least one
-                        // planned apiary — a "0/0" badge on a journey
-                        // that hasn't been planned yet would read as a
-                        // meaningless status rather than useful progress.
-                        if (progress != null && progress.planned > 0) ...[
-                          const SizedBox(height: 6),
-                          _ProgressBadge(progress: progress),
-                        ],
-                      ],
-                    ),
-                    onTap: () => context.go('/journeys/${journey.id}'),
-                  );
-                },
-              );
-            },
+    // ContentColumn (#650): caps the tab at BrandDimens.maxWidthList on a
+    // wide desktop viewport rather than stretching it across the window.
+    // Only this outermost wrap changes here — JourneyFilterBar
+    // (journey_list_widgets.dart) is untouched.
+    return ContentColumn(
+      child: Column(
+        children: [
+          JourneyFilterBar(
+            type: type,
+            status: status,
+            dateRange: dateRange,
+            onTypeChanged: (v) =>
+                ref.read(journeyTypeFilterProvider.notifier).state = v,
+            onStatusChanged: (v) =>
+                ref.read(journeyStatusFilterProvider.notifier).state = v,
+            onDateRangeChanged: (v) =>
+                ref.read(journeyDateRangeFilterProvider.notifier).state = v,
           ),
-        ),
-      ],
+          Expanded(
+            child: viewModelAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(l10n.journeysError('$err')),
+                ),
+              ),
+              data: (vm) {
+                if (!vm.hasAnyJourneys) {
+                  return EmptyState(
+                    message: l10n.journeysEmpty,
+                    icon: Icons.route_outlined,
+                  );
+                }
+                // The current filters matched nothing (#47 AC: "an empty
+                // result set shows a clear empty state") — distinct from the
+                // "no journeys at all yet" state above, mirroring
+                // activities_list_screen.dart's own two-empty-states split.
+                if (vm.filtered.isEmpty) {
+                  return EmptyState(message: l10n.journeysFilterNoResults);
+                }
+                return ListView.separated(
+                  key: const Key('journeys-list'),
+                  padding: const EdgeInsets.fromLTRB(
+                    BrandDimens.gutter,
+                    4,
+                    BrandDimens.gutter,
+                    BrandDimens.scrollBottomInset,
+                  ),
+                  itemCount: vm.filtered.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(height: BrandDimens.gapCard),
+                  itemBuilder: (context, i) {
+                    final journey = vm.filtered[i];
+                    final typeLabel =
+                        activityTypeLabel(l10n, journey.mainActivityType) ??
+                        journey.mainActivityType;
+                    final statusLabel =
+                        journeyStatusLabel(l10n, journey.status) ??
+                        journey.status;
+                    final progress = vm.progressByJourney[journey.id];
+                    // The journey's main activity type drives its leading tile
+                    // accent, so a Cresta journey reads the same gold as its
+                    // own activities do elsewhere in the app (the shared
+                    // activity_list_widgets.dart mapping, not a local switch).
+                    final visual = activityTypeVisual(
+                      context,
+                      journey.mainActivityType,
+                    );
+                    return BrandRowCard(
+                      key: Key('journey-${journey.id}'),
+                      title: journey.name,
+                      subtitle: typeLabel,
+                      leading: LeadingIconTile(
+                        icon: activityTypeIcon(journey.mainActivityType),
+                        color: visual.color,
+                        tint: visual.tint,
+                      ),
+                      // The row announces as one composed label with its
+                      // children's semantics excluded (#662, BrandCard), so
+                      // the two badges — the row's ONLY open/closed and
+                      // progress signals — reach a screen reader through here
+                      // or not at all (FR-AX-1).
+                      trailingSemanticLabel: [
+                        l10n.journeyStatusSemanticLabel(statusLabel),
+                        if (progress != null && progress.planned > 0)
+                          l10n.journeyProgressBadge(
+                            progress.done,
+                            progress.planned,
+                          ),
+                      ].join('. '),
+                      trailing: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _StatusBadge(
+                            label: statusLabel,
+                            closed: !journey.isOpen,
+                          ),
+                          // Only shown once the journey has at least one
+                          // planned apiary — a "0/0" badge on a journey
+                          // that hasn't been planned yet would read as a
+                          // meaningless status rather than useful progress.
+                          if (progress != null && progress.planned > 0) ...[
+                            const SizedBox(height: 6),
+                            _ProgressBadge(progress: progress),
+                          ],
+                        ],
+                      ),
+                      onTap: () => context.go('/journeys/${journey.id}'),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

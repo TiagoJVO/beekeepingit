@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -34,42 +35,46 @@ class StockDeclarationsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.stockDeclarationsTitle)),
-      body: ListView(
-        // The bottom gutter is the chrome band, not a gutter (#773): the
-        // "Declaration recorded" toast this screen raises used to land on the
-        // registration-number card it had just been recorded against. No FAB
-        // and no bottom navigation here — the route is declared outside the
-        // shell — so the band is the toast's own height, which out here
-        // includes the home-indicator inset the toast's bar carries;
-        // `scrollBottomInsetOf` adds it.
-        padding: EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          BrandDimens.scrollBottomInsetOf(context),
-        ),
-        children: [
-          Text(
-            l10n.stockDeclarationsIntro,
-            style: Theme.of(context).textTheme.bodyMedium,
+      // ContentColumn (#650): caps the log at BrandDimens.maxWidthList on a
+      // wide desktop viewport rather than stretching it across the window.
+      body: ContentColumn(
+        child: ListView(
+          // The bottom gutter is the chrome band, not a gutter (#773): the
+          // "Declaration recorded" toast this screen raises used to land on
+          // the registration-number card it had just been recorded against.
+          // No FAB and no bottom navigation here — the route is declared
+          // outside the shell — so the band is the toast's own height, which
+          // out here includes the home-indicator inset the toast's bar
+          // carries; `scrollBottomInsetOf` adds it.
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            BrandDimens.scrollBottomInsetOf(context),
           ),
-          const SizedBox(height: 24),
-          ...switch (declarations) {
-            AsyncData(:final value) => _groups(
-              context,
-              ref,
-              declarations: value,
-              apiaries: apiaries.value ?? const [],
+          children: [
+            Text(
+              l10n.stockDeclarationsIntro,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            AsyncError() => [Text(l10n.stockDeclarationsEmpty)],
-            _ => const [
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 24),
+            ...switch (declarations) {
+              AsyncData(:final value) => _groups(
+                context,
+                ref,
+                declarations: value,
+                apiaries: apiaries.value ?? const [],
               ),
-            ],
-          },
-        ],
+              AsyncError() => [Text(l10n.stockDeclarationsEmpty)],
+              _ => const [
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            },
+          ],
+        ),
       ),
     );
   }

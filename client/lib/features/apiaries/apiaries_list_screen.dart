@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/geo/device_location.dart';
 import '../../core/geo/haversine.dart';
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/content_column.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
@@ -265,40 +266,44 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('apiaries-search-field'),
-                  decoration: apiarySearchDecoration(
-                    l10n,
-                    suffixIcon: query.isEmpty
-                        ? null
-                        : IconButton(
-                            key: const Key('apiaries-search-clear-button'),
-                            icon: const Icon(Icons.clear),
-                            onPressed: () =>
-                                ref
-                                        .read(
-                                          apiariesSearchQueryProvider.notifier,
-                                        )
-                                        .state =
-                                    '',
-                          ),
+        ContentColumn(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('apiaries-search-field'),
+                    decoration: apiarySearchDecoration(
+                      l10n,
+                      suffixIcon: query.isEmpty
+                          ? null
+                          : IconButton(
+                              key: const Key('apiaries-search-clear-button'),
+                              icon: const Icon(Icons.clear),
+                              onPressed: () =>
+                                  ref
+                                          .read(
+                                            apiariesSearchQueryProvider
+                                                .notifier,
+                                          )
+                                          .state =
+                                      '',
+                            ),
+                    ),
+                    onChanged: (v) =>
+                        ref.read(apiariesSearchQueryProvider.notifier).state =
+                            v,
                   ),
-                  onChanged: (v) =>
-                      ref.read(apiariesSearchQueryProvider.notifier).state = v,
                 ),
-              ),
-              const SizedBox(width: 8),
-              _ApiariesViewToggle(
-                view: view,
-                onChanged: (v) =>
-                    ref.read(apiariesViewProvider.notifier).state = v,
-              ),
-            ],
+                const SizedBox(width: 8),
+                _ApiariesViewToggle(
+                  view: view,
+                  onChanged: (v) =>
+                      ref.read(apiariesViewProvider.notifier).state = v,
+                ),
+              ],
+            ),
           ),
         ),
         if (view == ApiariesView.list)
@@ -307,73 +312,79 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
           child: IndexedStack(
             index: view == ApiariesView.list ? 0 : 1,
             children: [
-              viewModel.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(l10n.apiariesError('$err')),
-                  ),
-                ),
-                data: (vm) {
-                  if (!vm.hasAnyApiaries) {
-                    return EmptyState(
-                      message: l10n.apiariesEmpty,
-                      icon: Icons.hive_outlined,
-                    );
-                  }
-                  if (vm.ordered.isEmpty) {
-                    return EmptyState(message: l10n.apiariesSearchNoResults);
-                  }
-
-                  final deviceLocation = location.value;
-                  final brand = context.brand;
-
-                  // Pull-to-refresh re-acquires the location on demand (#422).
-                  // AlwaysScrollableScrollPhysics keeps the gesture available
-                  // even when the list is too short to overscroll on its own;
-                  // the localized accessibility label comes from
-                  // MaterialLocalizations (no bespoke string needed).
-                  return RefreshIndicator(
-                    key: const Key('apiaries-list-refresh-indicator'),
-                    onRefresh: _refreshLocation,
-                    child: ListView.separated(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(
-                        BrandDimens.gutter,
-                        4,
-                        BrandDimens.gutter,
-                        BrandDimens.scrollBottomInset,
-                      ),
-                      itemCount: vm.ordered.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: BrandDimens.gapCard),
-                      itemBuilder: (context, i) {
-                        final apiary = vm.ordered[i];
-                        final distanceText = _distanceSubtitle(
-                          context,
-                          l10n,
-                          apiary,
-                          deviceLocation,
-                        );
-                        return BrandRowCard(
-                          key: Key('apiary-${apiary.id}'),
-                          title: apiary.name,
-                          subtitle: distanceText == null
-                              ? l10n.hiveCountValue(apiary.hiveCount)
-                              : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
-                          leading: LeadingIconTile(
-                            icon: Icons.hive,
-                            color: brand.cresta.color,
-                            tint: brand.cresta.tint,
-                          ),
-                          onTap: () => context.go('/apiaries/${apiary.id}'),
-                        );
-                      },
+              ContentColumn(
+                child: viewModel.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(l10n.apiariesError('$err')),
                     ),
-                  );
-                },
+                  ),
+                  data: (vm) {
+                    if (!vm.hasAnyApiaries) {
+                      return EmptyState(
+                        message: l10n.apiariesEmpty,
+                        icon: Icons.hive_outlined,
+                      );
+                    }
+                    if (vm.ordered.isEmpty) {
+                      return EmptyState(message: l10n.apiariesSearchNoResults);
+                    }
+
+                    final deviceLocation = location.value;
+                    final brand = context.brand;
+
+                    // Pull-to-refresh re-acquires the location on demand
+                    // (#422). AlwaysScrollableScrollPhysics keeps the gesture
+                    // available even when the list is too short to overscroll
+                    // on its own; the localized accessibility label comes
+                    // from MaterialLocalizations (no bespoke string needed).
+                    return RefreshIndicator(
+                      key: const Key('apiaries-list-refresh-indicator'),
+                      onRefresh: _refreshLocation,
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(
+                          BrandDimens.gutter,
+                          4,
+                          BrandDimens.gutter,
+                          BrandDimens.scrollBottomInset,
+                        ),
+                        itemCount: vm.ordered.length,
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: BrandDimens.gapCard),
+                        itemBuilder: (context, i) {
+                          final apiary = vm.ordered[i];
+                          final distanceText = _distanceSubtitle(
+                            context,
+                            l10n,
+                            apiary,
+                            deviceLocation,
+                          );
+                          return BrandRowCard(
+                            key: Key('apiary-${apiary.id}'),
+                            title: apiary.name,
+                            subtitle: distanceText == null
+                                ? l10n.hiveCountValue(apiary.hiveCount)
+                                : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
+                            leading: LeadingIconTile(
+                              icon: Icons.hive,
+                              color: brand.cresta.color,
+                              tint: brand.cresta.tint,
+                            ),
+                            onTap: () => context.go('/apiaries/${apiary.id}'),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
+              // Deliberately NOT wrapped in a ContentColumn (#650) — the map
+              // is full-bleed by design, unlike every other screen this
+              // milestone constrains.
               const ApiaryMapScreen(),
             ],
           ),

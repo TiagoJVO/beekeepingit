@@ -47,6 +47,21 @@ const _narrowViewport = Size(375, 812);
 /// The desktop width the audit found the row already excellent at.
 const _wideViewport = Size(1280, 800);
 
+/// The row's own incoming width once #650's `ContentColumn` clamps the
+/// Activities tab to `BrandDimens.maxWidthList` — the shipped column, not
+/// just a bare 1280px viewport. `maxWidthList`'s own doc comment
+/// (`brand_dimens.dart`) derives its safety margin against
+/// `_kCompactRowBelowWidth` from a CONSERVATIVE 688px bound (720 minus the
+/// widest gutter any list screen applies); the literal 720 used here is not
+/// that bound but the real number, because neither
+/// `activities_list_screen.dart` nor `apiary_activities_screen.dart` (the
+/// two screens that actually embed this row) puts any horizontal padding
+/// around `ActivityListView`. This is the case that suite must actually
+/// prove: at 1280 the row had the FULL viewport; at 720 it has ~56% of
+/// that, still comfortably above the 600px compact threshold, but no
+/// longer with 1280's slack.
+const _shippedColumnWidth = 720.0;
+
 /// The vertical budget for a three-line row at [_narrowViewport]: three text
 /// lines at the row's own type scale plus [ListTile]'s padding. The defect
 /// rendered ~230px (and ~550px inside the apiary detail card).
@@ -55,6 +70,19 @@ const _threeLineHeightBudget = 100.0;
 /// The vertical budget for the preserved WIDE row: title + a single subtitle
 /// line, with the actor beside them rather than beneath.
 const _wideHeightBudget = 96.0;
+
+/// The vertical budget for the wide row at #650's shipped 720px column,
+/// where the subtitle wraps onto its own permitted second line (`maxLines:
+/// 2` in `activity_list_widgets.dart`) rather than staying on one, as it
+/// does at the full 1280px viewport [_wideHeightBudget] covers.
+///
+/// Measured: 96px at 720px, against 88px at 1280px — the extra line costs
+/// 8px, not the ~20px a naive "one more text line" guess would predict,
+/// because [ListTile] already reserves room for a two-line subtitle by
+/// default. 108px leaves ~12.5% headroom above the 96px measurement, so a
+/// future font or padding change that grows the row moves this floor before
+/// it moves the underlying assertion at [_wideHeightBudget].
+const _shippedColumnHeightBudget = 108.0;
 
 /// A realistic increased system text size (#759): the middle of the ~1.3x–2x
 /// band `docs/design/accessibility-field-ux-checklist.md` asks every widget to
@@ -636,6 +664,116 @@ void main() {
       );
       expect(tester.getSize(_row('a1')).height, lessThan(_wideHeightBudget));
     });
+
+    testWidgets(
+      'at the shipped 720px column (#650) every attribute is still present '
+      'and the actor chip stays trailing',
+      (tester) async {
+        _useViewport(tester, _wideViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('en', 'GB'),
+            activities: [_activity()],
+            rowWidth: _shippedColumnWidth,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Every attribute, exactly as at 1280px — narrowing the row's
+        // incoming constraints to #650's shipped column must not lose any
+        // of them. Unlike the 1280px case, 720px is not wide enough to keep
+        // the full concatenated summary on ONE line — it wraps onto the
+        // subtitle's own second line instead (`subtitle: … Text(summary,
+        // maxLines: 2, …)` in activity_list_widgets.dart already allows
+        // this; it is not a `_kCompactRowBelowWidth` regression, which is
+        // about the row switching to the compact THREE-line phone layout
+        // altogether, not about how many lines the wide subtitle itself
+        // wraps to). `didExceedMaxLines` is asserted false so a value that
+        // silently overflowed past two lines — genuinely losing an
+        // attribute, the case #650's task brief calls out to stop and
+        // report on — fails loudly here instead.
+        final subtitle = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: _row('a1'),
+            matching: find.textContaining('Honey supers harvested: 4'),
+          ),
+        );
+        final text = subtitle.text.toPlainText();
+        expect(text, contains('Honey harvested (kg): 12.5'));
+        expect(text, contains('Hives involved: 9'));
+        expect(text, contains('Lot / batch identifier: 2026-07-A1'));
+        expect(
+          subtitle.didExceedMaxLines,
+          isFalse,
+          reason:
+              'the summary must fit within its two-line cap at 720px, not '
+              'truncate an attribute off the end',
+        );
+        expect(
+          subtitle.size.height,
+          lessThan(subtitle.preferredLineHeight * 2.5),
+          reason: 'the summary must wrap to at most two lines at 720px',
+        );
+
+        // The actor keeps its trailing chip rather than dropping to the
+        // compact row's stacked layout.
+        expect(
+          find.descendant(of: _row('a1'), matching: find.byType(Chip)),
+          findsOneWidget,
+        );
+        // Measured: 96px at 720px (two-line subtitle) vs. 88px at the full
+        // 1280px viewport (one-line subtitle) — [_shippedColumnBudget]
+        // documents the headroom above this measurement.
+        expect(
+          tester.getSize(_row('a1')).height,
+          lessThan(_shippedColumnHeightBudget),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'at the shipped 720px column (#650) Portuguese keeps the same wide '
+      'layout',
+      (tester) async {
+        _useViewport(tester, _wideViewport);
+        await tester.pumpWidget(
+          _buildList(
+            locale: const Locale('pt', 'PT'),
+            activities: [_activity()],
+            rowWidth: _shippedColumnWidth,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final subtitle = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: _row('a1'),
+            matching: find.textContaining('Alças de mel colhidas: 4'),
+          ),
+        );
+        final text = subtitle.text.toPlainText();
+        expect(text, contains('Mel colhido (kg): 12,5'));
+        expect(text, contains('Colmeias envolvidas: 9'));
+        expect(text, contains('Identificador de lote: 2026-07-A1'));
+        expect(
+          subtitle.didExceedMaxLines,
+          isFalse,
+          reason:
+              'the Portuguese summary — typically longer than English — '
+              'must still fit within the two-line cap at 720px',
+        );
+        expect(
+          find.descendant(of: _row('a1'), matching: find.byType(Chip)),
+          findsOneWidget,
+        );
+        expect(
+          tester.getSize(_row('a1')).height,
+          lessThan(_shippedColumnHeightBudget),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('the compact row at an increased system text scale (#759, FR-AX-1, '
