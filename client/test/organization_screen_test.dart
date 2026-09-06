@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/a11y_matchers.dart';
+
 /// A fake controller so tests drive [OrganizationScreen] without a real
 /// [ApiClient]/network call, matching profile_screen_test.dart's
 /// override-providers-not-network convention.
@@ -291,5 +293,49 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('address must be at most 500 characters'), findsNothing);
+  });
+
+  group('layout at 375x812 (#630, FR-UX-1)', () {
+    // Same dead-band bug as the profile screen: a plain `Center` pushed this
+    // onboarding form into the middle of the viewport instead of starting it
+    // under the header the way every other form screen does.
+    testWidgets('the form starts immediately under the header', (tester) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      final headerBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final contentTop = tester.getRect(find.byType(SingleChildScrollView)).top;
+
+      expect(
+        contentTop - headerBottom,
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
+        reason:
+            'the organization form must start just under the header like '
+            'every other form screen; it started '
+            '${contentTop - headerBottom}px below it',
+      );
+    });
+
+    // A FORWARD guard, not a reproduction — see the profile screen's own
+    // thumb-reach test: the centred layout passed this too, and what it
+    // protects against is top-aligning the action up into the top third.
+    testWidgets('the create action stays within comfortable thumb reach', (
+      tester,
+    ) async {
+      useViewport(tester);
+
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      expectWithinThumbReach(
+        tester,
+        find.byKey(const Key('organization-save-button')),
+        label: 'the create-organization action',
+      );
+    });
   });
 }
