@@ -15,6 +15,7 @@ import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_screen.dart';
+import 'apiary_search_decoration.dart';
 
 /// The free-text search query (FR-AP-6, D-17: client-side, apiaries-only).
 /// Ephemeral UI state — not persisted, reset on screen rebuild — so a plain
@@ -271,10 +272,8 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
               Expanded(
                 child: TextField(
                   key: const Key('apiaries-search-field'),
-                  decoration: InputDecoration(
-                    hintText: l10n.apiariesSearchHint,
-                    prefixIcon: const Icon(Icons.search),
-                    isDense: true,
+                  decoration: apiarySearchDecoration(
+                    l10n,
                     suffixIcon: query.isEmpty
                         ? null
                         : IconButton(
