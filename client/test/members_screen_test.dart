@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/a11y_matchers.dart';
+import 'support/bottom_chrome.dart';
 
 Member _member({
   String userId = 'user-1',
@@ -584,5 +585,51 @@ void main() {
         findsNothing,
       );
     });
+  });
+
+  // #773 (FR-UX-2, FR-AX-1): this screen raises five toasts of its own
+  // (invite sent, invite failed, invitation revoked, …) over a scroll view
+  // that reserved nothing at the bottom, so a confirmation landed on the very
+  // row it was confirming. It is outside the shell — no bottom navigation and
+  // no FAB — so the band it needs is the toast's own height, which is exactly
+  // what `#631` sized `scrollBottomInset` to.
+  group('the bottom chrome band (#773, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'a toast does not cover the last invitation row, at ${textScale}x '
+        'text',
+        (tester) async {
+          useFieldPhone(tester, textScale: textScale);
+          await tester.pumpWidget(
+            _buildScreen(
+              _FakeMembersController(
+                MembersState(
+                  members: [_member(userId: 'admin-1', role: 'admin')],
+                  invitations: [
+                    for (var i = 0; i < 6; i++)
+                      _invitation(id: 'inv-$i', email: 'invitee$i@example.com'),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await scrollToEnd(tester, find.byType(SingleChildScrollView));
+
+          // `membersInviteSuccess` — the copy this screen actually shows on
+          // a successful invite (app_en.arb).
+          await showToast(tester, message: 'Invitation sent.');
+
+          expectToastClearsLastRow(
+            tester,
+            find.byKey(const Key('invitation-inv-5')),
+            reason:
+                'the invite/revoke toast must land in the band the list '
+                'reserves, not on the invitation it is reporting on',
+          );
+        },
+      );
+    }
   });
 }

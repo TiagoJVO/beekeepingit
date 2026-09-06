@@ -38,7 +38,24 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   its own on any pushed route), and its pinned action bar sits outside the
   scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
   the bar do the clearing. Where the inset does apply, use the constant: four
-  detail screens carrying their own smaller `96` is how `#631` got in.
+  detail screens carrying their own smaller `96` is how `#631` got in. Inside
+  the shell the constant and `scrollBottomInsetOf(context)` are equal, so the
+  screens already passing the bare constant are correct and need no churn;
+  off the shell they are not — see **The bottom band, off the shell**.
+- **The bottom band, off the shell:** a scrollable reserves that band for the
+  toast as much as for the FAB, so a screen with **neither** still reserves it
+  — the members list, the stock-declaration log, the needs-fix list and the
+  full history timeline all did not, which is `#773`. Take it from
+  `BrandDimens.scrollBottomInsetOf(context)`, never the bare constant: outside
+  the shell there is no bottom navigation for `Scaffold` to strip the window's
+  bottom padding against, so a fixed `SnackBar` carries the home-indicator
+  inset **inside its own bar** and covers that much more of the body (measured
+  142 rather than 108 at 200% text on a 375×812 phone). Read off the
+  `MediaQuery` the `Scaffold` hands the body, that inset is `0` inside the
+  shell and the real value outside it, so the one call is right on both sides.
+  A screen that genuinely needs nothing says so in a comment where the padding
+  would have gone — a silent flat gutter reads as an oversight, because that
+  is what `#773` was.
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
   of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside

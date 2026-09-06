@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import 'members_repository.dart';
 
@@ -146,7 +147,19 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           ),
         ),
         data: (data) => SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          // The bottom gutter is the chrome band, not a gutter (#773): this
+          // screen raises its own invite/revoke confirmations, and a flat 24
+          // left them landing on the invitation row they were reporting on.
+          // No FAB and no bottom navigation here — the route is declared
+          // outside the shell — so the band is the toast's own height, which
+          // out here includes the home-indicator inset the toast's bar
+          // carries; `scrollBottomInsetOf` adds it.
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            BrandDimens.scrollBottomInsetOf(context),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

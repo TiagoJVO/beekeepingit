@@ -1,4 +1,8 @@
-import 'package:flutter/painting.dart' show BorderRadius, Radius;
+// `widgets` rather than `painting` only for [BrandDimens.scrollBottomInsetOf],
+// the one measurement here that a screen cannot know without asking its own
+// `MediaQuery`. Everything else in this file is still a plain number.
+import 'package:flutter/widgets.dart'
+    show BorderRadius, BuildContext, MediaQuery, Radius;
 
 /// Melargil layout scale — radii, control heights and spacing (FR-UX-1,
 /// FR-AX-1, D-18, EPIC-11).
@@ -149,4 +153,52 @@ abstract final class BrandDimens {
   /// at the top of its bottom chrome, whatever that chrome measures — so no
   /// navigation-bar height is encoded here or anywhere else.
   static const double gapToastNav = 14;
+
+  /// [scrollBottomInset] as the screen at [context] actually has to reserve
+  /// it — the constant plus whatever bottom inset the *window* adds to that
+  /// screen's own bottom chrome (#773, FR-UX-2/FR-AX-1).
+  ///
+  /// The constant above sizes the chrome itself, and #631 has now re-derived
+  /// it against the toast. This helper deliberately restates no number from
+  /// it: it adds only what the constant cannot know, which is the window
+  /// inset the screen at [context] actually carries.
+  ///
+  /// On a screen with a bottom navigation bar the constant is the whole
+  /// story: `Scaffold` strips the window's
+  /// bottom padding from the body **and** from the toast it places over it —
+  /// literally the same `removeBottomPadding: bottomNavigationBar != null ||
+  /// persistentFooterButtons != null` flag feeds both slots — so the toast's
+  /// opaque bar ends exactly where the body does.
+  ///
+  /// On a screen with neither (every route declared outside the shell in
+  /// `app_router.dart` — the members list, the stock-declaration log, the
+  /// needs-fix list) nothing is stripped from either, so a fixed `SnackBar`
+  /// carries the home-indicator inset *inside* its own bar and covers that
+  /// much more body: measured 142 rather than 108 at the 200% text scale
+  /// FR-AX-1 supports, on a 375x812 phone with a 34pt inset. Reserving the
+  /// bare constant there under-reserves by exactly the inset.
+  ///
+  /// Reading the inset off the ambient [MediaQuery] resolves to 0 inside the
+  /// shell and to the real inset outside it, so this one expression is
+  /// correct on both sides of the shell — which is why it is a derivation
+  /// here rather than a second constant.
+  ///
+  /// Precisely what that correctness rests on, since it is easy to overstate:
+  /// **no `Scaffold` with a `bottomNavigationBar` sits between the caller and
+  /// the shell.** It does *not* rest on reading the context from inside a
+  /// `body:` slot — every call site today reads its own `build` context,
+  /// which is above its screen's local `Scaffold`, and is right anyway
+  /// because none of those local `Scaffold`s sets a `bottomNavigationBar`;
+  /// only the shell's outer one does, and that is an ancestor either way. A
+  /// future screen nested in the shell that gives itself a local
+  /// `bottomNavigationBar` would break that assumption — reserve from a
+  /// context below that bar's `Scaffold`, or reserve the bare constant.
+  ///
+  /// Second precondition, and the one #789 will meet first: **no `SafeArea`
+  /// (or `MediaQuery.removePadding`) between this read and the scroll view
+  /// being padded.** Below a `SafeArea` the inset is already consumed and the
+  /// helper correctly contributes 0; read above one and the padding
+  /// double-counts it. `login_screen.dart` is exactly that shape.
+  static double scrollBottomInsetOf(BuildContext context) =>
+      scrollBottomInset + MediaQuery.paddingOf(context).bottom;
 }
