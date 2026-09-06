@@ -586,6 +586,25 @@
   "todoSortFieldStatus": "Estado",
   "todoSortDirectionAscendingLabel": "Crescente",
   "todoSortDirectionDescendingLabel": "Decrescente",
+  "todoSortDirectionAction": "Sentido da ordenação: {direction}",
+  "@todoSortDirectionAction": {
+    "placeholders": {
+      "direction": {
+        "type": "String"
+      }
+    }
+  },
+  "todoFilterChipLabel": "{label}: {value}",
+  "@todoFilterChipLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "todoDueDateUnset": "Sem prazo",
   "todoOverdueBadge": "Atrasada",
   "todoStatusSemanticLabel": "Estado: {status}",

@@ -616,13 +616,14 @@ void main() {
       expect(_location(tester), '/todos?status=overdue');
       expect(find.byKey(const Key('todo-t1')), findsOneWidget);
       expect(find.byKey(const Key('todo-t2')), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('todo-filter-status-field')),
-          matching: find.text('Overdue'),
-        ),
-        findsOneWidget,
+      // The control visibly reflects the seeded state (todos_list_screen_
+      // test.dart's own identical check): the compact filter bar (#635)
+      // shows this as the "Overdue" status chip rendering selected, not a
+      // dropdown's own visible text.
+      final overdueChip = tester.widget<BrandChip>(
+        find.byKey(const Key('todo-filter-status-chip-overdue')),
       );
+      expect(overdueChip.selected, isTrue);
     });
 
     testWidgets('the journeys view-all opens the Journeys tab filtered to '

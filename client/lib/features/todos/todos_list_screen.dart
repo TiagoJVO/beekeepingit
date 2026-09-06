@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'todo_filter_bar.dart';
 import 'todo_filters.dart';
 import 'todo_list_widgets.dart';
 
@@ -29,6 +30,15 @@ import 'todo_list_widgets.dart';
 /// carries `?apiaryId=`) and is applied from inside this screen, once
 /// mounted and watching, on every arrival at the tab
 /// ([_TodosListScreenState._seedFiltersOnArrival]).
+///
+/// **The filter bar itself is [TodoFilterBar] (`todo_filter_bar.dart`,
+/// #635):** compacted from four full-width dropdown fields down to a
+/// status chip row plus two menu chips (opening a bottom sheet each) and
+/// the sort field/direction controls, so it no longer eats a third of a
+/// small phone's viewport above this scarce-vertical-space list. This
+/// screen's own state wiring below — which providers feed which callback,
+/// the `defaultSortDirectionFor` reset on a sort-field change, and
+/// `onClearFilters`' three-way write — is unchanged by that redesign.
 class TodosListScreen extends ConsumerStatefulWidget {
   const TodosListScreen({
     super.key,
