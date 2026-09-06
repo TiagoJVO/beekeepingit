@@ -101,7 +101,18 @@ class _JourneyDetailBody extends StatelessWidget {
       journey.defaultAttributes,
     );
 
-    return Center(
+    // Top-aligned, not centred (#787, FR-UX-1). On a phone this shape looks
+    // identical either way — the header card, sections and history block
+    // already overflow the body, so the scroll view fills it and the
+    // alignment never applies. On a tablet it does apply, and centring left a
+    // dead band under the header (measured 263 / 288.5 / 224px at 1024x1366)
+    // while every list and form screen starts its content at the top.
+    // `Align` without width/height factors fills the space exactly as
+    // `Center` did, so only the vertical anchor moves; the 480px cap still
+    // centres the column horizontally. Loading and error branches stay
+    // centred — they sit outside this wrapper, in the `.when` above.
+    return Align(
+      alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
