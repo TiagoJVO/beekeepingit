@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import 'members_repository.dart';
 
 /// Admin-only organization members + invitations screen (FR-ONB-3, D-3,
@@ -193,10 +194,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              Text(
-                l10n.membersSectionTitle,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              SectionHeader(l10n.membersSectionTitle),
               const SizedBox(height: 8),
               if (data.members.isEmpty)
                 Text(l10n.membersEmpty)
@@ -216,10 +214,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 ),
               ],
               const SizedBox(height: 32),
-              Text(
-                l10n.invitationsSectionTitle,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              SectionHeader(l10n.invitationsSectionTitle),
               const SizedBox(height: 8),
               if (data.invitations.isEmpty)
                 Text(l10n.invitationsEmpty)

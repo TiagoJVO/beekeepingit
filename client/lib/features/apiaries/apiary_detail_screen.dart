@@ -792,12 +792,9 @@ class _AddCounterSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
+            SectionHeader(
+              l10n.apiaryAddCounterTitle,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Text(
-                l10n.apiaryAddCounterTitle,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
             ),
             if (addableTypes.isEmpty)
               Padding(
