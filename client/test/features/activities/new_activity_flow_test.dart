@@ -586,4 +586,86 @@ void main() {
       },
     );
   });
+
+  // #796 (FR-AX-1, FR-AC-2, FR-UX-1, D-18): the step's header — title,
+  // prompt and search field — used to sit in a fixed `Padding` above an
+  // `Expanded` list, so it took its full intrinsic height first and the list
+  // got whatever was left. At 200% text that remainder measured 21 logical
+  // pixels and not one apiary row was built, which makes the Activities
+  // tab's quick-add (#634) unreachable at the scale D-18 commits to: nothing
+  // to tap, and nothing to scroll to either.
+  group('the apiary step at 200% text (#796, FR-AX-1, D-18)', () {
+    final manyApiaries = <Apiary>[
+      for (var i = 0; i < 12; i++)
+        Apiary(id: 'many-$i', name: 'Apiary $i', hiveCount: 3),
+    ];
+
+    testWidgets('an apiary row is on screen and can be tapped', (tester) async {
+      // A missed hit test is a warning by default, so a row that is present
+      // but zero-height — exactly the failure a naive `findsWidgets` would
+      // wave through — would let `tap` below "succeed" against whatever is
+      // underneath it. This makes that fatal.
+      WidgetController.hitTestWarningShouldBeFatal = true;
+      addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
+
+      useFieldPhone(tester, textScale: 2);
+      await _openActivitiesTab(tester, apiaries: manyApiaries);
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      final firstRow = find.byKey(
+        const Key('new-activity-apiary-option-many-0'),
+      );
+      expect(
+        firstRow,
+        findsOneWidget,
+        reason:
+            'at 200% text the step must still build apiary rows — the header '
+            'may not consume the whole column',
+      );
+
+      final row = tester.getRect(firstRow);
+      expect(
+        row.height,
+        greaterThanOrEqualTo(44.0),
+        reason: 'D-18: a row the user picks with a glove is a 44x44 target',
+      );
+      // NOT asserted: that a row is fully visible *at rest*. At 200% text the
+      // header — title, prompt and search field — genuinely measures ~402 of
+      // the ~423px viewport on a 375px phone, so only a sliver of the first
+      // row shows before scrolling. That is what 200% text means on a small
+      // screen, not a defect. What #796 reported was rows that were never
+      // built and a list starved to 21px of viewport; the guards above cover
+      // exactly that.
+      //
+      // What has to hold is that the user can REACH a row and act on it, so
+      // scroll the way they would and require it usable once settled.
+      await tester.scrollUntilVisible(
+        firstRow,
+        120,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
+      final settled = tester.getRect(firstRow);
+      final viewport = tester.getRect(
+        find.byKey(const Key('new-activity-apiary-list')),
+      );
+      expect(
+        viewport.intersect(settled).height,
+        greaterThanOrEqualTo(44.0),
+        reason:
+            'after scrolling, a row must be usable as a 44px target; '
+            'viewport: $viewport row: $settled',
+      );
+
+      await tester.tap(firstRow);
+      await tester.pumpAndSettle();
+
+      expect(
+        _location(tester),
+        '/activities/new/many-0',
+        reason: 'picking the apiary must carry the flow to its next step',
+      );
+    });
+  });
 }

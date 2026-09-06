@@ -230,85 +230,96 @@ class _ApiaryStepState extends State<_ApiaryStep> {
     final theme = Theme.of(context);
     final filtered = filterApiariesByQuery(widget.apiaries, _query);
 
-    return Column(
+    final header = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  l10n.newActivityApiaryTitle,
-                  style: TextStyle(
-                    fontFamily: AppTheme.displayFontFamily,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                l10n.newActivityApiaryPrompt,
-                style: TextStyle(
-                  fontFamily: AppTheme.bodyFontFamily,
-                  fontSize: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                key: const Key('new-activity-apiary-search-field'),
-                controller: _searchController,
-                decoration: apiarySearchDecoration(l10n),
-                onChanged: (v) => setState(() => _query = v),
-              ),
-              const SizedBox(height: 12),
-            ],
+        Semantics(
+          header: true,
+          child: Text(
+            l10n.newActivityApiaryTitle,
+            style: TextStyle(
+              fontFamily: AppTheme.displayFontFamily,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
         ),
-        Expanded(
-          child: filtered.isEmpty
-              ? EmptyState(message: l10n.apiariesSearchNoResults)
-              : ListView.separated(
-                  key: const Key('new-activity-apiary-list'),
-                  // The bottom gutter is the chrome band, not a gutter
-                  // (#789). Not for a FAB — this is a pushed route, so the
-                  // shell hides its quick-add — but for a toast: every row
-                  // here is a tap target, and a bar re-presented from the
-                  // screen the user came from would sit on the last apiary
-                  // and block choosing it. Inside the shell `MediaQuery`
-                  // reports no bottom inset, so this resolves to the bare
-                  // constant; `scrollBottomInsetOf` is still the right call,
-                  // because it is right on either side of the shell.
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    0,
-                    16,
-                    BrandDimens.scrollBottomInsetOf(context),
-                  ),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final apiary = filtered[index];
-                    return OptionRow(
-                      key: Key('new-activity-apiary-option-${apiary.id}'),
-                      label: apiary.name,
-                      subtitle: l10n.hiveCountValue(apiary.hiveCount),
-                      mode: OptionRowMode.navigate,
-                      cardColor: brand.cardColor,
-                      cardShape: RoundedRectangleBorder(
-                        borderRadius: BrandDimens.borderCard,
-                        side: BorderSide(color: brand.cardBorder),
-                      ),
-                      onTap: () => context.go('/activities/new/${apiary.id}'),
-                    );
-                  },
-                ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.newActivityApiaryPrompt,
+          style: TextStyle(
+            fontFamily: AppTheme.bodyFontFamily,
+            fontSize: 14,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const Key('new-activity-apiary-search-field'),
+          controller: _searchController,
+          decoration: apiarySearchDecoration(l10n),
+          onChanged: (v) => setState(() => _query = v),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+
+    // The header is a sliver riding along with the rows rather than a fixed
+    // box above an `Expanded` list: at 200% text scale the fixed header's
+    // intrinsic height alone could exceed the viewport, starving the list
+    // down to a sliver of a viewport and making every apiary row untappable
+    // (#796). Scrolling the header with the rows means it only ever costs
+    // scroll distance, never layout space the list needs.
+    return CustomScrollView(
+      key: const Key('new-activity-apiary-list'),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          sliver: SliverToBoxAdapter(child: header),
+        ),
+        if (filtered.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(message: l10n.apiariesSearchNoResults),
+          )
+        else
+          SliverPadding(
+            // The bottom gutter is the chrome band, not a gutter
+            // (#789). Not for a FAB — this is a pushed route, so the
+            // shell hides its quick-add — but for a toast: every row
+            // here is a tap target, and a bar re-presented from the
+            // screen the user came from would sit on the last apiary
+            // and block choosing it. Inside the shell `MediaQuery`
+            // reports no bottom inset, so this resolves to the bare
+            // constant; `scrollBottomInsetOf` is still the right call,
+            // because it is right on either side of the shell.
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
+            sliver: SliverList.separated(
+              itemCount: filtered.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final apiary = filtered[index];
+                return OptionRow(
+                  key: Key('new-activity-apiary-option-${apiary.id}'),
+                  label: apiary.name,
+                  subtitle: l10n.hiveCountValue(apiary.hiveCount),
+                  mode: OptionRowMode.navigate,
+                  cardColor: brand.cardColor,
+                  cardShape: RoundedRectangleBorder(
+                    borderRadius: BrandDimens.borderCard,
+                    side: BorderSide(color: brand.cardBorder),
+                  ),
+                  onTap: () => context.go('/activities/new/${apiary.id}'),
+                );
+              },
+            ),
+          ),
       ],
     );
   }
