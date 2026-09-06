@@ -465,14 +465,22 @@ void main() {
         of: filterBar,
         matching: find.byType(SingleChildScrollView),
       );
+      // Anchored on the navigation shell, not the header: this screen has no
+      // AppBar of its own, and the app shell stacks the offline/needs-fix
+      // banners between its header and the route's content area. The shell is
+      // the region this screen is actually handed, so the assertion keeps
+      // meaning something if a banner is ever showing.
       final contentTop = tester
           .getRect(find.byType(StatefulNavigationShell))
           .top;
       final scrollTop = tester.getRect(scroll).top;
 
+      // Bounded at BOTH ends: the upper bound catches the dead band this
+      // issue is about, the lower bound catches content rendering up out of
+      // its own content area.
       expect(
         scrollTop - contentTop,
-        lessThanOrEqualTo(1.0),
+        inInclusiveRange(0.0, 1.0),
         reason:
             'the per-apiary breakdown must start at the top of the content '
             'area; it started ${scrollTop - contentTop}px below it',

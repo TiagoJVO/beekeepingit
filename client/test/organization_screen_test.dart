@@ -310,7 +310,9 @@ void main() {
 
       expect(
         contentTop - headerBottom,
-        lessThanOrEqualTo(1.0),
+        // Bounded at both ends: below catches the dead band, above catches
+        // content rendering up over the header.
+        inInclusiveRange(0.0, 1.0),
         reason:
             'the organization form must start just under the header like '
             'every other form screen; it started '
