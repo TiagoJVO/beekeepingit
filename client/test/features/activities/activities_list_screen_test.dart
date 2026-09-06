@@ -165,7 +165,12 @@ void main() {
     ) async {
       await _openActivitiesTab(tester, activities: const []);
 
-      expect(find.text('No activities yet.'), findsOneWidget);
+      expect(
+        find.text(
+          'No activities yet. Record your first activity with the button below.',
+        ),
+        findsOneWidget,
+      );
     });
 
     group('type filter', () {
@@ -261,7 +266,12 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('No activities match your filters.'), findsOneWidget);
-        expect(find.text('No activities yet.'), findsNothing);
+        expect(
+          find.text(
+            'No activities yet. Record your first activity with the button below.',
+          ),
+          findsNothing,
+        );
       },
     );
 

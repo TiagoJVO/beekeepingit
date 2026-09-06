@@ -148,10 +148,10 @@ abstract class AppLocalizations {
   /// **'Apiaries'**
   String get apiariesTitle;
 
-  /// Empty state on the apiaries list
+  /// Empty state on the apiaries list. Describes the action instead of naming a control (#636, FR-UX-1): the Apiaries tab has two quick actions (#52), so the shell collapses them behind the “Actions” speed dial (#347) — “Add apiary” is not a label the user can see until that toggle is expanded.
   ///
   /// In en, this message translates to:
-  /// **'No apiaries yet. Tap “Add apiary” to create one.'**
+  /// **'No apiaries yet. Create your first apiary to get started.'**
   String get apiariesEmpty;
 
   /// Error state on the apiaries list
@@ -2062,11 +2062,29 @@ abstract class AppLocalizations {
   /// **'View all {count} activities'**
   String apiaryActivitiesViewAll(int count);
 
-  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
+  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6). Points at the tab's quick-add (#634) by describing the action and where it sits, NOT by naming a control: the shell renders a scope's single action as a direct FAB and two or more behind an “Actions” toggle (#347), so any hard-coded control label goes stale the moment the scope gains a second action (the same lesson as #636).
   ///
   /// In en, this message translates to:
-  /// **'No activities yet.'**
+  /// **'No activities yet. Record your first activity with the button below.'**
   String get activitiesEmpty;
+
+  /// Header title and heading of the first step of the Activities tab's quick-add (#634, FR-AC-2): choosing which apiary the activity belongs to, before its type and fields
+  ///
+  /// In en, this message translates to:
+  /// **'Which apiary?'**
+  String get newActivityApiaryTitle;
+
+  /// Instruction under the heading of the new-activity apiary step (#634)
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the apiary this activity belongs to.'**
+  String get newActivityApiaryPrompt;
+
+  /// Shown instead of the apiary step when the organization has no apiaries at all (#634): explains why the flow cannot continue and is paired with an action that opens the new-apiary form, so it is never a dead end
+  ///
+  /// In en, this message translates to:
+  /// **'An activity is always recorded at an apiary, and you have none yet. Create your first apiary to get started.'**
+  String get newActivityNoApiaries;
 
   /// Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)
   ///
