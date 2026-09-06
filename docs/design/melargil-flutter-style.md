@@ -38,7 +38,24 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   its own on any pushed route), and its pinned action bar sits outside the
   scroll view (`#341`/`#357`) — so it pads a plain `8` at the bottom and lets
   the bar do the clearing. Where the inset does apply, use the constant: four
-  detail screens carrying their own smaller `96` is how `#631` got in.
+  detail screens carrying their own smaller `96` is how `#631` got in. Inside
+  the shell the constant and `scrollBottomInsetOf(context)` are equal, so the
+  screens already passing the bare constant are correct and need no churn;
+  off the shell they are not — see **The bottom band, off the shell**.
+- **The bottom band, off the shell:** a scrollable reserves that band for the
+  toast as much as for the FAB, so a screen with **neither** still reserves it
+  — the members list, the stock-declaration log, the needs-fix list and the
+  full history timeline all did not, which is `#773`. Take it from
+  `BrandDimens.scrollBottomInsetOf(context)`, never the bare constant: outside
+  the shell there is no bottom navigation for `Scaffold` to strip the window's
+  bottom padding against, so a fixed `SnackBar` carries the home-indicator
+  inset **inside its own bar** and covers that much more of the body (measured
+  142 rather than 108 at 200% text on a 375×812 phone). Read off the
+  `MediaQuery` the `Scaffold` hands the body, that inset is `0` inside the
+  shell and the real value outside it, so the one call is right on both sides.
+  A screen that genuinely needs nothing says so in a comment where the padding
+  would have gone — a silent flat gutter reads as an oversight, because that
+  is what `#773` was.
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
   of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
@@ -133,6 +150,18 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   A label above a field also means a submit button cannot share the field's
   row: aligned to the row's top it rides up level with the label, and any
   fixed nudge back down breaks at a larger OS text scale — put it underneath.
+- **Content starts at the top, not the middle** — a screen whose body is a
+  scrollable column wraps it in `Align(alignment: Alignment.topCenter, ...)`
+  around the usual `ConstrainedBox(maxWidth: 480)`, never a plain `Center`
+  (`#630`, `#769`). `Center` splits the leftover height into equal bands, so a
+  screen shorter than its viewport starts mid-page with dead space under the
+  header. Two deliberate exceptions: a `loading`/`error` branch keeps its own
+  `Center` — a lone spinner or message does belong in the middle, which is why
+  the `.when` sits outside the alignment wrapper rather than around it — and a
+  short informational holding page with nothing to scroll
+  (`organization_waiting_screen.dart`) stays centred on purpose. A body that is
+  a `Column(mainAxisSize.max)` around an `Expanded` — the pinned-action form
+  screens — already fills the height, so its wrapper is inert either way.
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.

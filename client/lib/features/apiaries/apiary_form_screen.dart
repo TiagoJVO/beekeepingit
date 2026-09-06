@@ -501,6 +501,11 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     return buildUnsavedChangesGuard(
       child: _busy
           ? const Center(child: CircularProgressIndicator())
+          // Still a `Center`, not the `Align(topCenter)` #630/#769 gave the
+          // scroll-view screens: the Column below is mainAxisSize.max around
+          // an Expanded field area, so it already fills the body height and
+          // the vertical alignment never gets to apply — swapping it would
+          // render identically (FR-UX-1, #769).
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
