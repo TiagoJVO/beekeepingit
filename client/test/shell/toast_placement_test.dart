@@ -305,4 +305,40 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'a toast still lands fully on screen at a desktop-width viewport, where '
+    'the rail replaces the bottom nav entirely (#650, FR-UX-2)',
+    (tester) async {
+      // At >= BrandDimens.breakpointExpanded the shell has no
+      // `bottomNavigationBar` at all (`AppShell.build`'s own doc), so there is
+      // no gutter/bar for a fixed SnackBar to clear — it anchors straight at
+      // the window bottom, spanning the rail (see
+      // docs/design/melargil-flutter-style.md's Toasts section). This only
+      // asserts the accepted trade holds: the toast still renders entirely
+      // inside the viewport, not clipped or pushed off it. The existing
+      // 375x812 assertions above are untouched by this case.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await showToast(tester);
+
+      final toast = toastRect(tester);
+      final viewport =
+          Offset.zero &
+          (tester.view.physicalSize / tester.view.devicePixelRatio);
+      expect(
+        viewport.contains(toast.topLeft) &&
+            viewport.contains(toast.bottomRight - const Offset(1, 1)),
+        isTrue,
+        reason:
+            'the toast must land fully inside the 1280x800 viewport '
+            '(rendered at $toast, viewport $viewport)',
+      );
+    },
+  );
 }

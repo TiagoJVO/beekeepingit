@@ -95,6 +95,14 @@ void expectLiveRegion(
 /// the app targets.
 const Size kHandsetViewport = Size(375, 812);
 
+/// The reference desktop/expanded-window viewport (#650) — 1280x800, above
+/// [BrandDimens.breakpointExpanded] (840), for tests that need to pin the
+/// shell's [NavigationRail] chrome rather than its default `NavigationBar`.
+/// Also matches Playwright's `devices["Desktop Chrome"]` (1280x720) closely
+/// enough to exercise the same "above the breakpoint" behaviour the e2e
+/// suite hits in CI.
+const Size kDesktopViewport = Size(1280, 800);
+
 /// The reference tablet-portrait viewport — 1024x1366, an iPad Pro 12.9" in
 /// portrait, and the size #787 measured the four detail screens' dead
 /// vertical band at (263 / 288.5 / 224px). Those screens show **no** band at
@@ -157,7 +165,8 @@ void expectStartsAtContentTop(
   expect(
     content,
     findsOneWidget,
-    reason: 'expectStartsAtContentTop: the content finder matched no '
+    reason:
+        'expectStartsAtContentTop: the content finder matched no '
         'single widget',
   );
   expect(

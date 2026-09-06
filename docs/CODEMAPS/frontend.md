@@ -25,13 +25,15 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
                                                   the declaration log, keyed by registration
                                                   number; reached from Account; a record only,
                                                   no deadlines or thresholds derived — D-19)
-StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per-tab FAB config
+StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpanded (840); a
+  side NavigationRail at/above it (#650) — lib/shell/app_shell.dart; per-tab FAB config
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
   `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
   + secondary "New todo" routing to /todos/new (#389), no pre-filled apiary)
-  NOTE (#658, D-35): `AppShell.tabs` is the SINGLE source for both the NavigationBar
-  destinations and the `tabs[currentIndex]` active-tab lookup, so **tab position IS branch
-  position** — the branch order below must match that list exactly. Tab order is
+  NOTE (#658, D-35, #650): `AppShell.tabs` is the SINGLE source for both chromes — the
+  NavigationBar destinations, the NavigationRail destinations, and the `tabs[currentIndex]`
+  active-tab lookup — so **tab position IS branch position** — the branch order below must
+  match that list exactly. Tab order is
   apiaries · activities · home · journeys · todos, Home at the centre in the slot the
   retired Assistant placeholder held. Home is the only tab with no `_fabConfigByTab` entry,
   so the shell renders no FAB on it (its area is every area); Activities gained one in #634
