@@ -151,6 +151,15 @@ void _openNewTodo(BuildContext context) => context.go('/todos/new');
 /// and the `tabs[currentIndex]` active-tab lookup, so **tab position is branch
 /// position**: the `StatefulShellBranch` order in app_router.dart must match
 /// this list exactly.
+///
+/// #650: [tabs] is also the single source for the desktop chrome — at window
+/// widths >= [BrandDimens.breakpointExpanded] `build()` swaps the bottom
+/// [NavigationBar] for a side [NavigationRail] built from the very same list,
+/// so both chromes render the same five destinations in the same order and
+/// share [_onSelectTab] verbatim (the unsaved-changes guard and the
+/// `initialLocation: true` scope reset behave identically either way). See
+/// [BrandDimens.breakpointExpanded]'s own doc for why 840, not the more
+/// commonly cited 600, is the threshold.
 class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
 
@@ -222,6 +231,21 @@ class AppShell extends ConsumerWidget {
     // app_router.dart) — any other matched name means we're pushed deeper.
     final canGoBack = routeName != null && routeName != activeTab.route;
 
+    // #650, FR-UX-2: a **viewport**-level breakpoint, deliberately unlike
+    // #632's row-level one — the shell's navigation has exactly one instance
+    // and is always laid out against the window, with no narrower host to be
+    // embedded in. See [BrandDimens.breakpointExpanded]'s own doc for why 840.
+    final isExpanded =
+        MediaQuery.sizeOf(context).width >= BrandDimens.breakpointExpanded;
+
+    final bannersAndContent = Column(
+      children: [
+        const _OfflineBanner(),
+        const _NeedsFixBanner(),
+        Expanded(child: navigationShell),
+      ],
+    );
+
     return Scaffold(
       appBar: _ShellHeader(
         title: _titleFor(routeName, activeTab, l10n),
@@ -229,13 +253,77 @@ class AppShell extends ConsumerWidget {
         onSyncTap: () => _guardedGo(context, ref, '/account'),
         onAccountTap: () => _guardedGo(context, ref, '/account'),
       ),
-      body: Column(
-        children: [
-          const _OfflineBanner(),
-          const _NeedsFixBanner(),
-          Expanded(child: navigationShell),
-        ],
-      ),
+      // #650: at expanded widths the rail sits beside the content, so the
+      // offline/needs-fix banners move inside this Row's content column
+      // (`bannersAndContent`) rather than spanning the whole body — they
+      // annotate the content, not the window, so they belong to the right of
+      // the rail.
+      //
+      // WORKAROUND, load-bearing — do not delete the `Semantics(container:
+      // true, ...)` wrap below as dead weight. Without it, the rail's ENTIRE
+      // compiled `SemanticsNode` subtree is silently dropped: this is a
+      // confirmed Flutter framework defect
+      // (https://github.com/flutter/flutter/issues/55758, "A11y of nested
+      // Navigator seems broken", open since 2020, tracked for this repo as
+      // #800), not an app bug. The Flutter team's own diagnosis there: a
+      // `Navigator`'s route builds a `ModalBarrier` containing a
+      // `BlockSemantics` widget, which drops the semantics of every sibling
+      // painted BEFORE it within the same semantics container — even when
+      // the rects never overlap, exactly this rail/content arrangement.
+      // Reproduced independently for #650, app-code-free: a bare
+      // `Row([NavigationRail, Divider, Expanded(Navigator(...))])` inside a
+      // plain `MaterialApp` (no go_router, no Riverpod); go_router's real
+      // `StatefulShellRoute.indexedStack` (this app's actual shape); and a
+      // custom `navigatorContainerBuilder` returning the active branch
+      // directly with no `IndexedStack`/`Offstage` at all — ruling both out
+      // as the cause. `Scaffold.bottomNavigationBar` is unaffected, since
+      // `Scaffold` composites it after `body` rather than as a `Row` sibling
+      // of it. The fix below is the Flutter team's own recommended
+      // workaround on that issue: give the `Navigator` its own explicit
+      // semantics boundary so the `BlockSemantics` occlusion pass can no
+      // longer reach past it into an earlier sibling. It changes no layout,
+      // paint order, or focus-traversal order — see
+      // `client/test/app_shell_test.dart`'s live-semantics rail/bottom-bar
+      // tests (this now passes the SAME check the bar always has) and its
+      // keyboard tab-order test.
+      body: isExpanded
+          ? Row(
+              children: [
+                NavigationRail(
+                  key: const Key('shell-nav-rail'),
+                  labelType: NavigationRailLabelType.all,
+                  selectedIndex: navigationShell.currentIndex,
+                  onDestinationSelected: (index) =>
+                      _onSelectTab(context, ref, index),
+                  destinations: [
+                    for (final tab in tabs)
+                      NavigationRailDestination(
+                        icon: Icon(tab.icon),
+                        selectedIcon: Icon(tab.selectedIcon),
+                        // NavigationRailDestination takes no `key` param, so
+                        // the shared `shell-tab-*` key rides a KeyedSubtree
+                        // around the LABEL instead — rendered under
+                        // `labelType.all` and stable across selection (unlike
+                        // `icon`, which is swapped for `selectedIcon`). The
+                        // label sits inside the destination's own ink well,
+                        // so `tester.tap`/a real tap on it still selects the
+                        // destination.
+                        label: KeyedSubtree(
+                          key: Key('shell-tab-${tab.route}'),
+                          child: Text(tab.label(l10n)),
+                        ),
+                      ),
+                  ],
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  // See this block's opening comment — required, not
+                  // decorative.
+                  child: Semantics(container: true, child: bannersAndContent),
+                ),
+              ],
+            )
+          : bannersAndContent,
       floatingActionButton: _ShellFab(
         activeTabRoute: activeTab.route,
         canGoBack: canGoBack,
@@ -258,26 +346,35 @@ class AppShell extends ConsumerWidget {
       // per-screen offset: screens outside the shell (login, onboarding,
       // account) have no bottom navigation and get no gutter, so their toasts
       // still sit on the safe-area bottom rather than floating over a gap.
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: BrandDimens.gapToastNav),
-          NavigationBar(
-            key: const Key('shell-bottom-nav'),
-            selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: (index) => _onSelectTab(context, ref, index),
-            destinations: [
-              for (final tab in tabs)
-                NavigationDestination(
-                  key: Key('shell-tab-${tab.route}'),
-                  icon: Icon(tab.icon),
-                  selectedIcon: Icon(tab.selectedIcon),
-                  label: tab.label(l10n),
+      //
+      // #650: at expanded widths the rail replaces this bar entirely
+      // (`bottomNavigationBar: null`) — there is no gutter to reserve, so a
+      // fixed toast there anchors straight at the window bottom, spanning the
+      // rail. See docs/design/melargil-flutter-style.md's Toasts section for
+      // why that trade is accepted rather than re-derived per screen.
+      bottomNavigationBar: isExpanded
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: BrandDimens.gapToastNav),
+                NavigationBar(
+                  key: const Key('shell-bottom-nav'),
+                  selectedIndex: navigationShell.currentIndex,
+                  onDestinationSelected: (index) =>
+                      _onSelectTab(context, ref, index),
+                  destinations: [
+                    for (final tab in tabs)
+                      NavigationDestination(
+                        key: Key('shell-tab-${tab.route}'),
+                        icon: Icon(tab.icon),
+                        selectedIcon: Icon(tab.selectedIcon),
+                        label: tab.label(l10n),
+                      ),
+                  ],
                 ),
-            ],
-          ),
-        ],
-      ),
+              ],
+            ),
     );
   }
 

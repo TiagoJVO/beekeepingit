@@ -68,13 +68,43 @@ async function login(page: Page) {
 }
 
 // After login the app lands on the Home tab (D-35, #658). Flows that operate
-// on the apiaries list switch to the Apiaries tab first. The bottom nav is a
-// Material 3 NavigationBar, whose destinations Flutter web exposes as
-// role="tab" (SemanticsRole.tab, navigation_bar.dart) with the tab label as the
-// accessible name — so target the "Apiaries" tab by role, then confirm the
-// branch's own route + heading render before the caller drives the list.
+// on the apiaries list switch to the Apiaries tab first. Below
+// BrandDimens.breakpointExpanded (840) the bottom nav is a Material 3
+// NavigationBar, whose destinations Flutter web exposes as role="tab"
+// (SemanticsRole.tab, navigation_bar.dart) with the tab label as the
+// accessible name. At/above it (#650) the shell swaps in a NavigationRail
+// instead — navigation_rail.dart sets no SemanticsRole at all, so its
+// destination (a plain `Semantics(container: true, selected: ...)` around an
+// InkWell) renders as role="button" on Flutter web, not role="tab". Playwright
+// here runs devices["Desktop Chrome"] at 1280x720, ABOVE the breakpoint, so
+// only the rail's chrome is ever on screen in this suite — the locator has to
+// match the rail's role, not the bar's. It stays chrome-agnostic (`.or(...)`)
+// rather than hard-coding "button" so it keeps working unmodified if a future
+// change narrows this suite's viewport back under 840.
+//
+// The rail destination's accessible name is NOT the bare label. Flutter's
+// NavigationRail merges a second `Semantics(label: indexLabel)` node into each
+// destination, where `indexLabel` is
+// `MaterialLocalizations.tabLabel(tabIndex:, tabCount:)` — see
+// navigation_rail.dart's `indexLabel:` at the `_RailDestination` call site and
+// the `Semantics(label: widget.indexLabel)` it renders. The compiled node is
+// therefore `<flt-semantics role="button" aria-current="false">` whose text is
+// "Apiaries" + newline + "Tab 1 of 5", which Playwright normalises to the
+// accessible name "Apiaries Tab 1 of 5" — read off the semantics DOM captured
+// in this suite's own failing run, not inferred. NavigationBar instead wraps
+// its destinations in `Semantics(role: SemanticsRole.tab, selected: ...)` and
+// adds no index label, which is why the bar matcher above can stay an exact
+// string while this one cannot. So the button matcher admits that one suffix
+// and nothing else, still anchored at BOTH ends: an unanchored substring match
+// against an ARB label that can change independently of this file would let a
+// future same-substring button silently win `.first()` instead of failing
+// loudly, in this CI-only lane with no fast local feedback.
 async function goToApiariesTab(page: Page) {
-  await page.getByRole("tab", { name: "Apiaries" }).click();
+  await page
+    .getByRole("tab", { name: "Apiaries" })
+    .or(page.getByRole("button", { name: /^Apiaries(?: Tab \d+ of \d+)?$/ }))
+    .first()
+    .click();
   await page.waitForURL(/\/apiaries/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({
     timeout: 30_000,
