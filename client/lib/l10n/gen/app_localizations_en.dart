@@ -1215,7 +1215,19 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activitiesEmpty => 'No activities yet.';
+  String get activitiesEmpty =>
+      'No activities yet. Record your first activity with the button below.';
+
+  @override
+  String get newActivityApiaryTitle => 'Which apiary?';
+
+  @override
+  String get newActivityApiaryPrompt =>
+      'Choose the apiary this activity belongs to.';
+
+  @override
+  String get newActivityNoApiaries =>
+      'An activity is always recorded at an apiary, and you have none yet. Create your first apiary to get started.';
 
   @override
   String get activitiesFilterNoResults => 'No activities match your filters.';

@@ -385,7 +385,10 @@
   },
   "apiaryActivitiesEmpty": "Ainda não há atividades registadas para este apiário.",
   "apiaryActivitiesViewAll": "Ver todas as {count} atividades",
-  "activitiesEmpty": "Ainda não há atividades.",
+  "activitiesEmpty": "Ainda não há atividades. Registe a sua primeira atividade com o botão abaixo.",
+  "newActivityApiaryTitle": "Que apiário?",
+  "newActivityApiaryPrompt": "Escolha o apiário a que esta atividade pertence.",
+  "newActivityNoApiaries": "Uma atividade é sempre registada num apiário e ainda não tem nenhum. Crie o seu primeiro apiário para começar.",
   "activitiesFilterNoResults": "Nenhuma atividade corresponde aos filtros.",
   "activitiesError": "Não foi possível carregar as atividades: {error}",
   "@activitiesError": {
