@@ -401,6 +401,34 @@ void main() {
       });
     }
 
+    testWidgets('a disabled primary action drops the honey fill for the '
+        'Material disabled grey, not a pinned honey', (tester) async {
+      // The pinned fill deliberately supplies no `disabledBackgroundColor`, so
+      // the disabled state falls through to Material's own `onSurface @ 12%`.
+      // If a future edit pins a disabled colour too, a disabled button would
+      // keep reading as tappable — and the busy spinner's colour (asserted
+      // above against that grey ground) would silently stop matching it.
+      final theme = AppTheme.light();
+      await tester.pumpWidget(
+        themed(
+          theme,
+          const PrimaryActionButton(label: 'Save', onPressed: null),
+        ),
+      );
+
+      final material = tester.widget<Material>(
+        find.descendant(
+          of: find.byType(FilledButton),
+          matching: find.byType(Material),
+        ),
+      );
+      expect(material.color, isNot(BrandTokens.honey));
+      // Material's disabled fill: onSurface at ~12% (the exact alpha is an
+      // 8-bit rounding of 0.12), i.e. the scheme ink, not the brand honey.
+      expect(material.color!.a, closeTo(0.12, 0.01));
+      expect(material.color!.withValues(alpha: 1), theme.colorScheme.onSurface);
+    });
+
     testWidgets('destructive secondary still overrides to the error color, '
         'icon included', (tester) async {
       final theme = AppTheme.light();

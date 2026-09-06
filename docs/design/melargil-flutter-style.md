@@ -78,6 +78,11 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   paired with `BrandTokens.onHoney`, or as a highlight on a plum ground / map
   imagery. In dark mode plum is the ground, so `primary` is honey there
   (8.02:1 on plum 950) and the secondary button's label is cream (`#627`).
+- **Selection state is the accent, not honey** — a selected view-toggle
+  segment, a switched-on `Switch`, a selected chip and a focus ring all draw
+  `primary`, so in light mode they are plum-filled with a white on-colour
+  (9.62:1) rather than honey-filled. That is the point: honey marks the one
+  action to take, so it can't also mark every "this one is selected".
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.
