@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/geo/device_location.dart';
-import '../../core/geo/distance.dart';
+import '../../core/geo/haversine.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -392,7 +392,7 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
 /// that messaging per-row, #253 AC: "no placeholder noise"), or [apiary]
 /// itself has no stored location ([Apiary.hasLocation]). Computed via the
 /// same offline haversine primitive [sortApiariesByDistance] already uses
-/// (core/geo/distance.dart, D-15's approach) — this is purely the per-row
+/// (core/geo/haversine.dart, D-15's approach) — this is purely the per-row
 /// DISPLAY value, ordering itself is unchanged. `LocaleFormatting.decimal`
 /// (NFR-I18N-1, #253 AC) renders the km figure with the active locale's
 /// grouping/decimal separators (e.g. PT's `12,3` vs EN's `12.3`).
@@ -407,10 +407,10 @@ String? _distanceSubtitle(
   }
   final km =
       haversineDistanceMeters(
-        lon1: deviceLocation.lon,
         lat1: deviceLocation.lat,
-        lon2: apiary.locationLon!,
+        lon1: deviceLocation.lon,
         lat2: apiary.locationLat!,
+        lon2: apiary.locationLon!,
       ) /
       1000;
   final formatted = LocaleFormatting.of(context).decimal(km);
