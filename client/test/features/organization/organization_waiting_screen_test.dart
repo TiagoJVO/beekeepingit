@@ -196,6 +196,40 @@ void main() {
       );
     });
 
+    // The band is the one change in `#789` that alters a layout rather than
+    // just adding slack below it: content plus band overruns a 375x812 phone,
+    // so this page top-aligns and scrolls where `#769` had it centred. That
+    // trade is only acceptable while nothing the user needs falls below the
+    // fold — this page's two ways forward are "Check again" and "Log out", and
+    // out here there is no bottom navigation to reach anything else with.
+    //
+    // A FORWARD guard, not a reproduction: the centred layout passed this too
+    // (its actions ended at 747 of 812). What it protects is the trade this
+    // change accepts — that the band, and only the band, is what the user now
+    // has to scroll to reach.
+    testWidgets('every action is still above the fold before any scroll', (
+      tester,
+    ) async {
+      useFieldPhone(tester);
+
+      await tester.pumpWidget(_buildScreen(_CountingOrganizationController()));
+      await tester.pumpAndSettle();
+
+      final logout = tester.getRect(
+        find.byKey(const Key('organization-waiting-logout-button')),
+      );
+      final viewportBottom =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(
+        logout.bottom,
+        lessThanOrEqualTo(viewportBottom),
+        reason:
+            'reserving the chrome band must push the BAND below the fold, '
+            'never the actions: Log out ended at ${logout.bottom} of a '
+            '$viewportBottom viewport',
+      );
+    });
+
     // The 200% case is asserted structurally, not by raising that same
     // message: at 200% text on a 375pt phone it wraps to seven lines and
     // measures 302, past any fixed band. That is a property of the sentence,

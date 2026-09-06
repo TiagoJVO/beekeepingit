@@ -691,36 +691,57 @@ void main() {
   // navigation, no FAB), so the band is the toast's own height plus the
   // home-indicator inset its bar carries out here.
   group('the bottom chrome band (#789, FR-UX-2)', () {
-    for (final textScale in [1.0, 2.0]) {
-      testWidgets(
-        'a toast does not cover the Save button, at ${textScale}x text',
-        (tester) async {
-          useFieldPhone(tester, textScale: textScale);
-
-          await tester.pumpWidget(
-            _buildScreen(
-              _FakeProfileController(
-                _profile(name: 'Ana', email: 'ana@example.com', complete: true),
-              ),
-            ),
-          );
-          await tester.pumpAndSettle();
-
-          await scrollToEnd(tester, find.byType(SingleChildScrollView));
-
-          // `profileSaveSuccess` — the copy this screen actually shows once a
-          // profile edit is stored (app_en.arb).
-          await showToast(tester, message: 'Profile saved.');
-
-          expectToastClearsLastRow(
-            tester,
-            find.byKey(const Key('profile-save-button')),
-            reason:
-                'the save toast must land in the band the form reserves, not '
-                'on the Save button it is reporting on',
-          );
-        },
+    Future<void> pumpAtEnd(WidgetTester tester, {double textScale = 1}) async {
+      useFieldPhone(tester, textScale: textScale);
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+          ),
+        ),
       );
+      await tester.pumpAndSettle();
+      await scrollToEnd(tester, find.byType(SingleChildScrollView));
     }
+
+    // 2x is where the defect actually bites, so 2x is where the assertion is
+    // behavioural: at 200% this form overruns a 375x812 phone, and the toast
+    // then landed on the Save button by a measured 118.
+    testWidgets('a toast does not cover the Save button, at 2x text', (
+      tester,
+    ) async {
+      await pumpAtEnd(tester, textScale: 2);
+
+      // `profileSaveSuccess` — the copy this screen actually shows once a
+      // profile edit is stored (app_en.arb).
+      await showToast(tester, message: 'Profile saved.');
+
+      expectToastClearsLastRow(
+        tester,
+        find.byKey(const Key('profile-save-button')),
+        reason:
+            'the save toast must land in the band the form reserves, not on '
+            'the Save button it is reporting on',
+      );
+    });
+
+    // At 1x the same form fits the viewport, so Save sits well above where any
+    // bar lands and raising a toast here proves nothing — it passed against
+    // the unpadded form too. The reservation is what discriminates, so that is
+    // what 1x asserts: `24` before, the full band after.
+    testWidgets('the form reserves the bottom chrome band under Save', (
+      tester,
+    ) async {
+      await pumpAtEnd(tester);
+
+      expectReservesBottomBand(
+        tester,
+        lastRow: find.byKey(const Key('profile-save-button')),
+        scrollable: find.byType(SingleChildScrollView),
+        reason:
+            'the form must leave a toast a band of its own below Save, not '
+            'end flush against the window bottom',
+      );
+    });
   });
 }
