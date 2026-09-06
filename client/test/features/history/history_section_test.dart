@@ -307,7 +307,7 @@ void main() {
   // raises none of its own: the only toasts that reach it are the shell's
   // superseded/rejected notices, and at 200% text on a 375pt phone those
   // measure 268 — past any fixed band, which is a property of the message,
-  // not of this screen (#631 measured that trade and accepted it; see #776).
+  // not of this screen (#631 measured that trade and accepted it; see #790).
   group('the bottom chrome band (#773, FR-UX-2)', () {
     for (final textScale in [1.0, 2.0]) {
       testWidgets(
