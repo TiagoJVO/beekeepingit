@@ -465,6 +465,9 @@ void main() {
         of: filterBar,
         matching: find.byType(SingleChildScrollView),
       );
+      // Guarded before getRect, so a second wrapping scroll view fails with
+      // this line rather than an opaque "matched N widgets" from getRect.
+      expect(scroll, findsOneWidget);
       // Anchored on the navigation shell, not the header: this screen has no
       // AppBar of its own, and the app shell stacks the offline/needs-fix
       // banners between its header and the route's content area. The shell is

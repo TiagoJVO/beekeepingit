@@ -320,6 +320,9 @@ void main() {
       );
     });
 
+    // A FORWARD guard, not a reproduction — see the profile screen's own
+    // thumb-reach test: the centred layout passed this too, and what it
+    // protects against is top-aligning the action up into the top third.
     testWidgets('the create action stays within comfortable thumb reach', (
       tester,
     ) async {

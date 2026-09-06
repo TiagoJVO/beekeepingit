@@ -99,7 +99,8 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
       // Horizontally centred (so the 480px column stays middle-of-page on a
       // wide window) but TOP-aligned: a plain `Center` split the leftover
       // height into equal bands and left dead space under the header on a
-      // phone, unlike every other form screen in the app (#630, FR-UX-1).
+      // phone (#630, FR-UX-1). Sibling screens still on the old `Center`
+      // shape are tracked in #769, not fixed here.
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(

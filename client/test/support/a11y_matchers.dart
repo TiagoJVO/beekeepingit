@@ -65,14 +65,19 @@ void useViewport(WidgetTester tester, {Size size = kHandsetViewport}) {
 
 /// Asserts the single widget matched by [finder] — a screen's primary action
 /// — is fully on screen without scrolling AND sits in the lower two thirds
-/// of the viewport, the zone a thumb covers comfortably on a one-handed grip
-/// (#630 AC 2). An action stranded in the top third of a tall phone is
-/// reachable only by re-gripping, which is exactly what the field-use pass in
-/// `docs/design/accessibility-field-ux-checklist.md` is trying to avoid.
+/// of the current viewport, the zone a thumb covers comfortably on a
+/// one-handed grip. This is the checkable form of #630's second acceptance
+/// criterion, "the primary action sits within comfortable thumb reach on a
+/// 375x812 viewport"; an action stranded in the top third of a tall phone is
+/// reachable only by re-gripping.
+///
+/// The viewport is READ from the test view rather than passed in, so it can
+/// never disagree with whatever [useViewport] (or the caller) actually set —
+/// asserting reachability against 812px on a 568px view would silently pass
+/// a control 240px below the fold.
 void expectWithinThumbReach(
   WidgetTester tester,
   Finder finder, {
-  Size viewport = kHandsetViewport,
   String label = 'the primary action',
 }) {
   expect(
@@ -80,6 +85,7 @@ void expectWithinThumbReach(
     findsOneWidget,
     reason: 'expectWithinThumbReach: finder matched no single widget',
   );
+  final viewport = tester.view.physicalSize / tester.view.devicePixelRatio;
   final rect = tester.getRect(finder);
   expect(
     rect.bottom,

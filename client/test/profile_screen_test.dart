@@ -581,6 +581,12 @@ void main() {
       );
     });
 
+    // A FORWARD guard, not a reproduction: the centred layout already put
+    // Save at y≈612, on screen and in the lower two thirds, so this passes
+    // against the old layout too. What it protects against is the opposite
+    // failure — top-aligning a short form so hard the primary action floats
+    // up into the top third. The reported bug is carried entirely by the
+    // "starts immediately under the header" test above.
     testWidgets('Save profile stays within comfortable thumb reach', (
       tester,
     ) async {
