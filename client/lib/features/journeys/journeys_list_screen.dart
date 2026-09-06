@@ -195,6 +195,19 @@ class _JourneysListScreenState extends ConsumerState<JourneysListScreen> {
                       color: visual.color,
                       tint: visual.tint,
                     ),
+                    // The row announces as one composed label with its
+                    // children's semantics excluded (#662, BrandCard), so
+                    // the two badges — the row's ONLY open/closed and
+                    // progress signals — reach a screen reader through here
+                    // or not at all (FR-AX-1).
+                    trailingSemanticLabel: [
+                      l10n.journeyStatusSemanticLabel(statusLabel),
+                      if (progress != null && progress.planned > 0)
+                        l10n.journeyProgressBadge(
+                          progress.done,
+                          progress.planned,
+                        ),
+                    ].join('. '),
                     trailing: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
