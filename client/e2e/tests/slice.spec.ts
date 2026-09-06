@@ -1,4 +1,4 @@
-import { test, expect, Page } from "@playwright/test";
+import { test, expect, Locator, Page } from "@playwright/test";
 import { enableSemantics, readIdTokenClaims, submitIdpCredentials } from "./helpers";
 
 /**
@@ -117,6 +117,40 @@ async function goToApiariesTab(page: Page) {
  * `apiaryLocationRequired`) without one and every later step would then fail
  * for a confusing reason.
  */
+/**
+ * Brings a control inside the apiary form's scroll view into the viewport.
+ *
+ * A Flutter-web semantics click does NOT scroll the Flutter scrollable to
+ * reach an off-screen target: the DOM node Playwright clicks is an
+ * absolutely-positioned mirror of the widget, so Playwright judges it
+ * actionable, clicks it, and Flutter ignores it because the real widget is
+ * below the fold. The symptom is a SILENT no-op — no timeout, no error, the
+ * step simply does nothing and a later assertion fails somewhere unrelated.
+ *
+ * `scrollIntoViewIfNeeded` does not help; it moves the page, not the form. So
+ * drive the form's own scrollable the way a user does, with the wheel, and
+ * confirm by the mirror's own box that the widget actually moved into view.
+ *
+ * Added after #629 put every field's label on its own row above the box: that
+ * made the form materially taller, and "Use current location" — below the
+ * 220px map picker — fell off the bottom on this viewport.
+ */
+async function scrollFormTo(page: Page, target: Locator) {
+  const viewport = page.viewportSize();
+  if (!viewport) return;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const box = await target.boundingBox().catch(() => null);
+    if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;
+    // Point the wheel at the middle of the form, not at the target: the
+    // target may be off-screen, and a wheel over the 220px map would be
+    // swallowed by flutter_map's own gesture handling instead of scrolling
+    // the form.
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.wheel(0, box && box.y < 0 ? -240 : 240);
+    await page.waitForTimeout(150);
+  }
+}
+
 async function setApiaryLocation(page: Page) {
   await page.getByText("Set on map", { exact: true }).click();
   // Flutter also mirrors the status text into a transient
@@ -129,16 +163,19 @@ async function setApiaryLocation(page: Page) {
     .filter({ hasText: /Location set:/ })
     .first();
 
-  await page
-    .getByRole("button", { name: /Map: tap to place the apiary/ })
-    .click({ position: { x: 120, y: 110 }, timeout: 20_000 })
-    .catch(() => {});
+  const mapSurface = page.getByRole("button", {
+    name: /Map: tap to place the apiary/,
+  });
+  await scrollFormTo(page, mapSurface);
+  await mapSurface.click({ position: { x: 120, y: 110 }, timeout: 20_000 }).catch(() => {});
   // flutter_map debounces a plain tap behind its double-tap-disambiguation
   // timer before invoking MapOptions.onTap, so give the status line a moment
   // to flip before deciding the tap didn't take.
   await locationSet.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
   if (!(await locationSet.isVisible().catch(() => false))) {
-    await page.getByText("Use current location", { exact: true }).click();
+    const useCurrent = page.getByText("Use current location", { exact: true });
+    await scrollFormTo(page, useCurrent);
+    await useCurrent.click();
   }
   await expect(locationSet).toBeVisible({ timeout: 20_000 });
 
