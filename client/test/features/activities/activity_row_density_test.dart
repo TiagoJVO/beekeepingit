@@ -321,6 +321,18 @@ void main() {
       _expectEveryLineSingleAndEllipsized(tester, 'a1');
     });
 
+    testWidgets('the compact row renders exactly three text lines — title, '
+        'date + headline, attribution — not attribution folded into the '
+        'subtitle string (#758)', (tester) async {
+      _useViewport(tester, _narrowViewport);
+      await tester.pumpWidget(
+        _buildList(locale: const Locale('en', 'GB'), activities: [_activity()]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(_paragraphs(tester, 'a1'), hasLength(3));
+    });
+
     testWidgets(
       'the subtitle is the date plus the headline metric only — the rest '
       'moves to the activity detail screen',
