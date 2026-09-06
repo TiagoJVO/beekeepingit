@@ -54,9 +54,16 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **`HeroCard(child:)`** — the plum detail/settings header (radius 20, white
   foreground via `context.brand.onHeroSurface`).
 - **`BrandCard(child:, onTap:)`** — white card on the 1px hairline; tappable
-  ripple when `onTap` is set.
+  ripple when `onTap` is set. Passing `semanticLabel` makes the card announce
+  as **one node** — its child's own semantics are excluded, so the label is
+  the whole announcement (`#662`). Don't pass it on a card whose child has its
+  own focusable controls.
 - **`BrandRowCard(title:, subtitle:, leading:, trailing:, onTap:)`** — the
   standard list row (leading tile · title/subtitle · trailing · chevron).
+  A `trailing` badge that carries meaning of its own (overdue, open/closed,
+  progress) must spell that meaning into `trailingSemanticLabel`, or it is
+  silent to a screen reader; leave it null when the badge only restates the
+  subtitle, so the row doesn't say the same sentence twice.
 - **`LeadingIconTile(icon:, color:, tint:)`** — the rounded tinted icon square.
 - **`NotesCard(text:)`** — the sand "sticky note" callout.
 - **`EmptyState(message:, icon:)`** — centered empty/no-results message.
