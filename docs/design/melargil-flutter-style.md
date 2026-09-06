@@ -111,6 +111,18 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
   A label above a field also means a submit button cannot share the field's
   row: aligned to the row's top it rides up level with the label, and any
   fixed nudge back down breaks at a larger OS text scale — put it underneath.
+- **Content starts at the top, not the middle** — a screen whose body is a
+  scrollable column wraps it in `Align(alignment: Alignment.topCenter, ...)`
+  around the usual `ConstrainedBox(maxWidth: 480)`, never a plain `Center`
+  (`#630`, `#769`). `Center` splits the leftover height into equal bands, so a
+  screen shorter than its viewport starts mid-page with dead space under the
+  header. Two deliberate exceptions: a `loading`/`error` branch keeps its own
+  `Center` — a lone spinner or message does belong in the middle, which is why
+  the `.when` sits outside the alignment wrapper rather than around it — and a
+  short informational holding page with nothing to scroll
+  (`organization_waiting_screen.dart`) stays centred on purpose. A body that is
+  a `Column(mainAxisSize.max)` around an `Expanded` — the pinned-action form
+  screens — already fills the height, so its wrapper is inert either way.
 - **Never hardcode a hex or a radius in a screen.** Pull colour from
   `Theme.of(context).colorScheme` / `context.brand` / `BrandTokens`, and
   radii/heights from `BrandDimens`.

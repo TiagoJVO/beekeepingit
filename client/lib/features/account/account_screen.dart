@@ -166,7 +166,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         error: (err, _) => Center(child: Text(l10n.profileSaveError('$err'))),
         data: (profile) {
           _syncFromProfile(profile);
-          return Center(
+          // Horizontally centred (so the 480px column stays middle-of-page on
+          // a wide window) but TOP-aligned, the shape #630 settled on for
+          // profile and new-organization (#769, FR-UX-1). A plain `Center`
+          // splits the leftover height into equal bands above and below the
+          // content, so the screen starts mid-page the moment it is shorter
+          // than its viewport. This screen's stacked sections happen to run
+          // ~2285px, so the band was never visible in practice — the wrapper
+          // was simply the wrong idiom, and the one every new section here
+          // would have inherited.
+          //
+          // The loading/error branches above stay centred: a lone spinner or
+          // message belongs in the middle, which is why the `.when` sits
+          // outside this wrapper rather than around it.
+          return Align(
+            alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: SingleChildScrollView(
