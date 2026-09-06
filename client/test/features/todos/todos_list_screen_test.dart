@@ -10,6 +10,7 @@ import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/routing/app_router.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -220,6 +221,82 @@ GoRouter _routerOf(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(BeekeepingitApp)))
         .read(routerProvider);
 
+// The four helpers below replace the retired dropdown's own "open the
+// field, tap the menu item" sequence (todo_list_widgets.dart's retired
+// `_filterDropdown`, #635) with the compact bar's own interactions: the
+// status filter is a single-select chip row (no sheet), while
+// priority/due/sort-field are each a menu chip that opens a bottom sheet.
+// Every assertion that follows a call to one of these is unchanged from
+// before #635 — only how the selection is MADE changed, not what it does.
+
+/// Selects [option] (a [TodoStatusFilter]'s `.name`, e.g. `'overdue'`) from
+/// the compact status chip row.
+Future<void> _selectStatus(WidgetTester tester, String option) async {
+  await tester.tap(find.byKey(Key('todo-filter-status-chip-$option')));
+  await tester.pumpAndSettle();
+}
+
+/// Opens the priority menu chip's bottom sheet and taps [option] (a known
+/// priority constant, e.g. [todoPriorityHigh], or `'all'`).
+Future<void> _selectPriority(WidgetTester tester, String option) async {
+  await tester.tap(find.byKey(const Key('todo-filter-priority-chip')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(Key('todo-filter-priority-option-$option')));
+  await tester.pumpAndSettle();
+}
+
+/// Opens the due-date menu chip's bottom sheet and taps [option] (a
+/// [TodoDueFilter]'s `.name`, e.g. `'today'`).
+Future<void> _selectDue(WidgetTester tester, String option) async {
+  await tester.tap(find.byKey(const Key('todo-filter-due-chip')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(Key('todo-filter-due-option-$option')));
+  await tester.pumpAndSettle();
+}
+
+/// Opens the sort-field menu chip's bottom sheet and taps [option] (a
+/// [TodoSortField]'s `.name`, e.g. `'priority'`).
+Future<void> _selectSortField(WidgetTester tester, String option) async {
+  await tester.tap(find.byKey(const Key('todo-sort-field-chip')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(Key('todo-sort-field-option-$option')));
+  await tester.pumpAndSettle();
+}
+
+/// Asserts the status chip for [option] renders selected — the chip row's
+/// own way of showing the active/seeded status filter, replacing the
+/// retired dropdown's own visible-selection text (#635).
+void _expectStatusChipSelected(WidgetTester tester, String option) {
+  final chip = tester.widget<BrandChip>(
+    find.byKey(Key('todo-filter-status-chip-$option')),
+  );
+  expect(
+    chip.selected,
+    isTrue,
+    reason: 'expected the "$option" status chip to be selected',
+  );
+}
+
+/// Asserts the chip keyed [chipKey] renders [text] — the menu chips' own way
+/// of showing a seeded non-default selection (e.g. `"Due: Due today"`),
+/// replacing the retired dropdown's own visible-selection text (#635).
+void _expectChipShowsText(WidgetTester tester, Key chipKey, String text) {
+  expect(
+    find.descendant(of: find.byKey(chipKey), matching: find.text(text)),
+    findsOneWidget,
+  );
+}
+
+/// The row list's own "Overdue" text (the `_OverdueBadge`,
+/// todo_list_widgets.dart) — scoped to `todo-list` rather than a bare
+/// `find.text('Overdue')`, because the status chip row (#635) always shows
+/// an "Overdue" chip label alongside whichever row badges are present, so an
+/// unscoped finder would match both.
+Finder get _overdueBadgeFinder => find.descendant(
+  of: find.byKey(const Key('todo-list')),
+  matching: find.text('Overdue'),
+);
+
 void main() {
   group('main Todos tab (#53, FR-TD-1)', () {
     testWidgets('lists every todo in the org', (tester) async {
@@ -340,12 +417,12 @@ void main() {
           // The list now defaults to the "Open" status filter (#427, D-29),
           // which excludes overdue rows — widen it to "All" so this row-
           // rendering test can see the overdue badge it's asserting on.
-          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('All').last);
-          await tester.pumpAndSettle();
+          await _selectStatus(tester, 'all');
 
-          expect(find.text('Overdue'), findsOneWidget);
+          // Scoped to the list (not a bare `find.text`): the status chip row
+          // (#635) now always shows an "Overdue" chip label alongside the
+          // row's own overdue badge, so an unscoped finder would match both.
+          expect(_overdueBadgeFinder, findsOneWidget);
         });
 
         testWidgets('a done todo shows a strikethrough title and no Overdue '
@@ -366,10 +443,7 @@ void main() {
           // The list now defaults to the "Open" status filter (#427, D-29),
           // which excludes done rows — widen it to "All" so this row-rendering
           // test can see the completed todo it's asserting on.
-          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('All').last);
-          await tester.pumpAndSettle();
+          await _selectStatus(tester, 'all');
 
           final titleText = tester.widget<Text>(
             find.descendant(
@@ -378,7 +452,7 @@ void main() {
             ),
           );
           expect(titleText.style?.decoration, TextDecoration.lineThrough);
-          expect(find.text('Overdue'), findsNothing);
+          expect(_overdueBadgeFinder, findsNothing);
         });
 
         testWidgets('an open, not-yet-due todo shows neither the Overdue '
@@ -394,7 +468,7 @@ void main() {
             ],
           );
 
-          expect(find.text('Overdue'), findsNothing);
+          expect(_overdueBadgeFinder, findsNothing);
           final titleText = tester.widget<Text>(
             find.descendant(
               of: find.byKey(const Key('todo-open-1')),
@@ -421,10 +495,7 @@ void main() {
           ],
         );
 
-        await tester.tap(find.byKey(const Key('todo-filter-status-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Overdue').last);
-        await tester.pumpAndSettle();
+        await _selectStatus(tester, 'overdue');
 
         expect(find.byKey(const Key('todo-od')), findsOneWidget);
         expect(find.byKey(const Key('todo-open')), findsNothing);
@@ -443,10 +514,7 @@ void main() {
           ],
         );
 
-        await tester.tap(find.byKey(const Key('todo-filter-priority-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('High').last);
-        await tester.pumpAndSettle();
+        await _selectPriority(tester, todoPriorityHigh);
 
         expect(find.byKey(const Key('todo-hi')), findsOneWidget);
         expect(find.byKey(const Key('todo-lo')), findsNothing);
@@ -469,10 +537,7 @@ void main() {
           ],
         );
 
-        await tester.tap(find.byKey(const Key('todo-filter-due-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Due today').last);
-        await tester.pumpAndSettle();
+        await _selectDue(tester, 'today');
 
         expect(find.byKey(const Key('todo-today')), findsOneWidget);
         expect(find.byKey(const Key('todo-tomorrow')), findsNothing);
@@ -501,24 +566,15 @@ void main() {
           ],
         );
 
-        await tester.tap(find.byKey(const Key('todo-filter-status-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Overdue').last);
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('todo-filter-priority-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('High').last);
-        await tester.pumpAndSettle();
+        await _selectStatus(tester, 'overdue');
+        await _selectPriority(tester, todoPriorityHigh);
 
         expect(find.byKey(const Key('todo-match')), findsOneWidget);
         expect(find.byKey(const Key('todo-wrong-priority')), findsNothing);
 
         // Narrow further so nothing matches — the no-results state, not the
         // "org has zero todos" empty state.
-        await tester.tap(find.byKey(const Key('todo-filter-priority-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Medium').last);
-        await tester.pumpAndSettle();
+        await _selectPriority(tester, todoPriorityMedium);
 
         expect(find.text('No todos match your filters.'), findsOneWidget);
         expect(find.text('No todos yet.'), findsNothing);
@@ -535,10 +591,7 @@ void main() {
         ],
       );
 
-      await tester.tap(find.byKey(const Key('todo-filter-priority-field')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('High').last);
-      await tester.pumpAndSettle();
+      await _selectPriority(tester, todoPriorityHigh);
       expect(find.byKey(const Key('todo-lo')), findsNothing);
 
       await tester.tap(find.byKey(const Key('todo-filter-clear-button')));
@@ -560,10 +613,7 @@ void main() {
             ],
           );
 
-          await tester.tap(find.byKey(const Key('todo-sort-field-field')));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Priority').last);
-          await tester.pumpAndSettle();
+          await _selectSortField(tester, 'priority');
 
           // Rows are branded cards (BrandCard), not ListTiles, so the render
           // order is asserted by each keyed row's vertical position rather
@@ -583,10 +633,7 @@ void main() {
           ],
         );
 
-        await tester.tap(find.byKey(const Key('todo-sort-field-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Priority').last);
-        await tester.pumpAndSettle();
+        await _selectSortField(tester, 'priority');
 
         await tester.tap(find.byKey(const Key('todo-sort-direction-button')));
         await tester.pumpAndSettle();
@@ -713,13 +760,7 @@ void main() {
       expect(find.byKey(const Key('todo-dn')), findsNothing);
       // The control visibly reflects the seeded state, so the user can see
       // what is filtered — and therefore that it can be cleared.
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('todo-filter-status-field')),
-          matching: find.text('Overdue'),
-        ),
-        findsOneWidget,
-      );
+      _expectStatusChipSelected(tester, 'overdue');
     });
 
     testWidgets('?due= seeds the due-date filter too, combining with '
@@ -738,12 +779,10 @@ void main() {
       expect(find.byKey(const Key('todo-today')), findsOneWidget);
       expect(find.byKey(const Key('todo-up')), findsNothing);
       expect(find.byKey(const Key('todo-od')), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('todo-filter-due-field')),
-          matching: find.text('Due today'),
-        ),
-        findsOneWidget,
+      _expectChipShowsText(
+        tester,
+        const Key('todo-filter-due-chip'),
+        'Due: Due today',
       );
     });
 
@@ -761,13 +800,7 @@ void main() {
       expect(find.byKey(const Key('todo-up')), findsOneWidget);
       expect(find.byKey(const Key('todo-od')), findsNothing);
       expect(find.byKey(const Key('todo-dn')), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('todo-filter-status-field')),
-          matching: find.text('Open'),
-        ),
-        findsOneWidget,
-      );
+      _expectStatusChipSelected(tester, 'open');
     });
 
     testWidgets('clearing the seeded filter restores the full list', (
@@ -821,13 +854,7 @@ void main() {
 
       expect(find.byKey(const Key('todo-od')), findsOneWidget);
       expect(find.byKey(const Key('todo-up')), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('todo-filter-status-field')),
-          matching: find.text('Overdue'),
-        ),
-        findsOneWidget,
-      );
+      _expectStatusChipSelected(tester, 'overdue');
     });
 
     // The other half of the arrival rule: coming back to the tab from the

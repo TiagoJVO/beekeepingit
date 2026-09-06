@@ -1827,6 +1827,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get todoSortDirectionDescendingLabel => 'Decrescente';
 
   @override
+  String todoSortDirectionAction(String direction) {
+    return 'Sentido da ordenação: $direction';
+  }
+
+  @override
+  String todoFilterChipLabel(String label, String value) {
+    return '$label: $value';
+  }
+
+  @override
   String get todoDueDateUnset => 'Sem prazo';
 
   @override

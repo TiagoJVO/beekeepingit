@@ -2337,6 +2337,27 @@
   "@todoSortDirectionDescendingLabel": {
     "description": "Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)"
   },
+  "todoSortDirectionAction": "Sort direction: {direction}",
+  "@todoSortDirectionAction": {
+    "description": "Semantics label for the Todos filter bar's sort-direction icon button (#635, FR-AX-1) — a Tooltip alone populates the semantics tooltip, not the label, so this composes an announced label from the current direction. {direction} is todoSortDirectionAscendingLabel or todoSortDirectionDescendingLabel, already localized.",
+    "placeholders": {
+      "direction": {
+        "type": "String"
+      }
+    }
+  },
+  "todoFilterChipLabel": "{label}: {value}",
+  "@todoFilterChipLabel": {
+    "description": "Composes a Todos filter bar chip's visible AND announced text from its category label (e.g. todoFilterPriorityLabel) and its currently selected value (#635, FR-AX-1) — used for the priority/due/sort menu chips once a non-default value is selected.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "todoDueDateUnset": "No due date",
   "@todoDueDateUnset": {
     "description": "Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)"

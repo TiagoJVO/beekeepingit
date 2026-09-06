@@ -3043,6 +3043,18 @@ abstract class AppLocalizations {
   /// **'Descending'**
   String get todoSortDirectionDescendingLabel;
 
+  /// Semantics label for the Todos filter bar's sort-direction icon button (#635, FR-AX-1) — a Tooltip alone populates the semantics tooltip, not the label, so this composes an announced label from the current direction. {direction} is todoSortDirectionAscendingLabel or todoSortDirectionDescendingLabel, already localized.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort direction: {direction}'**
+  String todoSortDirectionAction(String direction);
+
+  /// Composes a Todos filter bar chip's visible AND announced text from its category label (e.g. todoFilterPriorityLabel) and its currently selected value (#635, FR-AX-1) — used for the priority/due/sort menu chips once a non-default value is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}: {value}'**
+  String todoFilterChipLabel(String label, String value);
+
   /// Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)
   ///
   /// In en, this message translates to:

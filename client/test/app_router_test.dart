@@ -306,10 +306,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
-      // The Todos tab's own filter bar is unique to the Tasks screen, so its
+      // The Todos tab's own filter bar (`todo-filter-bar`, the compacted
+      // TodoFilterBar of #635) is unique to the Tasks screen, so its
       // ABSENCE is what proves the landing actually moved off it (#427's
       // landing target) rather than Home merely being reachable.
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
@@ -327,7 +328,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
     },
   );
 
@@ -343,7 +344,7 @@ void main() {
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
     },
   );
 
@@ -369,7 +370,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
     },
   );
 
@@ -395,7 +396,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('home-screen')), findsOneWidget);
-    expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+    expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
   });
 
   testWidgets(
@@ -415,7 +416,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
     },
   );
 
@@ -433,7 +434,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('home-screen')), findsOneWidget);
-      expect(find.byKey(const Key('todo-filter-status-field')), findsNothing);
+      expect(find.byKey(const Key('todo-filter-bar')), findsNothing);
     },
   );
 

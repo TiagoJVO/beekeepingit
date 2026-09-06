@@ -138,17 +138,12 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
             optionLabel: (v) => treatmentContextLabel(l10n, v) ?? v,
             onChanged: (v) => controller.treatmentContext = v,
           ),
-          _dropdown(
-            context,
-            l10n: l10n,
-            key: 'journey-default-treatment-type-field',
-            label: l10n.activityTreatmentTypeLabel,
-            value: controller.treatmentType,
-            options: treatmentTypes,
-            // Stored value unchanged, rendering localized (#625).
-            optionLabel: (v) => treatmentTypeLabel(l10n, v),
-            onChanged: (v) => controller.treatmentType = v,
-          ),
+          // The revealed field sits directly under the dropdown that
+          // reveals it, before `treatment_type` — rather than after it
+          // (#637, twin site to add_activity_screen.dart's own fix). The
+          // uniform `for (final field in fields) ...[field, gap]` loop this
+          // list feeds needs no spacing bookkeeping — this is a pure
+          // list-element move.
           if (requiresDisease)
             _dropdown(
               context,
@@ -160,6 +155,17 @@ class JourneyDefaultAttributesSection extends StatelessWidget {
               optionLabel: (v) => diseaseConditionLabel(l10n, v),
               onChanged: (v) => controller.disease = v,
             ),
+          _dropdown(
+            context,
+            l10n: l10n,
+            key: 'journey-default-treatment-type-field',
+            label: l10n.activityTreatmentTypeLabel,
+            value: controller.treatmentType,
+            options: treatmentTypes,
+            // Stored value unchanged, rendering localized (#625).
+            optionLabel: (v) => treatmentTypeLabel(l10n, v),
+            onChanged: (v) => controller.treatmentType = v,
+          ),
         ];
       case activityTypeFeeding:
         return [
