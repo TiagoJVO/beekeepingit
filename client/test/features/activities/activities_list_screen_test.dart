@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/bottom_chrome.dart';
+
 /// Fixtures mirroring apiary_detail_screen_test.dart's own (file-private
 /// there, so re-declared here).
 class _CompleteProfileController extends ProfileController {
@@ -348,5 +350,51 @@ void main() {
         },
       );
     });
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): [ActivityListView] passed its `ListView` no
+  // padding at all, so the list ended flush against the shell's bottom
+  // chrome. Unlike the screens #789 fixes outside the shell, this one needs
+  // the band with no toast on screen at all: the Activities tab is a tab
+  // ROOT, so the shell's quick-add FAB floats over the list's bottom-right
+  // and simply sits on the oldest row. Inside the shell `MediaQuery` reports
+  // no bottom inset (the `Scaffold` strips it against the navigation bar), so
+  // the band here is the bare `scrollBottomInset`.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets('the quick-add FAB does not cover the oldest activity, at '
+          '${textScale}x text', (tester) async {
+        useFieldPhone(tester, textScale: textScale);
+        await _openActivitiesTab(
+          tester,
+          activities: [
+            for (var i = 0; i < 12; i++)
+              _activity('a$i', date: '2026-07-${'${19 - i}'.padLeft(2, '0')}'),
+          ],
+        );
+
+        final list = find.byKey(const Key('activity-list'));
+        await scrollToEnd(tester, list);
+
+        expect(
+          tester
+              .getRect(find.byKey(const Key('shell-fab')))
+              .overlaps(tester.getRect(find.byKey(const Key('activity-a11')))),
+          isFalse,
+          reason:
+              'the shell FAB must float over the band the list reserves, '
+              'not over the oldest activity row',
+        );
+
+        expectReservesBottomBand(
+          tester,
+          lastRow: find.byKey(const Key('activity-a11')),
+          scrollable: list,
+          reason:
+              'the activity list must leave the shell chrome a band of its '
+              'own, not end flush against the bottom navigation',
+        );
+      });
+    }
   });
 }

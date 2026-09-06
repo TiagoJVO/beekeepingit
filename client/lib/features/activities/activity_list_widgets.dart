@@ -188,17 +188,32 @@ class ActivityListView extends ConsumerWidget {
     this.showApiary = false,
     this.apiaryNameOf,
     this.shrinkWrap = false,
+    bool? reserveBottomChrome,
     this.maxItems,
     this.onViewAll,
     this.detailLocationBuilder,
     super.key,
-  });
+  }) : reserveBottomChrome = reserveBottomChrome ?? !shrinkWrap;
 
   final AsyncValue<ActivitiesViewModel> viewModel;
   final String emptyText;
   final bool showApiary;
   final String? Function(String apiaryId)? apiaryNameOf;
   final bool shrinkWrap;
+
+  /// Whether this list reserves the bottom chrome band itself (#789).
+  ///
+  /// Named separately from [shrinkWrap] rather than derived from it inline,
+  /// the way `HistoryTimelineList` names its own (#773). The two coincide for
+  /// today's callers — the embedded previews shrink-wrap inside a page that
+  /// already reserves the band, the two full-screen lists do neither — but
+  /// they mean unrelated things: one is "build every row up front", the other
+  /// is "nobody above me has reserved the chrome's landing space". A future
+  /// caller wanting a shrink-wrapped list somewhere nothing else reserves the
+  /// band can say so, instead of silently getting no padding out of a layout
+  /// flag.
+  final bool reserveBottomChrome;
+
   final int? maxItems;
   final VoidCallback? onViewAll;
 
@@ -261,6 +276,20 @@ class ActivityListView extends ConsumerWidget {
             key: const Key('activity-list'),
             shrinkWrap: shrinkWrap,
             physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+            // The two full-screen lists (#43's Activities tab, #42's
+            // per-apiary list) are scrollables of their own and reserve the
+            // bottom chrome band (#789): the Activities tab is a tab ROOT, so
+            // the shell's quick-add FAB floats over this list's bottom-right,
+            // and either list is where "Activity saved" lands when the add
+            // flow returns to it. The embedded preview is a block inside the
+            // detail page's own scroll view, which reserves that band once for
+            // the whole page — reserving it again here would open a hole
+            // mid-card.
+            padding: reserveBottomChrome
+                ? EdgeInsets.only(
+                    bottom: BrandDimens.scrollBottomInsetOf(context),
+                  )
+                : EdgeInsets.zero,
             itemCount: visible.length + (showViewAll ? 1 : 0),
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) {

@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import 'organization_repository.dart';
 
@@ -111,7 +112,26 @@ class _OrganizationDetailsScreenState
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            // The bottom gutter is the chrome band, not a gutter (#789):
+            // nothing stood between the "Organization details saved" toast
+            // this screen raises and the Save button it reports on. Three
+            // fields do not fill a 375x812 phone, so the band is inert there
+            // today — it earns its place on a shorter window, and the moment
+            // a fourth field lands. No FAB and no bottom navigation here —
+            // the route is declared outside the shell — so the band is the
+            // toast's own height, which out here includes the home-indicator
+            // inset the toast's bar carries; `scrollBottomInsetOf` adds it.
+            //
+            // What it deliberately does NOT do is clear that message at 200%
+            // text: `organizationDetailsSaved` wraps to three lines there and
+            // measures 182, past any fixed band. That is #790, and no
+            // per-screen padding closes it.
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
             child: Form(
               key: _formKey,
               child: Column(

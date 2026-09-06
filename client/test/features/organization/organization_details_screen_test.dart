@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import '../../support/a11y_matchers.dart';
+import '../../support/bottom_chrome.dart';
 
 /// FR-ONB-2 + FR-AP-9 (#296): the organization-details screen — the
 /// re-enterable settings view of an organization that already exists (name,
@@ -712,5 +713,45 @@ void main() {
         label: 'Save organization details',
       );
     });
+  });
+
+  // #789 (FR-UX-2, FR-AX-1): this form padded a flat 24 at the bottom, so
+  // nothing stood between the "Organization details saved" toast it raises
+  // and the Save button it reports on. Outside the shell (no bottom
+  // navigation, no FAB), so the band is the toast's own height plus the
+  // home-indicator inset its bar carries out here.
+  //
+  // Asserted structurally rather than by raising the toast, unlike the
+  // sibling account/profile/create-organization screens. Two measurements
+  // rule the behavioural form out here, and both are about the toast rather
+  // than about what this screen reserves: `organizationDetailsSaved` wraps to
+  // three lines at 200% text on a 375pt phone and measures 182 — past any
+  // fixed band, which is #790, not this screen — and three fields do not fill
+  // a 375x812 viewport at either scale, so the form never reaches its own
+  // bottom there and no padding could change where the toast lands. On a
+  // shorter window, or once a fourth field lands, it does: the reservation is
+  // what this test pins.
+  group('the bottom chrome band (#789, FR-UX-2)', () {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets('the form reserves the bottom chrome band under Save, at '
+          '${textScale}x text', (tester) async {
+        useFieldPhone(tester, textScale: textScale);
+
+        await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+        await tester.pumpAndSettle();
+
+        final scroll = find.byType(SingleChildScrollView);
+        await scrollToEnd(tester, scroll);
+
+        expectReservesBottomBand(
+          tester,
+          lastRow: find.byKey(_saveButton),
+          scrollable: scroll,
+          reason:
+              'the form must leave a toast a band of its own below Save, '
+              'not end flush against the window bottom',
+        );
+      });
+    }
   });
 }

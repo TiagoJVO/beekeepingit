@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
+import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -139,145 +140,150 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
         ),
         title: Text(l10n.membersTitle),
       ),
-      body: state.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(l10n.membersLoadError('$err')),
+      // ContentColumn (#650): caps the form + members/invitations lists at
+      // BrandDimens.maxWidthList on a wide desktop viewport rather than
+      // stretching them across the window.
+      body: ContentColumn(
+        child: state.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(l10n.membersLoadError('$err')),
+            ),
           ),
-        ),
-        data: (data) => SingleChildScrollView(
-          // The bottom gutter is the chrome band, not a gutter (#773): this
-          // screen raises its own invite/revoke confirmations, and a flat 24
-          // left them landing on the invitation row they were reporting on.
-          // No FAB and no bottom navigation here — the route is declared
-          // outside the shell — so the band is the toast's own height, which
-          // out here includes the home-indicator inset the toast's bar
-          // carries; `scrollBottomInsetOf` adds it.
-          padding: EdgeInsets.fromLTRB(
-            24,
-            24,
-            24,
-            BrandDimens.scrollBottomInsetOf(context),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // One label pattern app-wide (#629, FR-UX-1): the label
-                    // sits ABOVE the field, never animated into its box
-                    // border.
-                    LabeledField(
-                      label: l10n.membersInviteEmailLabel,
-                      child: TextFormField(
-                        key: const Key('invite-email-field'),
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        // Drops the last invite's server verdict once the
-                        // address changes (#649's rule) — mandatory here,
-                        // because `forceErrorText` below keeps
-                        // `Form.validate()` false while it stands, so
-                        // without this the invite button would be dead for
-                        // the rest of the session.
-                        onChanged: (_) {
-                          if (_emailError == null) return;
-                          setState(() => _emailError = null);
-                        },
-                        // Both messages — the local validator's and the
-                        // server's 422 — are announced, not just painted
-                        // (#750, FR-AX-1, D-18). The server one travels as
-                        // `forceErrorText:` so it also sets
-                        // `FormFieldState.hasError`, which is what marks the
-                        // field `validationResult: invalid`; a
-                        // decoration-only `error:`/`errorText:` would leave
-                        // it reading as VALID under a visibly red message.
-                        // See field_error.dart.
-                        forceErrorText: _emailError,
-                        errorBuilder: announcedFieldError,
-                        validator: (v) {
-                          final value = (v ?? '').trim();
-                          if (value.isEmpty) {
-                            return l10n.membersInviteEmailRequired;
-                          }
-                          if (!looksLikeEmail(value)) {
-                            return l10n.membersInviteEmailInvalid;
-                          }
-                          return null;
-                        },
+          data: (data) => SingleChildScrollView(
+            // The bottom gutter is the chrome band, not a gutter (#773): this
+            // screen raises its own invite/revoke confirmations, and a flat
+            // 24 left them landing on the invitation row they were reporting
+            // on. No FAB and no bottom navigation here — the route is
+            // declared outside the shell — so the band is the toast's own
+            // height, which out here includes the home-indicator inset the
+            // toast's bar carries; `scrollBottomInsetOf` adds it.
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // One label pattern app-wide (#629, FR-UX-1): the label
+                      // sits ABOVE the field, never animated into its box
+                      // border.
+                      LabeledField(
+                        label: l10n.membersInviteEmailLabel,
+                        child: TextFormField(
+                          key: const Key('invite-email-field'),
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          // Drops the last invite's server verdict once
+                          // the address changes (#649's rule) — mandatory
+                          // here, because `forceErrorText` below keeps
+                          // `Form.validate()` false while it stands, so
+                          // without this the invite button would be dead
+                          // for the rest of the session.
+                          onChanged: (_) {
+                            if (_emailError == null) return;
+                            setState(() => _emailError = null);
+                          },
+                          // Both messages — the local validator's and the
+                          // server's 422 — are announced, not just painted
+                          // (#750, FR-AX-1, D-18). The server one travels
+                          // as `forceErrorText:` so it also sets
+                          // `FormFieldState.hasError`, which is what marks
+                          // the field `validationResult: invalid`; a
+                          // decoration-only `error:`/`errorText:` would
+                          // leave it reading as VALID under a visibly red
+                          // message. See field_error.dart.
+                          forceErrorText: _emailError,
+                          errorBuilder: announcedFieldError,
+                          validator: (v) {
+                            final value = (v ?? '').trim();
+                            if (value.isEmpty) {
+                              return l10n.membersInviteEmailRequired;
+                            }
+                            if (!looksLikeEmail(value)) {
+                              return l10n.membersInviteEmailInvalid;
+                            }
+                            return null;
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Under the field rather than beside it (#629). A label
-                    // above the field cannot share a row with the button
-                    // that submits it: aligned to the row's top the button
-                    // rides up level with the LABEL, and any fixed nudge to
-                    // push it back down is a guess that breaks the moment
-                    // the OS text scale grows the label — the exact
-                    // large-text case this milestone is about (FR-AX-1).
-                    // Still not full-width (unlike a whole form's primary
-                    // action): it submits one field, and keeps the shared
-                    // 44+ tap-target height (#79/#80).
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: PrimaryActionButton(
-                        key: const Key('invite-submit-button'),
-                        label: l10n.membersInviteButton,
-                        busy: _inviting,
-                        fullWidth: false,
-                        onPressed: () => _invite(l10n),
+                      const SizedBox(height: 12),
+                      // Under the field rather than beside it (#629). A label
+                      // above the field cannot share a row with the button
+                      // that submits it: aligned to the row's top the button
+                      // rides up level with the LABEL, and any fixed nudge to
+                      // push it back down is a guess that breaks the moment
+                      // the OS text scale grows the label — the exact
+                      // large-text case this milestone is about (FR-AX-1).
+                      // Still not full-width (unlike a whole form's primary
+                      // action): it submits one field, and keeps the shared
+                      // 44+ tap-target height (#79/#80).
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: PrimaryActionButton(
+                          key: const Key('invite-submit-button'),
+                          label: l10n.membersInviteButton,
+                          busy: _inviting,
+                          fullWidth: false,
+                          onPressed: () => _invite(l10n),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              SectionHeader(l10n.membersSectionTitle),
-              const SizedBox(height: 8),
-              if (data.members.isEmpty)
-                Text(l10n.membersEmpty)
-              else
-                ...data.members.map((m) => _MemberTile(member: m)),
-              // Cursor-pagination "load more" (MEDIUM finding: the server
-              // implements limit/cursor/page.next_cursor but the client used
-              // to ignore it, silently hiding anything past the server's
-              // default page size).
-              if (data.membersNextCursor != null) ...[
-                const SizedBox(height: 8),
-                SecondaryActionButton(
-                  key: const Key('members-load-more-button'),
-                  label: l10n.membersLoadMoreButton,
-                  busy: _loadingMoreMembers,
-                  onPressed: () => _loadMoreMembers(l10n),
-                ),
-              ],
-              const SizedBox(height: 32),
-              SectionHeader(l10n.invitationsSectionTitle),
-              const SizedBox(height: 8),
-              if (data.invitations.isEmpty)
-                Text(l10n.invitationsEmpty)
-              else
-                ...data.invitations.map(
-                  (inv) => _InvitationTile(
-                    invitation: inv,
-                    revoking: _revokingIds.contains(inv.id),
-                    onRevoke: () => _revoke(inv.id, l10n),
+                    ],
                   ),
                 ),
-              if (data.invitationsNextCursor != null) ...[
+                const SizedBox(height: 32),
+                SectionHeader(l10n.membersSectionTitle),
                 const SizedBox(height: 8),
-                SecondaryActionButton(
-                  key: const Key('invitations-load-more-button'),
-                  label: l10n.membersLoadMoreButton,
-                  busy: _loadingMoreInvitations,
-                  onPressed: () => _loadMoreInvitations(l10n),
-                ),
+                if (data.members.isEmpty)
+                  Text(l10n.membersEmpty)
+                else
+                  ...data.members.map((m) => _MemberTile(member: m)),
+                // Cursor-pagination "load more" (MEDIUM finding: the server
+                // implements limit/cursor/page.next_cursor but the client used
+                // to ignore it, silently hiding anything past the server's
+                // default page size).
+                if (data.membersNextCursor != null) ...[
+                  const SizedBox(height: 8),
+                  SecondaryActionButton(
+                    key: const Key('members-load-more-button'),
+                    label: l10n.membersLoadMoreButton,
+                    busy: _loadingMoreMembers,
+                    onPressed: () => _loadMoreMembers(l10n),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                SectionHeader(l10n.invitationsSectionTitle),
+                const SizedBox(height: 8),
+                if (data.invitations.isEmpty)
+                  Text(l10n.invitationsEmpty)
+                else
+                  ...data.invitations.map(
+                    (inv) => _InvitationTile(
+                      invitation: inv,
+                      revoking: _revokingIds.contains(inv.id),
+                      onRevoke: () => _revoke(inv.id, l10n),
+                    ),
+                  ),
+                if (data.invitationsNextCursor != null) ...[
+                  const SizedBox(height: 8),
+                  SecondaryActionButton(
+                    key: const Key('invitations-load-more-button'),
+                    label: l10n.membersLoadMoreButton,
+                    busy: _loadingMoreInvitations,
+                    onPressed: () => _loadMoreInvitations(l10n),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

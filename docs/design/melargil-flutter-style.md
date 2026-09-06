@@ -36,6 +36,21 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
   card.
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
+- **Content width:** a screen's content is capped rather than left to stretch
+  across a wide desktop viewport (`#650`) — `BrandDimens.maxWidthContent`
+  (`480`, the single-column form/card cap ~18 call sites already hand-rolled)
+  and `BrandDimens.maxWidthList` (`720`, list screens). `720`, not `480`, is
+  load-bearing: `activity_list_widgets.dart` flips an activity row into its
+  compact three-line phone layout below a **row-own** width of `600`
+  (`_kCompactRowBelowWidth`, `#632`) — a `480` column would leave a row
+  narrower than that and silently undo `#632`'s fix on desktop. `720` minus
+  gutters on each side clears `600` with room to spare. Apply either via
+  `core/widgets/content_column.dart`'s `ContentColumn` (`Align.topCenter` +
+  `ConstrainedBox` — never `Center`, which would reintroduce the vertical
+  centring `#630`/`#769` removed). There is deliberately no `LayoutBuilder` or
+  breakpoint: below the cap the constraint is a no-op because the child
+  already receives the full available width, so **the constraint is its own
+  breakpoint** — do not "improve" it into a conditional.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
   `136` at the bottom (`BrandDimens.scrollBottomInset`) to clear the FAB **and
   the confirmation toast** — a toast covering the card it just confirmed a save
@@ -65,6 +80,17 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
   A screen that genuinely needs nothing says so in a comment where the padding
   would have gone — a silent flat gutter reads as an oversight, because that
   is what `#773` was.
+
+  `#789` finished that sweep across the remaining scrollables (account,
+  profile, the three organization screens, the shared activity list and the
+  new-activity apiary step). **One screen genuinely needs nothing and says so:**
+  `login_screen.dart`. It raises no toast — a failed sign-in renders inline —
+  and it is the one place `scrollBottomInsetOf` would be actively wrong, since
+  a `SafeArea` sits between the read and the scroll view and has already
+  consumed the window's bottom inset. Never read the helper from **above** a
+  `SafeArea` or a `MediaQuery.removePadding`: below one it correctly
+  contributes `0`, above one the padding counts the home indicator twice.
+
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
   of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside

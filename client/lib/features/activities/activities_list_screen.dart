@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../apiaries/apiaries_repository.dart';
 import 'activities_repository.dart';
@@ -17,6 +18,12 @@ import 'activity_list_widgets.dart';
 ///
 /// No own AppBar/Scaffold — like ApiariesListScreen, this is the Activities
 /// tab's root content within the app shell, which supplies the header.
+///
+/// Wrapped in a [ContentColumn] (#650): on a wide desktop viewport the
+/// filter bar and row list stay within [BrandDimens.maxWidthList] instead of
+/// stretching across the whole window — see that constant's own doc comment
+/// for why 720, not the narrower [BrandDimens.maxWidthContent], is load-
+/// bearing for the activity row's own compact/wide breakpoint.
 class ActivitiesListScreen extends ConsumerWidget {
   const ActivitiesListScreen({super.key});
 
@@ -39,36 +46,39 @@ class ActivitiesListScreen extends ConsumerWidget {
         a.id: a.name,
     };
 
-    return Column(
-      children: [
-        ActivityFilterBar(
-          type: type,
-          dateRange: dateRange,
-          onTypeChanged: (v) =>
-              ref
-                      .read(
-                        activityTypeFilterProvider(allActivitiesScope).notifier,
-                      )
-                      .state =
-                  v,
-          onDateRangeChanged: (v) =>
-              ref
-                      .read(
-                        activityDateRangeFilterProvider(allActivitiesScope)
-                            .notifier,
-                      )
-                      .state =
-                  v,
-        ),
-        Expanded(
-          child: ActivityListView(
-            viewModel: viewModel,
-            emptyText: l10n.activitiesEmpty,
-            showApiary: true,
-            apiaryNameOf: (id) => apiaryNames[id],
+    return ContentColumn(
+      child: Column(
+        children: [
+          ActivityFilterBar(
+            type: type,
+            dateRange: dateRange,
+            onTypeChanged: (v) =>
+                ref
+                        .read(
+                          activityTypeFilterProvider(allActivitiesScope)
+                              .notifier,
+                        )
+                        .state =
+                    v,
+            onDateRangeChanged: (v) =>
+                ref
+                        .read(
+                          activityDateRangeFilterProvider(allActivitiesScope)
+                              .notifier,
+                        )
+                        .state =
+                    v,
           ),
-        ),
-      ],
+          Expanded(
+            child: ActivityListView(
+              viewModel: viewModel,
+              emptyText: l10n.activitiesEmpty,
+              showApiary: true,
+              apiaryNameOf: (id) => apiaryNames[id],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

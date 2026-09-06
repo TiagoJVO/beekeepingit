@@ -198,7 +198,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                // The bottom gutter is the chrome band, not a gutter (#789):
+                // ~2285px of stacked sections means this screen is always
+                // scrolled to its end at some point, and the five toasts it
+                // raises ("Profile saved.", "Sync requested.", …) landed on
+                // the Log out row that ends it. No FAB and no bottom
+                // navigation here — the route is declared outside the shell —
+                // so the band is the toast's own height, which out here
+                // includes the home-indicator inset the toast's bar carries;
+                // `scrollBottomInsetOf` adds it.
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  24,
+                  24,
+                  BrandDimens.scrollBottomInsetOf(context),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

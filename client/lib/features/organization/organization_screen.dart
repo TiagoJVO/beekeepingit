@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import 'organization_repository.dart';
 
@@ -109,7 +110,21 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            // The bottom gutter is the chrome band, not a gutter (#789): this
+            // form scrolls on a field phone even at 1x, and the
+            // "Organization created." toast it raises landed on the
+            // join-instead row below its create action — the one escape
+            // hatch out of a screen the user is stuck on until they choose.
+            // No FAB and no bottom navigation here — the route is declared
+            // outside the shell — so the band is the toast's own height,
+            // which out here includes the home-indicator inset the toast's
+            // bar carries; `scrollBottomInsetOf` adds it.
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              BrandDimens.scrollBottomInsetOf(context),
+            ),
             child: Form(
               key: _formKey,
               child: Column(
