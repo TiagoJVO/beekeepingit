@@ -7,9 +7,9 @@ import { initI18n } from "./src/i18n";
 
 expect.extend(toHaveNoViolations);
 
-// Initialize i18n once and pin English for deterministic assertions on rendered strings.
+// Initialize i18n once and pin British English for deterministic assertions on rendered strings.
 const i18n = initI18n();
-void i18n.changeLanguage("en");
+void i18n.changeLanguage("en-GB");
 
 afterEach(() => {
   cleanup();

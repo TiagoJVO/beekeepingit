@@ -1274,6 +1274,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String get activityNoAttributesSummary => 'Sem detalhes adicionais';
 
   @override
+  String get activityHeadlineSupersLabel => 'Alças';
+
+  @override
+  String activityHeadlineHoneyKgValue(String value) {
+    return '$value kg';
+  }
+
+  @override
+  String get activityHeadlineFeedAmountLabel => 'Quantidade';
+
+  @override
   String activityLoadError(String error) {
     return 'Não foi possível carregar a atividade: $error';
   }

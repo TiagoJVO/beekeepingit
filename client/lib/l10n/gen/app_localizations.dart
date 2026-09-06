@@ -2146,6 +2146,24 @@ abstract class AppLocalizations {
   /// **'No additional details'**
   String get activityNoAttributesSummary;
 
+  /// Deliberately short label for the honey-supers count in the COMPACT (phone) activity row headline (#632). The long form the add/edit form and the detail screen use is activityHoneySupersLabel; at 375px that label alone fills the line.
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get activityHeadlineSupersLabel;
+
+  /// Compact activity-row headline for a harvest that recorded kilograms but no supers count (#632) — the unit carries the meaning, so no label is needed
+  ///
+  /// In en, this message translates to:
+  /// **'{value} kg'**
+  String activityHeadlineHoneyKgValue(String value);
+
+  /// Deliberately short label for the feed amount in the COMPACT (phone) activity row headline (#632). The long form is activityFeedAmountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get activityHeadlineFeedAmountLabel;
+
   /// Error toast when loading an existing activity for editing throws (#40)
   ///
   /// In en, this message translates to:
