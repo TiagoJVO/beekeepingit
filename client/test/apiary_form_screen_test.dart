@@ -1338,6 +1338,82 @@ void main() {
         expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'a denied "use current location" in the full-screen picker shows the '
+      'permission-denied banner and leaves Confirm disabled (#444)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationPermissionDenied(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the
+        // Apiaries tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        // Open the full-screen picker with no pin yet.
+        await tester.tap(
+          find.byKey(const Key('apiary-location-picker-maximize-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-permission-denied')),
+          findsNothing,
+        );
+
+        // "Use current location" is refused by the device. Denied stands in
+        // for every non-available variant here — the screen's own `default:`
+        // branch collapses them all onto this one UI state — and no pin is
+        // set either way.
+        await tester.tap(
+          find.byKey(
+            const Key('apiary-fullscreen-picker-use-current-location'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-permission-denied')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Location access denied — you can still place a pin on the map.',
+          ),
+          findsOneWidget,
+        );
+        // No pin was placed, so Confirm stays disabled — there is nothing to
+        // hand back to the form (and a null onPressed also drops it from the
+        // tap path, so it can't be confirmed empty).
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-pin')),
+          findsNothing,
+        );
+        final confirmButton = tester.widget<IconButton>(
+          find.byKey(const Key('apiary-fullscreen-picker-confirm')),
+        );
+        expect(confirmButton.onPressed, isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('error handling on create/update/delete/load (HIGH finding)', () {

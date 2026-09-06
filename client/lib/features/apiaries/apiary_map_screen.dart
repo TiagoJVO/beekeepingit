@@ -13,6 +13,7 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_tokens.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_info_sheet.dart';
+import 'map_chrome.dart';
 import 'map_tile_sources.dart';
 
 /// Default map center/zoom when there's no better signal yet (no apiaries,
@@ -263,7 +264,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
                 left: 12,
                 right: 76,
                 top: 12,
-                child: _InfoBanner(
+                child: MapInfoBanner(
                   key: const Key('apiary-map-location-denied'),
                   message: l10n.apiaryMapLocationPermissionDenied,
                   icon: Icons.location_disabled,
@@ -453,15 +454,13 @@ class _Map extends StatelessWidget {
           // `connect-src` (flutter_map fetches tiles over package:http, i.e.
           // XHR on web — so connect-src, not img-src), and a URL that lives in
           // one place is a URL a test can hold that policy against. #671.
-          MapLayer.satellite => TileLayer(
+          MapLayer.satellite => mapTileLayer(
             key: const Key('apiary-map-tile-layer-satellite'),
             urlTemplate: satelliteTileUrlTemplate,
-            userAgentPackageName: mapTileUserAgentPackageName,
           ),
-          MapLayer.streets => TileLayer(
+          MapLayer.streets => mapTileLayer(
             key: const Key('apiary-map-tile-layer-streets'),
             urlTemplate: streetsTileUrlTemplate,
-            userAgentPackageName: mapTileUserAgentPackageName,
           ),
         },
         MarkerLayer(
@@ -803,18 +802,15 @@ class _MapRecenterButton extends StatelessWidget {
 }
 
 /// Attribution for the active tile source (#257 AC: "Proper attribution
-/// overlay for the active tile source"). Esri's terms require "Powered by
-/// Esri" plus source credits for World Imagery; OSM's require
-/// "© OpenStreetMap contributors" — both are on permanently, not gated
-/// behind a tap, since a hidden-until-tapped credit does not satisfy either
-/// provider's "must be displayed" requirement. This is a small bespoke
-/// overlay (matching this screen's existing hand-rolled `_InfoBanner`/
-/// `_MeasureOverlay` pattern) rather than flutter_map's own
-/// `RichAttributionWidget`: that widget's text attributions render inside a
-/// collapsed, tap-to-open popup by default (`AnimatedOpacity(opacity: 0)`
-/// under a `FadeRAWA`), which would leave attribution invisible until the
-/// user finds and taps an info icon — the wrong default for a compliance
-/// requirement that must be visible, not merely reachable.
+/// overlay for the active tile source"), resolving [MapLayer] to the credit
+/// line that layer's provider requires — Esri's terms require "Powered by
+/// Esri" plus source credits for World Imagery, OSM's require
+/// "© OpenStreetMap contributors".
+///
+/// Only that resolution lives here; the chip itself is the shared
+/// [MapAttributionChip] the two location pickers also render (#444), which is
+/// where the "permanently visible, never behind a tap" rationale is written
+/// down — this screen is the only one of the three with a layer to switch on.
 class _MapAttribution extends StatelessWidget {
   const _MapAttribution({super.key, required this.layer});
 
@@ -823,49 +819,12 @@ class _MapAttribution extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final text = switch (layer) {
-      MapLayer.satellite => l10n.apiaryMapAttributionEsri,
-      MapLayer.streets => l10n.apiaryMapAttributionOsm,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        key: const Key('apiary-map-attribution-text'),
-        style: theme.textTheme.labelSmall,
-      ),
-    );
-  }
-}
-
-class _InfoBanner extends StatelessWidget {
-  const _InfoBanner({super.key, required this.message, required this.icon});
-
-  final String message;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message, style: theme.textTheme.bodySmall)),
-          ],
-        ),
-      ),
+    return MapAttributionChip(
+      text: switch (layer) {
+        MapLayer.satellite => l10n.apiaryMapAttributionEsri,
+        MapLayer.streets => l10n.apiaryMapAttributionOsm,
+      },
+      textKey: const Key('apiary-map-attribution-text'),
     );
   }
 }
