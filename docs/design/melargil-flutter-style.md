@@ -30,7 +30,10 @@ Field-action buttons live in `core/widgets/field_action_button.dart`
 - **Heights:** primary button `60`, secondary `56`, input `58`, search `52`,
   chip `44` (small `40`). Never below the 44px gloves-friendly floor.
 - **Gutters:** list/content screens `16`, form screens `20`; scrollables pad
-  `120` at the bottom to clear the FAB (`BrandDimens.scrollBottomInset`).
+  the bottom band via `BrandDimens.scrollBottomInset` to clear the FAB.
+  Inside the shell that constant and `scrollBottomInsetOf(context)` are equal,
+  so the screens already passing the bare constant are correct and need no
+  churn; off the shell they are not — see **The bottom band, off the shell**.
   That inset is for screens a FAB actually floats over — a tab root, or a
   pushed screen with its own FAB (e.g. `todo_detail_screen.dart`). A
   full-screen **form** is a pushed route with no FAB at all (the shell hides

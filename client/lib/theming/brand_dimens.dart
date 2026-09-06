@@ -129,8 +129,14 @@ abstract final class BrandDimens {
   /// it — the constant plus whatever bottom inset the *window* adds to that
   /// screen's own bottom chrome (#773, FR-UX-2/FR-AX-1).
   ///
-  /// The constant sizes the chrome itself. On a screen with a bottom
-  /// navigation bar that is the whole story: `Scaffold` strips the window's
+  /// The constant sizes the chrome itself — today at 120, which #316 chose to
+  /// clear the FAB and which happens to clear a 108pt two-line toast in the
+  /// shell as well. That headroom is coincidence, not derivation: #774 (#631)
+  /// re-derives the constant against the toast and raises it. This helper is
+  /// written against whatever the constant is, so it composes either way; do
+  /// not restate a number from it.
+  ///
+  /// On a screen with a bottom navigation bar that is the whole story: `Scaffold` strips the window's
   /// bottom padding from the body **and** from the toast it places over it —
   /// literally the same `removeBottomPadding: bottomNavigationBar != null ||
   /// persistentFooterButtons != null` flag feeds both slots — so the toast's
@@ -159,6 +165,12 @@ abstract final class BrandDimens {
   /// future screen nested in the shell that gives itself a local
   /// `bottomNavigationBar` would break that assumption — reserve from a
   /// context below that bar's `Scaffold`, or reserve the bare constant.
+  ///
+  /// Second precondition, and the one #789 will meet first: **no `SafeArea`
+  /// (or `MediaQuery.removePadding`) between this read and the scroll view
+  /// being padded.** Below a `SafeArea` the inset is already consumed and the
+  /// helper correctly contributes 0; read above one and the padding
+  /// double-counts it. `login_screen.dart` is exactly that shape.
   static double scrollBottomInsetOf(BuildContext context) =>
       scrollBottomInset + MediaQuery.paddingOf(context).bottom;
 }

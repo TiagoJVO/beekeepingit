@@ -1,10 +1,12 @@
 /// Shared helpers for the "a toast must not cover the last row" contract
 /// (#773, FR-UX-2/FR-AX-1).
 ///
-/// `#631` pinned that contract once, on the app shell, in
-/// `test/shell/toast_placement_test.dart` — where the toast lands. These
-/// helpers are the other half of it: the per-screen check that the screen
-/// reserves a band tall enough for whatever the `Scaffold` puts there. Kept
+/// `#631` pins the other end of that contract — where the toast *lands* — in
+/// `test/shell/toast_placement_test.dart`. That file is not on this branch:
+/// it arrives with #774, which is still open. These helpers are the
+/// per-screen half, and they stand on their own: they assert the screen
+/// reserves a band tall enough for whatever the `Scaffold` puts there,
+/// whatever height #774 settles on. Kept
 /// here rather than re-derived per file because the four screens `#773`
 /// covers live in four different suites with four different harnesses, and a
 /// clearance assertion that measures a slightly different rect in each one is
