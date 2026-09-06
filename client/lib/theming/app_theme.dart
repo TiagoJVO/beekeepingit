@@ -17,11 +17,18 @@ import 'brand_tokens.dart';
 /// The color scheme is hand-built from [BrandTokens] rather than
 /// `ColorScheme.fromSeed`, so the prototype palette (`docs/design/prototype.md`
 /// §Design tokens) is used verbatim instead of a generated tonal
-/// approximation. **Honey `#F0A81F` is the light-mode primary** — so
-/// `PrimaryActionButton`/`FilledButton` and the shell FAB draw the *same*
-/// honey ("honey is the only primary action") — with a dark on-primary
-/// ([BrandTokens.onHoney]) because white-on-honey fails AA. Every `on*` role
-/// pair the scheme defines is enforced in
+/// approximation.
+///
+/// **Honey is a fill, not the `primary` role.** Material draws `primary` as a
+/// *foreground* on the surface for outlined/text-button labels, accent icons
+/// and selection tints, and honey-on-cream is 1.84:1 — the light-mode gap
+/// #627 reported. So the light scheme's `primary` is plum 700 (8.68:1 on
+/// cream) and the honey fill is pinned where the *one* primary action per
+/// screen actually lives: `PrimaryActionButton` and the FAB theme, both with
+/// the dark [BrandTokens.onHoney] label (white-on-honey fails AA). The dark
+/// scheme keeps honey as `primary` — on plum 950 it measures 8.02:1, so there
+/// it is legible as a foreground. Every `on*` role pair the scheme defines is
+/// enforced in
 /// `test/theming/app_theme_contrast_test.dart`, each against the bar its
 /// actual usage needs: WCAG 2.2 AA text contrast (4.5:1) for the pairs used
 /// as body/label text, except the light-mode `tertiary`/`onTertiary` pair
@@ -46,11 +53,15 @@ abstract final class AppTheme {
 
   /// Light color scheme, taken directly from the (light-first) prototype
   /// palette. Cream is the surface ground, Paper the raised card surface, Ink
-  /// the body text; honey is the single accent.
+  /// the body text; plum is the accent that reads on those grounds, and the
+  /// honey fill is reserved for the one primary action (see the class doc).
+  /// `primary` and `secondary` are deliberately the same plum here: the
+  /// prototype has one accent hue for light grounds, and the roles are kept
+  /// distinct only where the ramp needs them (`secondaryContainer` = plum 600).
   static const ColorScheme lightScheme = ColorScheme(
     brightness: Brightness.light,
-    primary: BrandTokens.honey,
-    onPrimary: BrandTokens.onHoney,
+    primary: BrandTokens.plum700,
+    onPrimary: BrandTokens.paper,
     primaryContainer: BrandTokens.sand,
     onPrimaryContainer: BrandTokens.ink,
     secondary: BrandTokens.plum700,
@@ -71,7 +82,7 @@ abstract final class AppTheme {
     surfaceContainerLow: BrandTokens.paper,
     surfaceContainer: BrandTokens.sand,
     surfaceContainerHigh: BrandTokens.sand,
-    outline: BrandTokens.line,
+    outline: BrandTokens.stone,
     outlineVariant: BrandTokens.hairline,
     shadow: Color(0xFF000000),
     scrim: Color(0xFF000000),
@@ -107,7 +118,7 @@ abstract final class AppTheme {
     surfaceContainerLow: BrandTokens.plum800,
     surfaceContainer: BrandTokens.plum800,
     surfaceContainerHigh: BrandTokens.plum700,
-    outline: BrandTokens.plum600,
+    outline: BrandTokens.plum500,
     outlineVariant: BrandTokens.plum700,
     shadow: Color(0xFF000000),
     scrim: Color(0xFF000000),
@@ -158,6 +169,21 @@ abstract final class AppTheme {
     final isLight = scheme.brightness == Brightness.light;
     final brand = isLight ? BrandTheme.light : BrandTheme.dark;
 
+    // The secondary action's own colors ("Secondary = outlined plum"). Light:
+    // plum label on a plum border over cream (8.68:1 / 8.68:1). Dark: plum is
+    // the ground, so the label is the body cream (14.71:1) and the border the
+    // scheme's plum-500 outline (3.51:1, SC 1.4.11). Either way honey stays
+    // reserved for the single primary action (#627).
+    final secondaryActionForeground = isLight
+        ? scheme.primary
+        : scheme.onSurface;
+    final secondaryActionBorder = isLight ? scheme.primary : scheme.outline;
+
+    // The field focus ring — plum on light (8.68:1 on cream), the lifted body
+    // tint on dark (11.13:1 on plum 950). Both are stronger than the resting
+    // `outline` border they replace, which the contrast test asserts.
+    final focusRing = isLight ? scheme.secondary : scheme.onSurfaceVariant;
+
     return base.copyWith(
       textTheme: textTheme,
       extensions: [brand],
@@ -182,9 +208,13 @@ abstract final class AppTheme {
           side: BorderSide(color: brand.cardBorder),
         ),
       ),
-      // Field controls: filled paper, a 1.5px line border at the 14px field
-      // radius, plum focus ring (the prototype focuses to plum, not honey),
-      // sized to the gloves-friendly 58px control height.
+      // Field controls: filled paper, a 1.5px border at the 14px field radius,
+      // a focus ring that is always *stronger* than the resting border (the
+      // prototype focuses to plum, not honey; on the dark ground plum is the
+      // ground, so the ring is the lifted body tint instead — plum 600 there
+      // would be dimmer than the resting plum-500 outline, reading as losing
+      // focus rather than gaining it, #627). Sized to the gloves-friendly
+      // 58px control height.
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: brand.cardColor,
@@ -195,14 +225,16 @@ abstract final class AppTheme {
         ),
         border: _fieldBorder(scheme.outline),
         enabledBorder: _fieldBorder(scheme.outline),
-        focusedBorder: _fieldBorder(scheme.secondary, width: 1.5),
+        focusedBorder: _fieldBorder(focusRing, width: 1.5),
         errorBorder: _fieldBorder(scheme.error),
         focusedErrorBorder: _fieldBorder(scheme.error, width: 1.5),
         hintStyle: TextStyle(color: scheme.onSurfaceVariant),
       ),
-      // The single honey primary action — 60px tall at the 16px button radius,
-      // Archivo 700/18. PrimaryActionButton still overrides its own size, but
-      // any ad-hoc FilledButton now inherits the brand shape.
+      // The primary action's shape — 60px tall at the 16px button radius,
+      // Archivo 700/18. Only shape/size/typography: the honey fill is pinned
+      // by `PrimaryActionButton` itself, not here, because this theme is also
+      // what `FilledButton.tonal` (a deliberately *lower*-emphasis control)
+      // resolves against — forcing honey here would repaint those too.
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(BrandDimens.heightPrimaryButton),
@@ -217,11 +249,17 @@ abstract final class AppTheme {
         ),
       ),
       // Secondary / destructive — outlined, 56px, 1.5px border at the button
-      // radius.
+      // radius. In light mode the label and the border are both plum
+      // ("Secondary = outlined plum", docs/design/prototype.md): Material's
+      // default would draw them in `primary`/`outline`, which used to mean a
+      // honey label at 1.84:1 on cream (#627). In dark mode plum *is* the
+      // ground, so the label takes the body-text cream and the border keeps
+      // the scheme's (plum-500) outline.
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(BrandDimens.heightSecondaryButton),
-          side: BorderSide(color: scheme.outline, width: 1.5),
+          foregroundColor: secondaryActionForeground,
+          side: BorderSide(color: secondaryActionBorder, width: 1.5),
           shape: const RoundedRectangleBorder(
             borderRadius: BrandDimens.borderCard,
           ),
@@ -263,9 +301,13 @@ abstract final class AppTheme {
         ),
       ),
       // Contextual honey FAB pill, shared with PrimaryActionButton's honey.
+      // Pinned to the token rather than to `scheme.primary`: the FAB is one of
+      // the two places the single primary action lives, and `primary` is the
+      // accent role that has to stay legible *on* a light surface, which honey
+      // isn't (#627).
       floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
+        backgroundColor: BrandTokens.honey,
+        foregroundColor: BrandTokens.onHoney,
         extendedTextStyle: textTheme.titleMedium?.copyWith(
           fontFamily: bodyFontFamily,
           fontWeight: FontWeight.w700,

@@ -26,15 +26,39 @@ abstract final class BrandTokens {
   static const plum800 = Color(0xFF3D3454);
 
   /// Plum 700 `#4A3F63` — headers, hero cards, primary plum surfaces.
+  ///
+  /// Also the light scheme's `primary`: it is the brand hue that actually
+  /// *reads* on a light ground (8.68:1 on [cream]), which [honey] does not
+  /// (1.84:1). That makes every accent Material draws from `primary` —
+  /// outlined/text-button labels, chevrons, selection fills — legible, and
+  /// keeps honey scarce (#627).
   static const plum700 = Color(0xFF4A3F63);
 
   /// Plum 600 `#574B73` — hover / raised plum surface.
   static const plum600 = Color(0xFF574B73);
 
+  /// Plum 500 `#7A6E99` — the dark scheme's `outline` (control borders).
+  /// Not a prototype swatch: the prototype is light-first, and [plum600] —
+  /// the nearest ramp step — measures only 2.06:1 on [plum950], below WCAG
+  /// 2.2 SC 1.4.11's 3:1 floor for a control boundary. This is [plum600]
+  /// lifted along the same ramp until a button/input border is identifiable
+  /// on the dark ground (3.51:1) without reading as a bright rule (#627).
+  static const plum500 = Color(0xFF7A6E99);
+
   // --- Honey / gold (the one accent) ---
 
   /// Honey `#F0A81F` — **the** primary action + highlights (one accent).
   /// "Honey is the only primary action" (`docs/design/prototype.md`).
+  ///
+  /// A **fill** color, not a foreground on light grounds: honey text/icons on
+  /// [cream] measure 1.84:1, so honey is only ever used as a background
+  /// paired with [onHoney] (6.5:1), or as a highlight on a plum ground / map
+  /// imagery (8.02:1 on [plum950], 5.68:1 on [plum800]'s offline banner,
+  /// 4.73:1 on the [plum700] header). It is therefore *not* the
+  /// light scheme's `primary` role — Material spreads `primary` across every
+  /// outlined-button label and accent icon, which is how it leaked onto cream
+  /// (#627); the honey fill is pinned where the one primary action lives
+  /// (`PrimaryActionButton`, the FAB theme).
   static const honey = Color(0xFFF0A81F);
 
   /// Honey hover `#F7B637` — hover/pressed state of [honey].
@@ -74,6 +98,12 @@ abstract final class BrandTokens {
 
   /// Stone `#8B8270` — tertiary text/hint. Decorative on light grounds (below
   /// AA as body text), so not used as an `on*` text role.
+  ///
+  /// It *is* the light scheme's `outline` (input/chip/control borders): at
+  /// 3.43:1 on [cream] it clears WCAG 2.2 SC 1.4.11's 3:1 boundary floor,
+  /// which the prototype's own [line] hairline (1.37:1) does not — the same
+  /// "pick a different token for the role" call this file's header describes,
+  /// applied to a border rather than to text (#627).
   static const stone = Color(0xFF8B8270);
 
   // --- Borders ---
@@ -81,7 +111,11 @@ abstract final class BrandTokens {
   /// Hairline `#E7E1D3` — card borders (the 1px card hairline).
   static const hairline = Color(0xFFE7E1D3);
 
-  /// Line `#D8D1C0` — input borders (slightly stronger than [hairline]).
+  /// Line `#D8D1C0` — the prototype's input-border hairline (slightly stronger
+  /// than [hairline]). Kept as the palette's record of the prototype swatch,
+  /// but **not** used as the theme's `outline` role: at 1.37:1 on [cream] a
+  /// control drawn with it isn't identifiable per WCAG 2.2 SC 1.4.11 (3:1),
+  /// so `AppTheme` uses [stone] for that role instead (#627).
   static const line = Color(0xFFD8D1C0);
 
   // --- Status ---
