@@ -10,6 +10,9 @@ import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// Fixtures mirroring widget_test.dart's/app_shell_test.dart's own — kept
 /// local rather than imported since those files' fixtures are file-private.
@@ -120,6 +123,7 @@ Widget _buildApp({
   Map<String, List<ApiaryCounter>> counters = const {},
   ApiariesRepository? apiariesRepository,
   String orgRegistrationNumber = '',
+  Stream<Apiary?> Function()? detailStream,
 }) {
   return ProviderScope(
     overrides: [
@@ -144,13 +148,19 @@ Widget _buildApp({
       // apiaryCountersProvider already is, resolving from the same fixed
       // [apiaries] list by id so existing fixtures/tests don't need to
       // change shape.
+      // [detailStream] lets the layout group at the foot of this file hold
+      // the detail in its `loading` / `error` branch (#787) without
+      // duplicating this whole override list; every other test leaves it
+      // null and resolves by id.
       apiaryByIdProvider.overrideWith(
-        (ref, apiaryId) => Stream.value(
-          apiaries.cast<Apiary?>().firstWhere(
-            (a) => a!.id == apiaryId,
-            orElse: () => null,
-          ),
-        ),
+        (ref, apiaryId) =>
+            detailStream?.call() ??
+            Stream.value(
+              apiaries.cast<Apiary?>().firstWhere(
+                (a) => a!.id == apiaryId,
+                orElse: () => null,
+              ),
+            ),
       ),
       // The detail screen's generic counters section (#256) watches this
       // family provider per apiary id. Un-overridden it depends on the real
@@ -192,6 +202,7 @@ Widget _buildApp({
 
 void main() {
   _registrationNumberTests();
+  _layoutTests();
   testWidgets('tapping an apiary in the list opens its detail screen (#32)', (
     tester,
   ) async {
@@ -1254,5 +1265,103 @@ void _registrationNumberTests() {
         expect(tester.takeException(), isNull);
       },
     );
+  });
+}
+
+/// #787 (FR-UX-1): the body hung its 480px column off a plain `Center`, which
+/// splits the leftover height into equal bands and leaves a dead gap between
+/// the shell's header and the first card.
+///
+/// The viewport matters more here than on the screens #630/#769 fixed. At
+/// [kHandsetViewport] this screen's header card, sections and history block
+/// already overflow the body, so the scroll view fills it and the `Center` is
+/// inert — 0px, before and after. The band only appears once the body is
+/// taller than the content, which on this fixture starts around a tablet:
+/// [kTabletViewport] measured 197px on `main`. A guard written at 375x812
+/// would have asserted nothing at all.
+///
+/// This group sizes the view itself: the shared `_openApiaryDetail` helper
+/// above deliberately does not, and the file's other tests run at the default
+/// 800x600.
+void _layoutTests() {
+  group('ApiaryDetailScreen — layout at 1024x1366 (#787, FR-UX-1)', () {
+    Future<void> openAt(
+      WidgetTester tester, {
+      Stream<Apiary?> Function()? detail,
+      bool settle = true,
+    }) async {
+      useViewport(tester, size: kTabletViewport);
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+          detailStream: detail,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The same two taps `_openApiaryDetail` performs — the Apiaries tab
+      // lists `a1` off apiariesStreamProvider, which [detailStream] does not
+      // touch.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      // The loading branch renders a CircularProgressIndicator, which never
+      // stops animating — `pumpAndSettle` would time out rather than fail on
+      // an assertion, so that case pumps a fixed frame instead.
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+    }
+
+    testWidgets('the content starts at the top of the content area', (
+      tester,
+    ) async {
+      await openAt(tester);
+
+      expectStartsAtContentTop(
+        tester,
+        find.ancestor(
+          of: find.byKey(const Key('apiary-detail-header')),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        // Anchored on the navigation shell, not an AppBar: this screen has
+        // none of its own — the shell owns the header and hands the route the
+        // region below it (and stacks the offline/needs-fix banners in
+        // between, so the assertion keeps meaning something if one shows).
+        anchor: find.byType(StatefulNavigationShell),
+        from: ContentTopAnchor.inside,
+        label: "the apiary's detail card stack",
+      );
+    });
+
+    // The other half of the change: only the `data` branch top-aligns. These
+    // two fail if the alignment wrapper is ever hoisted above
+    // `apiaryAsync.when` — the mistake #630 had to undo on the journey stats
+    // screen.
+    testWidgets('the loading spinner stays vertically centred', (tester) async {
+      await openAt(tester, detail: pendingStream<Apiary?>, settle: false);
+
+      expectVerticallyCentredIn(
+        tester,
+        find.byType(CircularProgressIndicator),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+      );
+    });
+
+    testWidgets('the error message stays vertically centred', (tester) async {
+      await openAt(
+        tester,
+        detail: () => Stream<Apiary?>.error(Exception('boom')),
+      );
+
+      expectVerticallyCentredIn(
+        tester,
+        find.textContaining('boom'),
+        region: tester.getRect(find.byType(StatefulNavigationShell)),
+        label: 'a lone error message',
+      );
+    });
   });
 }
