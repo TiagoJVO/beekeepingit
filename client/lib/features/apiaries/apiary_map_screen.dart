@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../../core/geo/device_location.dart';
 import '../../core/geo/haversine.dart';
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_tokens.dart';
@@ -172,7 +173,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
         _mapController.move(ll.LatLng(lat, lon), _streetZoom);
       default:
         messenger.showSnackBar(
-          SnackBar(content: Text(l10n.apiaryMapLocationPermissionDenied)),
+          appToast(l10n.apiaryMapLocationPermissionDenied),
         );
     }
   }

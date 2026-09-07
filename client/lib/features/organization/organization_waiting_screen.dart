@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
@@ -80,9 +81,8 @@ class _OrganizationWaitingScreenState
       // Narrowed to Exception, and a FIXED localized message — the same rule
       // the profile screen follows: a raw exception is never field-user text.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.organizationWaitingCheckError)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(appToast(l10n.organizationWaitingCheckError));
     } finally {
       if (mounted) setState(() => _checking = false);
     }
