@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -101,6 +103,15 @@ const Size kHandsetViewport = Size(375, 812);
 /// suite hits in CI.
 const Size kDesktopViewport = Size(1280, 800);
 
+/// The reference tablet-portrait viewport — 1024x1366, an iPad Pro 12.9" in
+/// portrait, and the size #787 measured the four detail screens' dead
+/// vertical band at (263 / 288.5 / 224px). Those screens show **no** band at
+/// [kHandsetViewport]: their header card, sections and history block already
+/// overflow a phone, so the scroll view fills the body and the vertical
+/// alignment never gets to apply. A layout guard for them has to run here or
+/// it asserts nothing.
+const Size kTabletViewport = Size(1024, 1366);
+
 /// Sizes the test view to [size] at a 1:1 device pixel ratio and restores it
 /// afterwards, so a layout assertion reads in logical pixels that match the
 /// viewport the issue/checklist talks about.
@@ -109,6 +120,133 @@ void useViewport(WidgetTester tester, {Size size = kHandsetViewport}) {
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// Which edge of the anchor [expectStartsAtContentTop] measures from.
+///
+/// The two call-site shapes in this app anchor differently, and getting it
+/// wrong turns the assertion into a tautology rather than failing loudly —
+/// which is why this is an explicit argument and not inferred.
+enum ContentTopAnchor {
+  /// Measure from the anchor's **bottom** edge: the anchor sits *above* the
+  /// content area, e.g. a screen carrying its own [AppBar].
+  below,
+
+  /// Measure from the anchor's **top** edge: the anchor *is* the content
+  /// area, e.g. a route embedded in the app shell, where the shell owns the
+  /// header and hands the screen the region below it.
+  inside,
+}
+
+/// Asserts the content matched by [content] starts at the very top of the
+/// content area defined by [anchor] — the checkable form of the top-align
+/// rule `docs/design/melargil-flutter-style.md` states and #630/#769/#787
+/// applied: a scrollable column wraps in `Align(topCenter)` (today
+/// `ContentColumn`), never a plain `Center`, which splits the leftover height
+/// into equal bands and leaves a dead gap under the header.
+///
+/// Bounded at BOTH ends by [tolerance]: the upper bound catches the dead
+/// band the issue is about, the lower bound catches content rendering up out
+/// of its own content area (over the header).
+///
+/// The gap is reported in the failure message, so a red run names the real
+/// measured offset rather than just "expected true".
+void expectStartsAtContentTop(
+  WidgetTester tester,
+  Finder content, {
+  required Finder anchor,
+  required ContentTopAnchor from,
+  String label = 'the content',
+  double tolerance = 1.0,
+}) {
+  // Both finders are guarded BEFORE getRect so an ambiguous match fails on
+  // this line, naming which finder was at fault, rather than with an opaque
+  // "matched N widgets" from getRect.
+  expect(
+    content,
+    findsOneWidget,
+    reason:
+        'expectStartsAtContentTop: the content finder matched no '
+        'single widget',
+  );
+  expect(
+    anchor,
+    findsOneWidget,
+    reason:
+        'expectStartsAtContentTop: the anchor finder matched no single widget',
+  );
+  final anchorRect = tester.getRect(anchor);
+  final contentAreaTop = switch (from) {
+    ContentTopAnchor.below => anchorRect.bottom,
+    ContentTopAnchor.inside => anchorRect.top,
+  };
+  final gap = tester.getRect(content).top - contentAreaTop;
+  expect(
+    gap,
+    inInclusiveRange(-tolerance, tolerance),
+    reason:
+        '$label must start at the top of its content area, like every other '
+        'screen in the app; it started ${gap}px below it',
+  );
+}
+
+/// A stream that never emits and never closes, holding a `StreamProvider`
+/// (and so its screen) in the `loading` branch for as long as the test needs.
+///
+/// Deliberately not `Stream.empty()`, which closes immediately and resolves
+/// the provider, and deliberately timer-free so a test can still pump fixed
+/// frames. Pass the FUNCTION, not a call — a Riverpod family override runs
+/// its closure once per key and per rebuild, and handing the same
+/// single-subscription stream out twice fails with "Stream has already been
+/// listened to".
+Stream<T> pendingStream<T>() => Stream<T>.fromFuture(Completer<T>().future);
+
+/// The current logical viewport — `physicalSize / devicePixelRatio`, the
+/// coordinate space `tester.getRect` reports in.
+///
+/// READ from the test view rather than assumed, the rule
+/// [expectWithinThumbReach] documents: a layout assertion that hardcodes
+/// 812 silently measures against the wrong geometry the moment a caller
+/// passes [useViewport] another size.
+Size viewportOf(WidgetTester tester) =>
+    tester.view.physicalSize / tester.view.devicePixelRatio;
+
+/// Asserts the single widget matched by [finder] — a lone loading spinner or
+/// error message — sits vertically centred inside [region], the other half of
+/// the top-align change (#630/#769/#787).
+///
+/// This is the preservation guard: it fails if a screen's alignment wrapper
+/// is ever hoisted ABOVE its `AsyncValue.when`, which would drag the
+/// loading/error branches to the top along with the data branch. A lone
+/// spinner does belong in the middle, which is why the `.when` sits outside
+/// the wrapper rather than around it.
+///
+/// [region] is the body the branch is centred in, and it differs by screen
+/// shape — header bottom to viewport bottom for a screen with its own
+/// [AppBar], or the shell's own content rect for a route embedded in the app
+/// shell (which reserves a bottom navigation bar the viewport height knows
+/// nothing about). Passing it explicitly is what keeps the assertion honest
+/// on both.
+void expectVerticallyCentredIn(
+  WidgetTester tester,
+  Finder finder, {
+  required Rect region,
+  String label = 'a lone spinner',
+  double tolerance = 1.0,
+}) {
+  expect(
+    finder,
+    findsOneWidget,
+    reason: 'expectVerticallyCentredIn: finder matched no single widget',
+  );
+  final actual = tester.getCenter(finder).dy;
+  expect(
+    (actual - region.center.dy).abs(),
+    lessThan(tolerance),
+    reason:
+        '$label must stay in the middle of the body; it rendered at $actual, '
+        'body centre ${region.center.dy} (body $region)',
+  );
 }
 
 /// Asserts the single widget matched by [finder] — a screen's primary action
