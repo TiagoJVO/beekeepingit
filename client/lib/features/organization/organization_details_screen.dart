@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -242,12 +243,10 @@ class _OrganizationDetailsScreenState
       // that answers nothing reads as broken, especially on the flaky
       // connectivity this screen already warns about.
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            sent
-                ? l10n.organizationDetailsSaved
-                : l10n.organizationDetailsNoChanges,
-          ),
+        appToast(
+          sent
+              ? l10n.organizationDetailsSaved
+              : l10n.organizationDetailsNoChanges,
         ),
       );
     } on ApiException catch (e) {
@@ -259,21 +258,17 @@ class _OrganizationDetailsScreenState
       // edited flag are NOT reset here, so the next build cannot re-seed over
       // what they still have on screen).
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            e.statusCode == 409
-                ? l10n.organizationDetailsSaveConflict
-                : l10n.organizationDetailsSaveFailed,
-          ),
+        appToast(
+          e.statusCode == 409
+              ? l10n.organizationDetailsSaveConflict
+              : l10n.organizationDetailsSaveFailed,
         ),
       );
     } on Exception {
       // Offline, a 403 for a non-admin, or a 422 for an over-long value — all
       // surface the same way rather than leaving the button spinning. The
       // specific cause is not actionable to the beekeeper beyond "try again".
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.organizationDetailsSaveFailed)),
-      );
+      messenger.showSnackBar(appToast(l10n.organizationDetailsSaveFailed));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

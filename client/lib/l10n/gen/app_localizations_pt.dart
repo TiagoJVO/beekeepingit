@@ -2217,6 +2217,12 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get homeUnavailableNotice =>
       'Não foi possível ler alguns dados neste dispositivo, por isso isto pode estar incompleto.';
+
+  @override
+  String get toastDetailsAction => 'Detalhes';
+
+  @override
+  String get toastDetailsCloseAction => 'Fechar';
 }
 
 /// The translations for Portuguese, as used in Portugal (`pt_PT`).

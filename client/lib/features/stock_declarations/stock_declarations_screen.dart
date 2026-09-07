@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/content_column.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
@@ -237,7 +238,7 @@ class _NumberGroup extends ConsumerWidget {
       ],
       notes: result.notes,
     );
-    messenger.showSnackBar(SnackBar(content: Text(l10n.stockDeclarationSaved)));
+    messenger.showSnackBar(appToast(l10n.stockDeclarationSaved));
   }
 }
 

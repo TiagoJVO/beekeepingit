@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/widgets/actions_speed_dial.dart';
+import '../core/widgets/app_toast.dart';
 import '../core/widgets/tap_target.dart';
 import '../core/widgets/unsaved_changes.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
@@ -491,7 +492,7 @@ class AppShell extends ConsumerWidget {
           .isEnabled(notificationEventSyncConflict);
       if (!conflictsEnabled) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
+          .showSnackBar(appToast(l10n.syncSupersededNotice));
     });
 
     // Todo-due-reminder / sync-result notifications (#82, D-24) queued by
@@ -515,9 +516,7 @@ class AppShell extends ConsumerWidget {
       final messenger = ScaffoldMessenger.of(context);
       for (final notification in next) {
         messenger.showSnackBar(
-          SnackBar(
-            content: Text(_engineNotificationMessage(l10n, notification)),
-          ),
+          appToast(_engineNotificationMessage(l10n, notification)),
         );
       }
       // Marks this batch delivered so it's never shown twice — see

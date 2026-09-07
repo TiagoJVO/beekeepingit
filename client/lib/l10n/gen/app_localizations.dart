@@ -3598,6 +3598,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Some data couldn\'t be read on this device, so this may be incomplete.'**
   String get homeUnavailableNotice;
+
+  /// Affordance on a confirmation toast whose message was capped at two lines; opens the full text (#790)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get toastDetailsAction;
+
+  /// Dismisses the dialog showing a toast's full message (#790)
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get toastDetailsCloseAction;
 }
 
 class _AppLocalizationsDelegate
