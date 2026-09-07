@@ -2202,6 +2202,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeUnavailableNotice =>
       'Some data couldn\'t be read on this device, so this may be incomplete.';
+
+  @override
+  String get toastDetailsAction => 'Details';
+
+  @override
+  String get toastDetailsCloseAction => 'Close';
 }
 
 /// The translations for English, as used in the United Kingdom (`en_GB`).

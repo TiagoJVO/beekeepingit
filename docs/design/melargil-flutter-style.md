@@ -93,7 +93,17 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
 
 - **Toasts:** nothing positions them — every `showSnackBar` call site hands the
   bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
-  of its bottom chrome. The shell puts a `BrandDimens.gapToastNav` gutter inside
+  of its bottom chrome. A message long enough to wrap goes through
+  `appToast(message)` (`core/widgets/app_toast.dart`), which caps it at
+  `kToastMaxLines` and, only when that truncates, offers a **Details**
+  affordance opening the full text in a scrollable dialog (`#790`). Unbounded,
+  `syncSupersededNotice` measured 268px at 200% text — a third of a 375x812
+  window, and past anything `scrollBottomInset` can reserve. Do **not** "fix"
+  that by clamping the toast's own text scale: that withdraws the large text
+  from the reader who asked for it, which is the opposite of `FR-AX-1`.
+  `appToast` deliberately takes no `BuildContext` — a save awaits its API
+  first, so the call site captures its messenger before the gap and must not
+  reach across it. The shell puts a `BrandDimens.gapToastNav` gutter inside
   its `bottomNavigationBar` slot so that anchor lands clear of the navigation
   bar instead of on its top edge (`#631`). Do **not** reach for
   `SnackBarBehavior.floating` to get the same gap: with a FAB on screen Flutter

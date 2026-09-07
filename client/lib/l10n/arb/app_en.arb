@@ -2838,5 +2838,13 @@
   "homeUnavailableNotice": "Some data couldn't be read on this device, so this may be incomplete.",
   "@homeUnavailableNotice": {
     "description": "Notice above Home's sections when SOME local queries failed while others resolved (#658 review, D-35): the sections that loaded still show, but the screen admits the rest is missing or frozen rather than passing it off as empty"
+  },
+  "toastDetailsAction": "Details",
+  "@toastDetailsAction": {
+    "description": "Affordance on a confirmation toast whose message was capped at two lines; opens the full text (#790)"
+  },
+  "toastDetailsCloseAction": "Close",
+  "@toastDetailsCloseAction": {
+    "description": "Dismisses the dialog showing a toast's full message (#790)"
   }
 }

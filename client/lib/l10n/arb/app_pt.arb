@@ -812,5 +812,13 @@
   "homeFirstRunAction": "Adicionar o primeiro apiário",
   "homeAllClearMessage": "Nada precisa da sua atenção.\n\nNenhuma tarefa está atrasada ou a vencer, nenhuma jornada está aberta e todos os apiários foram visitados {days, plural, =1{no último dia} other{nos últimos {days} dias}}.",
   "homeUnavailableMessage": "Não foi possível ler os dados guardados neste dispositivo.\n\nO Início não consegue mostrar o que precisa da sua atenção até isso ser resolvido. Tente reabrir a aplicação.",
-  "homeUnavailableNotice": "Não foi possível ler alguns dados neste dispositivo, por isso isto pode estar incompleto."
+  "homeUnavailableNotice": "Não foi possível ler alguns dados neste dispositivo, por isso isto pode estar incompleto.",
+  "toastDetailsAction": "Detalhes",
+  "@toastDetailsAction": {
+    "description": "Affordance on a confirmation toast whose message was capped at two lines; opens the full text (#790)"
+  },
+  "toastDetailsCloseAction": "Fechar",
+  "@toastDetailsCloseAction": {
+    "description": "Dismisses the dialog showing a toast's full message (#790)"
+  }
 }
