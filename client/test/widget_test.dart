@@ -182,6 +182,18 @@ void main() {
     await tester.tap(find.byKey(const Key('account-logout-button')));
     await tester.pumpAndSettle();
 
+    // Since #237 `logout()`'s best-effort steps are BOUNDED rather than
+    // awaited indefinitely, so a tap here leaves a real timer pending: this
+    // harness does not override `authControllerProvider`, so the wipe reads
+    // the real `localStoreProvider`, which never resolves without PowerSync.
+    // Advance past the bound so that timer fires and `logout()` runs to
+    // completion — otherwise the tree is disposed with a pending timer and the
+    // binding fails the test. It stops there: with no session in this harness,
+    // `logout()` returns before the discovery/end-session block, so nothing
+    // here touches the network.
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+
     // isAuthenticatedProvider is overridden to a fixed `true` in this harness
     // (see buildApp), so the router itself won't redirect on logout here —
     // this test only exercises that the logout control is wired to the

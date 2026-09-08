@@ -238,12 +238,23 @@ places that already document it.
 
 An assertion the e2e correctly caught is marked `test.fixme` (skipped, not
 loosened) with the diagnosis inline, so the job stays green while the bug is
-tracked. Unskip it when its bug is fixed:
+tracked. Unskip it when its bug is fixed.
 
-- **RP-initiated logout doesn't return to the app** (#237). After Sign out,
-  Authentik shows its own "You've logged out" confirmation interstitial instead
-  of redirecting to the app's `post_logout_redirect_uri`, so the browser never
-  gets back to `/login`. Fix is on the Authentik/logout-flow side.
+**None are currently skipped.** The last one was **RP-initiated logout doesn't
+return to the app** (#237): after Sign out, Authentik showed its own "You've
+logged out" confirmation interstitial instead of redirecting to the app's
+`post_logout_redirect_uri`, so the browser never got back to `/login`. The fix
+was on the Authentik side — a logout allow-list plus a `user_logout` stage bound
+into the provider invalidation flow ([auth.md §8.18](../../docs/architecture/auth.md)) — and
+the assertion is live again in `tests/slice.spec.ts` as _"logout revokes the
+session"_, extended to also prove the **server-side** SSO session ended (it
+starts a fresh sign-in and requires the IdP to ask for a password).
+
+Worth reading before adding an entry here: #237's test spent weeks looking like
+a 60-second app stall that was in fact a Playwright click landing on the
+off-screen semantics mirror of a below-the-fold widget (#836 — see
+`scrollFlutterViewTo` and `tests/logout-tap.spec.ts`). Confirm a red assertion is
+the app's fault before skipping it.
 
 ## Watched flake — PowerSync's download stream never establishes (#246)
 
