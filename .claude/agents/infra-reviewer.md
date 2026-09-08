@@ -97,6 +97,10 @@ cd ../observability && helm dependency build . && helm lint . && helm template o
 ./scripts/check-admin-audience-mapping.sh
 ./scripts/check-platform-operator-mapping.sh
 ./scripts/check-federation-source-posture.sh
+./scripts/check-authorization-redirect-posture.sh
+./scripts/test-authorization-redirect-posture.sh
+./scripts/check-logout-invalidation-posture.sh
+./scripts/test-logout-invalidation-posture.sh
 ./scripts/check-scope-mapping-provider.sh
 task repo:actions   # actionlint, for any .github/workflows change
 task lint           # the whole hygiene gate CI runs

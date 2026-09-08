@@ -35,6 +35,15 @@ const _kIdToken = 'bk.id_token';
 /// that user-initiated flow already surfaces failures via [loginErrorProvider]
 /// and a bounded timeout there would just add an artificial delay before the
 /// (already-fast) real failure surfaces.
+///
+/// Also bounds every best-effort step of [AuthController.logout] that runs
+/// BEFORE the front-channel redirect (#237): the local-store wipe, discovery,
+/// and refresh-token revocation. Each was already documented as best-effort
+/// and each was already wrapped in a catch — but a catch only handles a
+/// throw, and an unbounded `await` that never completes parks sign-out
+/// entirely: no end-session request, no navigation, and a UI still showing the
+/// user as signed in. Same "don't park the user on a hanging screen" promise,
+/// applied to the other end of the session.
 const _kAuthNetworkTimeout = Duration(seconds: 5);
 
 /// Cached OIDC discovery: fetches the provider's `.well-known` document once
@@ -377,11 +386,21 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // the two steps never leaves stale replicated data behind paired with a
     // session that looks logged out. Best-effort: a wipe failure must not
     // block the user from finishing logout.
+    //
+    // BOUNDED (#237). "Best-effort" has to mean best-effort against a HANG,
+    // not just against a throw: opening/tearing down PowerSync is the one step
+    // here that can stall indefinitely, and an unbounded `await` on it parks
+    // sign-out forever — the user is left on a screen that still says they are
+    // signed in, no end-session request is ever sent, and the SSO session
+    // survives. That is what the #237 e2e caught: a confirmed "Sign out" click
+    // followed by 60s of ZERO network activity and no navigation. A timeout
+    // here degrades to exactly the failure this catch block already accepts.
     try {
       final store =
           await (_injectedLocalStore ??
-              () => ref.read(localStoreProvider.future))();
-      await store.clear();
+                  () => ref.read(localStoreProvider.future))()
+              .timeout(_authNetworkTimeout);
+      await store.clear().timeout(_authNetworkTimeout);
     } catch (e, st) {
       // Deliberately catch-all (not narrowed to Exception): a test double's
       // wipe failure (or a real PowerSync failure) can surface as a
@@ -396,6 +415,13 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         stackTrace: st,
       );
     }
+    // What a FIRED bound leaves behind, and why it is safe to continue: no
+    // credential survives — `_clearLocalSession()` and `state = AsyncData(null)`
+    // below run unconditionally, outside this try. What can survive is
+    // replicated org DATA, if `clear()` timed out. The #664/D-38 owner marker
+    // is the fail-closed second line for that: `clearPerUserPrefs` always drops
+    // `bk.local_store_subject`, so the next sign-in finds no marker in
+    // `ensureLocalStoreBelongsTo` and purges before handing the store out.
     // `ref.mounted` guards against the async gap above racing this
     // controller's own disposal (e.g. a test container torn down mid-await;
     // see auth_controller_test.dart) — invalidating a disposed Ref throws.
@@ -416,7 +442,10 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     if (session == null || platform == null) return;
 
     try {
-      final issuer = await _issuer();
+      // Bounded for the same reason as the wipe above: everything between here
+      // and `assignLocation` is best-effort, and a stall in any of it means the
+      // end-session request is never sent at all (#237).
+      final issuer = await _issuer().timeout(_authNetworkTimeout);
       final metadata = issuer.metadata;
 
       // Best-effort refresh-token revocation (optional per §7).
@@ -427,7 +456,9 @@ class AuthController extends AsyncNotifier<AuthSession?> {
             refreshToken: session.refreshToken,
             idToken: session.idToken.isNotEmpty ? session.idToken : null,
           );
-          await cred.revoke();
+          // Bounded: revocation is explicitly optional, and the front-channel
+          // redirect below is not — it must never wait on this (#237).
+          await cred.revoke().timeout(_authNetworkTimeout);
         } on Exception catch (e, st) {
           // Non-fatal: front-channel end-session below still ends the session.
           developer.log(
@@ -440,6 +471,12 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       }
 
       // Front-channel end-session (RP-initiated logout).
+      //
+      // Both parameters are load-bearing since #237 and they fail differently:
+      // the provider now REQUIRES `id_token_hint` (no hint is a 400), and the
+      // redirect URI must be an EXACT member of the provider's logout
+      // allow-list — so it stays `platform.redirectUri`, the app's own origin,
+      // and is never computed from anything a caller supplies.
       final endSession = metadata.endSessionEndpoint;
       if (endSession != null && session.idToken.isNotEmpty) {
         final logoutUrl = endSession.replace(
@@ -449,6 +486,20 @@ class AuthController extends AsyncNotifier<AuthSession?> {
           },
         );
         platform.assignLocation(logoutUrl.toString());
+      } else {
+        // The one path that logs the user out locally while leaving the
+        // SERVER-SIDE SSO session alive — the exact guarantee auth.md §7 makes
+        // and #237 restored. It is narrow (`_persist` carries the previous id
+        // token across a refresh, so a session normally always has one) but it
+        // is silent, and silence is what made #237 take as long as it did. Log
+        // it so the one case that quietly breaks the guarantee is observable.
+        developer.log(
+          'logout(): no front-channel end-session issued — '
+          'endSessionEndpoint=${endSession != null}, '
+          'idToken=${session.idToken.isNotEmpty}. The local session is cleared '
+          'but the provider SSO session outlives this device (NFR-SEC-1).',
+          name: 'auth',
+        );
       }
     } on Exception catch (e, st) {
       // Offline / discovery failure: local state is already cleared above, so

@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + redirect URIs + app-shell precache + service-worker routes + web image hardening + repo map"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + redirect URIs + logout invalidation + app-shell precache + service-worker routes + web image hardening + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -18,6 +18,7 @@ tasks:
       - task: platform-operator-mapping
       - task: federation-source-posture
       - task: authorization-redirect-posture
+      - task: logout-invalidation-posture
       - task: app-shell-precache
       - task: service-worker-routes
       - task: web-image-hardening
@@ -93,6 +94,16 @@ tasks:
       # finding, and a textual guard can stop looking without saying so — so its
       # negative cases run with it, not on trust.
       - ./scripts/test-authorization-redirect-posture.sh
+
+  logout-invalidation-posture:
+    desc: "Verify Sign out ends the provider session and only redirects back to rendered origins (#237, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-logout-invalidation-posture.sh
+      # Same reason as the authorization guard above: this one IS the
+      # open-redirect boundary and the session-invalidation control, and three
+      # rounds of review found it passing on blueprints that were not safe. Its
+      # negative cases run with it, not on trust.
+      - ./scripts/test-logout-invalidation-posture.sh
 
   app-shell-precache:
     # The description deliberately avoids naming the build command verbatim:

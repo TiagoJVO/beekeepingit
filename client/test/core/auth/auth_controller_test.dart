@@ -115,6 +115,18 @@ class FakeLocalPrefs implements LocalPrefs {
   bool get isEmpty => _store.isEmpty;
 }
 
+/// A [FakeLocalStoreEngine] whose wipe NEVER COMPLETES — not one that throws.
+/// The difference is the whole point of the #237 regression below: `logout()`
+/// already caught a failing wipe, but an `await` that never returns is not a
+/// failure it could catch, and it parked sign-out before any network call.
+class HangingLocalStoreEngine extends FakeLocalStoreEngine {
+  @override
+  Future<void> clear() {
+    clearCalls++;
+    return Completer<void>().future; // never completes
+  }
+}
+
 /// A fake [LocalStoreEngine] so `logout()`'s local-data wipe (#125) can be
 /// asserted without standing up a real PowerSync database — mirrors
 /// [FakeAuthPlatform]'s role for the session-storage side of `logout()`.
@@ -164,6 +176,7 @@ buildLoggedInContainer({
   required http.Client client,
   LocalStoreEngine? localStore,
   LocalPrefs? localPrefs,
+  Duration? authNetworkTimeout,
 }) async {
   final platform = FakeAuthPlatform(
     initialUri: Uri.parse(
@@ -178,6 +191,7 @@ buildLoggedInContainer({
     client,
     localStore: localStore,
     localPrefs: localPrefs,
+    authNetworkTimeout: authNetworkTimeout,
   );
   final session = await container.read(authControllerProvider.future);
   expect(
@@ -780,6 +794,18 @@ void main() {
       // Front-channel RP-initiated logout: a browser redirect to the discovered
       // end_session_endpoint carrying the id_token_hint (replaces the previous
       // refresh-token POST to the provider's logout endpoint).
+      //
+      // Since #237 BOTH parameters are load-bearing, not belt-and-braces, but
+      // they fail DIFFERENTLY (auth.md §8.18). The provider now allow-lists
+      // post_logout_redirect_uri, and authentik REQUIRES id_token_hint
+      // alongside it: drop the hint and sign-out is a 400 at the IdP. Drop
+      // post_logout_redirect_uri and there is no 400 — EndSessionView.validate
+      // simply plans no redirect, so the browser dead-ends on the session-end
+      // interstitial instead of returning to /login. That is #237's original
+      // symptom, which is exactly why this assertion pins it.
+      // The redirect URI must stay the app's OWN origin (platform.redirectUri):
+      // it has to match the allow-list exactly, and it is never computed from
+      // anything a caller supplies.
       expect(platform.assignedLocation, isNotNull);
       final logoutUri = Uri.parse(platform.assignedLocation!);
       expect(
@@ -817,6 +843,42 @@ void main() {
         expect(platform.hasAnyLocal, isFalse);
       },
     );
+
+    // #237 REGRESSION. Every step before the front-channel redirect is
+    // documented as best-effort and wrapped in a catch — but a catch only
+    // handles a THROW. A local-store wipe that simply never completes (a
+    // PowerSync teardown stall) used to park sign-out forever: no end-session
+    // request, no navigation, and a UI still showing the user signed in. The
+    // walking-skeleton e2e caught it as a confirmed "Sign out" click followed
+    // by 60s of zero network activity. Every such step is now bounded, so the
+    // redirect always happens.
+    test('a local-store wipe that HANGS still reaches the end-session redirect (#237)', () async {
+      final localStore = HangingLocalStoreEngine();
+      final (_, platform, notifier) = await buildLoggedInContainer(
+        client: MockClient((req) async => _tokenResponse(req)),
+        localStore: localStore,
+        authNetworkTimeout: const Duration(milliseconds: 20),
+      );
+
+      // Must not hang: bounded by the injected timeout, not by the wipe.
+      await notifier.logout().timeout(const Duration(seconds: 5));
+
+      expect(
+        localStore.clearCalls,
+        1,
+        reason: 'the wipe is still attempted first, it just cannot block',
+      );
+      expect(
+        platform.assignedLocation,
+        isNotNull,
+        reason:
+            'the front-channel end-session redirect must still be issued — '
+            'that is the only thing that ends the provider SSO session',
+      );
+      expect(platform.assignedLocation, contains(_endSessionUrl));
+      expect(notifier.state.value, isNull);
+      expect(platform.hasAnySession, isFalse);
+    });
 
     // #390: onboarding gate cache clearing — a second user on the same
     // shared browser must never see a prior user's cached profile/org.

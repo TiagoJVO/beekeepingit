@@ -510,9 +510,12 @@ export async function countMessagesTo(
 // (exactly the #366 registration e2e's squatter symptom).
 export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
 
-// The IdP ORIGIN, anchored — the host every Authentik flow URL lives on, and
-// the marker that tells a one-time verification link apart from any other link
-// that may reach the same inbox (see pollForVerificationLink, #641).
+// The IdP ORIGIN, anchored the same way and for the same reason. Two uses:
+// asserting a sign-in is being HELD at the provider — e.g. #237's logout guard,
+// which is only meaningful if the browser is on the auth host with a credential
+// form in front of it rather than back on the app with an SSO cookie doing the
+// work — and telling a one-time flow link apart from any other link that may
+// reach the same inbox (see pollForVerificationLink, #641).
 export const AUTH_ORIGIN_RE = /^https:\/\/auth\.beekeepingit\.local/;
 
 /**
