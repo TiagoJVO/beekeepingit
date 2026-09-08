@@ -25,6 +25,17 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
                                                   the declaration log, keyed by registration
                                                   number; reached from Account; a record only,
                                                   no deadlines or thresholds derived — D-19)
+  NOTE (#639, FR-UX-2/FR-AX-1): the routes above sit OUTSIDE the shell, so they have neither
+  bottom navigation nor the rail, and the installed PWA (D-10, display: standalone) has no
+  browser back button. The five NON-GATE ones (/organization/members, /account,
+  /sync-needs-fix, /organization/details, /stock-declarations) therefore each owe their OWN
+  AppBar `leading` back control with a tooltip, landing on the screen that links there
+  (/home for the first two, /account for the rest). The four redirect gates (/login,
+  /profile, /organization/new, /organization/waiting) are exempt: the redirect above bounces
+  the user straight back, so there is no exit to offer. Swept by
+  test/routing/pushed_screen_exit_test.dart, which reads the live router's own top-level
+  routes — so a NEW out-of-shell route fails there until it is either given an exit and
+  swept too, or classified as a gate.
 StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpanded (840); a
   side NavigationRail at/above it (#650) — lib/shell/app_shell.dart; per-tab FAB config
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an

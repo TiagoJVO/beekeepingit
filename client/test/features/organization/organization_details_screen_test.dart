@@ -754,4 +754,97 @@ void main() {
       });
     }
   });
+
+  // #639 (FR-AP-9, FR-UX-2, FR-AX-1): this route is declared OUTSIDE the app
+  // shell, so it carries neither the shell's bottom navigation nor its back
+  // action — and its own AppBar had no `leading`. The whole file contained no
+  // `context.go/pop/push` at all: saving left the user standing on the same
+  // screen with no way out but the browser/OS back gesture.
+  //
+  // Mirrors the guard the members and account screens already carry
+  // (`members-back-button`, `account-back-button`). Where it LANDS is pinned
+  // by the live-router sweep in test/routing/pushed_screen_exit_test.dart;
+  // this harness has no GoRouter, so it only pins presence + a11y label.
+  group('the app bar offers a way back (#639, FR-UX-2)', () {
+    testWidgets('the app bar has a back button', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-details-back-button')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the back button has a tooltip/semantic label', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    });
+
+    // Unlike the other four out-of-shell screens #639 swept, this one is an
+    // EDIT FORM. A one-tap exit that silently drops typed edits would trade
+    // the dead end for data loss, which #345 (FR-UX-1) already ruled out for
+    // every other form in the app.
+    testWidgets('leaving with unsaved edits asks before discarding them', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(_FakeOrganizationController(name: 'Apiário Velho')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_nameField), 'Apiário Novo');
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsOneWidget);
+    });
+
+    testWidgets('keeping editing returns to the form with the edit intact', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(_FakeOrganizationController(name: 'Apiário Velho')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_nameField), 'Apiário Novo');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('discard-changes-cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+      // Still on the form, and the typed value survived the round trip — a
+      // prompt that dropped the edit anyway would be worse than none.
+      expect(find.byKey(_nameField), findsOneWidget);
+      expect(
+        tester.widget<TextFormField>(find.byKey(_nameField)).controller?.text,
+        'Apiário Novo',
+      );
+    });
+
+    // The converse — an UNTOUCHED form must leave without a prompt, or every
+    // exit from a screen the user only read costs a pointless extra tap — is
+    // pinned by the sweep in test/routing/pushed_screen_exit_test.dart, not
+    // here. It has to be: leaving needs a real router, and asserting "no
+    // dialog" in this harness would pass just as happily if the button did
+    // nothing at all. The sweep taps this screen's back control on an
+    // untouched form and asserts the router reaches /account, which a prompt
+    // would have blocked.
+  });
 }

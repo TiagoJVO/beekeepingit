@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/app_toast.dart';
@@ -35,7 +36,23 @@ class StockDeclarationsScreen extends ConsumerWidget {
     final apiaries = ref.watch(apiariesStreamProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.stockDeclarationsTitle)),
+      appBar: AppBar(
+        // The route is declared outside the app shell, so there is no bottom
+        // navigation to leave by and — with the manifest's `"display":
+        // "standalone"` — no browser back button either. Without this the
+        // screen was a hard dead end (#639, FR-UX-2). Back to Account, the
+        // screen that links here. The needs-fix list's "Fix" action is the
+        // only other way in, and going back from here lands on Account rather
+        // than on that list — which is where the needs-fix screen's OWN back
+        // button goes too, so the two exits agree.
+        leading: IconButton(
+          key: const Key('stock-declarations-back-button'),
+          icon: const Icon(Icons.arrow_back),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          onPressed: () => context.go('/account'),
+        ),
+        title: Text(l10n.stockDeclarationsTitle),
+      ),
       // ContentColumn (#650): caps the log at BrandDimens.maxWidthList on a
       // wide desktop viewport rather than stretching it across the window.
       body: ContentColumn(

@@ -20,6 +20,35 @@ import '../../support/bottom_chrome.dart';
 /// watch/delete round-trip (a Dismiss actually removing the row live) is
 /// exercised, not just the initial render.
 void main() {
+  // #639 (FR-UX-2, FR-AX-1): this route is declared OUTSIDE the app shell, so
+  // it carries neither bottom navigation nor the desktop rail — its own app
+  // bar is the only way out. The `leading` was already here; the accessible
+  // name on it was not, so an icon-only control announced nothing to a screen
+  // reader.
+  //
+  // Where it LANDS is pinned by the live-router sweep in
+  // test/routing/pushed_screen_exit_test.dart; this harness has no GoRouter,
+  // so it only pins presence + a11y label.
+  group('the app bar offers a way back (#639, FR-UX-2)', () {
+    testWidgets('the app bar has a back button', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-back-button')), findsOneWidget);
+    });
+
+    testWidgets('the back button has a tooltip/semantic label', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('needs-fix-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    });
+  });
+
   testWidgets('empty state when there is nothing to fix', (tester) async {
     await tester.pumpWidget(_harness(_FakeRejectedStore([])));
     await tester.pumpAndSettle();
