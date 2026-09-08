@@ -45,6 +45,72 @@ func (m *inspectingMailer) Send(ctx context.Context, msg mail.Message) error {
 	return m.inner.Send(ctx, msg)
 }
 
+// barrierMailer holds every send inside the SMTP conversation until `want` of
+// them have arrived (or a deadline passes), and counts how many ever got
+// there.
+//
+// This is what makes the concurrency test below DETERMINISTIC rather than a
+// coin toss. A plain pair of goroutines does not reliably expose a read-then-
+// act race: the whole request path here is in-process against a local
+// container, so one racer routinely finishes before the other starts its own
+// read, and the test then passes against code that has the bug. Blocking
+// inside the send widens the window to the full duration of the barrier, which
+// is exactly the window the old code left open — it read the cooldown, then
+// sent, then recorded the attempt.
+//
+// So: two entrants means the limits let two sends through, every time. One
+// entrant (releasing on the deadline instead) means only one ever got past
+// them.
+type barrierMailer struct {
+	inner *fakeMailer
+
+	mu      sync.Mutex
+	want    int
+	entered int
+	release chan struct{}
+	timeout time.Duration
+}
+
+// arm makes the next `want` sends block until all of them have arrived. Sends
+// before arm (the create-time ones a test's fixture makes) pass straight
+// through and are not counted.
+func (m *barrierMailer) arm(want int, timeout time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.want = want
+	m.entered = 0
+	m.release = make(chan struct{})
+	m.timeout = timeout
+}
+
+func (m *barrierMailer) Send(ctx context.Context, msg mail.Message) error {
+	m.mu.Lock()
+	release, timeout := m.release, m.timeout
+	if release != nil {
+		m.entered++
+		if m.entered >= m.want {
+			close(m.release)
+			m.release = nil
+		}
+	}
+	m.mu.Unlock()
+
+	if release != nil {
+		select {
+		case <-release:
+		case <-time.After(timeout):
+		}
+	}
+	return m.inner.Send(ctx, msg)
+}
+
+// concurrentSenders is how many sends reached the barrier since arm.
+func (m *barrierMailer) concurrentSenders() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.entered
+}
+
 // deliveryState is the pair of columns that together ARE the rate limit:
 // how many attempts this invitation has spent, and when the last one started.
 type deliveryState struct {
@@ -98,14 +164,16 @@ func createOrgAndInvitation(t *testing.T, f *orgFixture, bearer, orgID, orgName,
 // #854 finding 1 — the cooldown is only a cooldown if it is serialized.
 //
 // Two resends of ONE invitation are fired from goroutines released by a shared
-// start channel, so they race as closely as the real HTTP/DB round trips
-// allow, against a real Postgres (not a mock). Read-then-act on the pool lets
-// both observe the same pre-attempt last_delivery_at, both pass the cooldown,
-// and both mail the address — the mailbomb the doc comment on
+// start channel, against a real Postgres (not a mock), and the mailer holds
+// whoever gets into the SMTP conversation there until BOTH have arrived or a
+// deadline passes (see barrierMailer). Read-then-act on the pool lets both
+// observe the same pre-attempt last_delivery_at, both pass the cooldown, and
+// both mail the address — the mailbomb the doc comment on
 // resendInvitationHandler claims cannot happen. With the attempt slot claimed
 // by a single conditional UPDATE under the per-org lock (the same
 // LockOrganizationForUpdate the last-admin guard and the create budget use),
-// exactly one of the two claims the slot and the loser is refused.
+// exactly one of the two claims the slot, the other never reaches the mailer,
+// and the barrier is released by its deadline instead.
 //
 // The loser's status may be 429 (it re-read the row after the winner
 // committed, so the cooldown now bites) or 409 (its claim matched zero rows);
@@ -115,7 +183,8 @@ func TestResendInvitation_ConcurrentResendsClaimOneAttemptSlot(t *testing.T) {
 	adminSub := "a1111111-1111-4111-8111-111111111111"
 	adminUserID := "a0000000-0000-7000-8000-0000000000a1"
 
-	mailer := &fakeMailer{}
+	inner := &fakeMailer{}
+	mailer := &barrierMailer{inner: inner}
 	f := newOrgFixtureWithMailer(t,
 		map[string]stubUser{adminSub: {UserID: adminUserID}},
 		nil,
@@ -139,7 +208,12 @@ func TestResendInvitation_ConcurrentResendsClaimOneAttemptSlot(t *testing.T) {
 		return rec.Code
 	}
 
+	// Hold every send that arrives until both racers are inside it. Under the
+	// fix only one ever arrives, so the barrier falls back to its deadline —
+	// which is why the deadline is short.
 	const racers = 2
+	mailer.arm(racers, 3*time.Second)
+
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	codes := make([]int, racers)
@@ -169,9 +243,15 @@ func TestResendInvitation_ConcurrentResendsClaimOneAttemptSlot(t *testing.T) {
 		t.Fatalf("concurrent resends = %v, want exactly one 200 and one refusal (429 or 409) — the cooldown must serialize", codes)
 	}
 
+	// The decisive assertion: only ONE request ever got as far as the SMTP
+	// conversation. Two means both passed limits that are supposed to be
+	// spent by the same statement that checks them.
+	if got := mailer.concurrentSenders(); got != 1 {
+		t.Errorf("%d concurrent resends reached the mailer, want 1 — the cooldown and the attempt cap must be claimed, not merely read", got)
+	}
 	// One create send plus exactly one resend. Two would mean the address was
 	// mailed twice inside the cooldown window.
-	if got := len(mailer.messages()); got != 2 {
+	if got := len(inner.messages()); got != 2 {
 		t.Errorf("relay received %d messages, want 2 (the create send and exactly one resend)", got)
 	}
 	if got := deliveryStateOf(t, f, created.ID).Attempts; got != 2 {
