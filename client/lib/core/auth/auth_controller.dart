@@ -415,6 +415,13 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         stackTrace: st,
       );
     }
+    // What a FIRED bound leaves behind, and why it is safe to continue: no
+    // credential survives — `_clearLocalSession()` and `state = AsyncData(null)`
+    // below run unconditionally, outside this try. What can survive is
+    // replicated org DATA, if `clear()` timed out. The #664/D-38 owner marker
+    // is the fail-closed second line for that: `clearPerUserPrefs` always drops
+    // `bk.local_store_subject`, so the next sign-in finds no marker in
+    // `ensureLocalStoreBelongsTo` and purges before handing the store out.
     // `ref.mounted` guards against the async gap above racing this
     // controller's own disposal (e.g. a test container torn down mid-await;
     // see auth_controller_test.dart) — invalidating a disposed Ref throws.
@@ -464,6 +471,12 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       }
 
       // Front-channel end-session (RP-initiated logout).
+      //
+      // Both parameters are load-bearing since #237 and they fail differently:
+      // the provider now REQUIRES `id_token_hint` (no hint is a 400), and the
+      // redirect URI must be an EXACT member of the provider's logout
+      // allow-list — so it stays `platform.redirectUri`, the app's own origin,
+      // and is never computed from anything a caller supplies.
       final endSession = metadata.endSessionEndpoint;
       if (endSession != null && session.idToken.isNotEmpty) {
         final logoutUrl = endSession.replace(
@@ -473,6 +486,20 @@ class AuthController extends AsyncNotifier<AuthSession?> {
           },
         );
         platform.assignLocation(logoutUrl.toString());
+      } else {
+        // The one path that logs the user out locally while leaving the
+        // SERVER-SIDE SSO session alive — the exact guarantee auth.md §7 makes
+        // and #237 restored. It is narrow (`_persist` carries the previous id
+        // token across a refresh, so a session normally always has one) but it
+        // is silent, and silence is what made #237 take as long as it did. Log
+        // it so the one case that quietly breaks the guarantee is observable.
+        developer.log(
+          'logout(): no front-channel end-session issued — '
+          'endSessionEndpoint=${endSession != null}, '
+          'idToken=${session.idToken.isNotEmpty}. The local session is cleared '
+          'but the provider SSO session outlives this device (NFR-SEC-1).',
+          name: 'auth',
+        );
       }
     } on Exception catch (e, st) {
       // Offline / discovery failure: local state is already cleared above, so
