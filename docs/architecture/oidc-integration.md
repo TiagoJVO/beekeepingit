@@ -52,7 +52,7 @@ the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit
 - **Client** `beekeepingit-pwa` — **public**, **Authorization Code + PKCE (S256)**, **RS256**.
 - **Grant types** — `authorization_code`, `refresh_token`. **Set explicitly** — on Authentik 2026.5.x this defaults to `[]` (no grants), which rejects the authorize request with `invalid_request`.
 - **Token validity** — access **15m**, refresh **30d** (blueprint uses Django-timedelta strings: `minutes=15`, `days=30`).
-- **Redirect URIs** — `http://localhost:.*` (regex), `https://app\.beekeepingit\.local:8443/.*` (regex), **and** `https://app.beekeepingit.local:8443` (**strict**). The strict bare-origin entry is required because the PWA sends the bare origin as its `redirect_uri`, and Authentik derives **CORS**-allowed origins from `redirect_uris` — an `Origin` has no path, so the `…/.*` regex never matches it.
+- **Redirect URIs** — `http://localhost:[0-9]+(/.*)?` (regex), `https://app\.beekeepingit\.local:8443/.*` (regex), **and** `https://app.beekeepingit.local:8443` (**strict**). The strict bare-origin entry is required because the PWA sends the bare origin as its `redirect_uri`, and Authentik derives **CORS**-allowed origins from `redirect_uris` — an `Origin` has no path, so the `…/.*` regex never matches it. The localhost entry is a **numeric-port** regex since [#822](https://github.com/TiagoJVO/beekeepingit/issues/822): matching is `re.fullmatch`, so the previous `http://localhost:.*` also accepted `http://localhost:@evil.example` — a URL the browser resolves to host `evil.example` with `localhost:` as **userinfo**, leaking the `?code=` to an attacker origin that could redeem it (no client secret on a public client, PKCE not mandatory). It also made `urlparse(entry).port` raise inside `cors_allow`, 500ing any localhost `Origin`. Held by `scripts/check-authorization-redirect-posture.sh` (`task repo:lint`), which allows only that form and origins rendered from `global.appOrigin`/`global.adminOrigin` — on **every** `redirect_uri_type`, because `token.py` derives the /token + /userinfo CORS origins from **all** `redirect_uris`, unfiltered.
 - **Registration** — **self-service enrollment since #366** ([auth.md §8.11](auth.md)): blueprint
   flow `beekeepingit-enrollment`, linked from the login page via the default identification
   stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
@@ -117,7 +117,8 @@ _both_ providers off the frozen per-app issuer).
   (§6), which this satisfies via the **shared signing key** (LOAD-BEARING: the admin token verifies
   only because it is signed with the key the beekeepingit discovery/JWKS advertises — the two
   providers' signing keys must **stay shared**, per §8).
-- **Redirect URIs** — `http://localhost:.*` (regex, Vite dev), `https://admin\.beekeepingit\.local:8443/.*`
+- **Redirect URIs** — `http://localhost:[0-9]+(/.*)?` (regex, Vite dev — numeric port since #822, same
+  reason as the pwa provider above), `https://admin\.beekeepingit\.local:8443/.*`
   (regex), **and** `https://admin.beekeepingit.local:8443` (**strict**, for the redirect-URIs-derived
   CORS origin — same reason as the pwa's strict entry). The admin host is
   `admin.beekeepingit.local:8443` by convention (mirrors `app.beekeepingit.local:8443`), templated

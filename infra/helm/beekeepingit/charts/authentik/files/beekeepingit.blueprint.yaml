@@ -211,7 +211,33 @@ entries:
       # staging/prod: the real Ingress host, no port) — rendered via `tpl` in
       # templates/blueprint-configmap.yaml, not a plain file include.
       redirect_uris:
-        - { matching_mode: regex, url: "http://localhost:.*" }
+        # Local dev origins (`flutter run -d chrome`, `vite dev`). This is an
+        # AUTHORIZATION entry — `redirect_uri_type` defaults to
+        # `RedirectURIType.AUTHORIZATION` (providers/oauth2/models.py @ 2026.5.4)
+        # — i.e. a place authentik will hand a `?code=` to, matched with
+        # `re.fullmatch` (`views/authorize.py::check_redirect_uri`). The pattern
+        # IS the trust boundary, so every character of it is load-bearing (#822,
+        # NFR-SEC-1):
+        #   * `[0-9]+`, never `.*`. `fullmatch("http://localhost:.*",
+        #     "http://localhost:@evil.example")` PASSES, and a browser resolves
+        #     that URL to host evil.example with `localhost:` as USERINFO. PKCE
+        #     is not mandatory here (`check_code_challenge` validates only the
+        #     method) and both providers are `client_type: public` (no secret at
+        #     /token), so a code leaked that way was directly redeemable for an
+        #     access token and a 30-day refresh token. Requiring a DIGIT
+        #     immediately after `:` makes userinfo inexpressible.
+        #   * `[0-9]`, never `\d`: `\d` also matches unicode digits, so
+        #     `http://localhost:٤٥` would pass while resolving to nothing like a
+        #     port.
+        #   * `(/.*)?` is safe — an `@` after the first `/` is PATH, never
+        #     userinfo — and OPTIONAL, so the bare origin still matches, which is
+        #     what the CORS derivation below reads.
+        #   * It also un-breaks CORS: `cors_allow` compares scheme, hostname and
+        #     then `urlparse(entry).port`, and `urlparse("http://localhost:.*")
+        #     .port` RAISES ValueError, so a localhost `Origin` turned a /token
+        #     or /userinfo response into a 500 (providers/oauth2/utils.py).
+        # Guarded by scripts/check-authorization-redirect-posture.sh.
+        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
         - { matching_mode: regex, url: '{{ .Values.global.appOrigin | replace "." "\\." }}/.*' }
         # The PWA sends the bare origin (no path) as its redirect_uri, and Authentik derives
         # CORS-allowed origins from redirect_uris — an Origin has no path, so the regex above
@@ -419,7 +445,13 @@ entries:
       # redirect_uris-derived CORS allows the admin origin (an Origin has no path, so the
       # `…/.*` regex never matches it).
       redirect_uris:
-        - { matching_mode: regex, url: "http://localhost:.*" }
+        # Numeric-port localhost, for the same reasons spelled out on the PWA
+        # provider's entry above: `.*` after `localhost:` fullmatches
+        # `http://localhost:@evil.example`, which a browser resolves to
+        # evil.example with `localhost:` as userinfo, leaking the `?code=` — and
+        # it made `urlparse(...).port` raise inside `cors_allow` (#822,
+        # NFR-SEC-1). Guarded by scripts/check-authorization-redirect-posture.sh.
+        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
         - { matching_mode: regex, url: '{{ .Values.global.adminOrigin | replace "." "\\." }}/.*' }
         - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
       property_mappings:
