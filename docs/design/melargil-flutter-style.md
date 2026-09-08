@@ -133,8 +133,11 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
 
   Fixed copy is not exempt either, and since `#640` there is no plain-`SnackBar`
   path left to be exempt on: every call site routes through `showAppToast`, so
-  the cap applies everywhere by construction. It was already needed — all 17
-  fixed strings were measured in EN and PT at 200% text on 375x812, and while 16
+  the cap reaches all of them. Nothing _enforces_ that — there is no lint or
+  `check-*.sh` gate, and `app_shell.dart` is a legitimate exception — so a 57th
+  call site reaching for `messenger.showSnackBar` directly is a review catch,
+  not a build failure. The cap was already needed on fixed copy: all 17 such
+  strings were measured in EN and PT at 200% text on 375x812, and while 16
   render at 108px, `profileGenericError` rendered 188px (EN) / 148px (PT), over
   the 136px band.
   `appToast` deliberately takes no `BuildContext` — a save awaits its API

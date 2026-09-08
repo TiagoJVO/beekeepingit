@@ -75,11 +75,10 @@ void showAppToast(ScaffoldMessengerState messenger, String message) {
 ///   and captures its messenger before the gap; taking a context would mean
 ///   reaching across it, which `use_build_context_synchronously` catches.
 ///
-/// Deliberately does NOT set `duration`. Flutter's default applies, the same
-/// as every un-migrated call site — a longer one would hold short
-/// confirmations on screen too, and the shell shows engine notifications in a
-/// loop that `ScaffoldMessenger` queues serially, so a bumped duration
-/// multiplies across a batch.
+/// Deliberately does NOT set `duration`: Flutter's default applies. A longer
+/// one would hold short confirmations on screen too, and the shell shows
+/// engine notifications in a loop that `ScaffoldMessenger` queues serially, so
+/// a bumped duration multiplies across a batch.
 ///
 /// Raising the bar directly is the escape hatch for the one caller that
 /// deliberately *wants* the queue — `shell/app_shell.dart`'s

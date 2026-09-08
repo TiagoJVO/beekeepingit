@@ -179,6 +179,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Organization created.'), findsOneWidget);
+    // The destination, not just the message: the harness routes for real
+    // precisely so a `context.go('/home')` that threw could not hide behind a
+    // stale bar again.
+    expect(find.text('home'), findsOneWidget);
   });
 
   testWidgets('address is optional', (tester) async {

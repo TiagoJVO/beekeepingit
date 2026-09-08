@@ -519,8 +519,11 @@ class AppShell extends ConsumerWidget {
     // confirmation, these are not about the screen underneath them: the shell
     // raises them and the shell is every tab, so a later one landing on
     // another tab is not the cross-screen leak #640 is about. The remaining
-    // rough edge — a user action's `showAppToast` clearing a batch still
-    // playing — is #821.
+    // rough edge — any `showAppToast` clearing a batch still playing — is
+    // #821. That is not only a user action: the superseded-conflict listener
+    // a few lines above now clears too, so a conflict landing mid-batch
+    // discards the un-shown tail, and D-24's once-per-condition-change means
+    // it never re-fires.
     ref.listen(notificationFeedProvider, (previous, next) {
       if (next.isEmpty) return;
       final messenger = ScaffoldMessenger.of(context);
