@@ -1796,9 +1796,10 @@ appends an in-memory `SessionEndStage` **last**. With no stages of its own:
 - **(a) Return.** `post_logout_redirect_uris` is **not a field** at 2026.5.4: it is a property over
   the provider's existing `redirect_uris`, filtered to `redirect_uri_type: logout`, while the
   authorize view matches the complementary `authorization_redirect_uris`
-  (`providers/oauth2/models.py`). The logout allow-list is therefore three added entries on the PWA
-  provider (`appOrigin`, `adminOrigin`, and one strict literal per localhost dev port) and two on
-  the admin provider — and it widens **no** authorization target.
+  (`providers/oauth2/models.py`). The logout allow-list is therefore **four** added entries on the
+  PWA provider (`appOrigin`, `adminOrigin`, and a strict literal for each of the two localhost dev
+  ports) and two on the admin provider — and it widens **no** authorization target, nor any CORS
+  origin: every one of those URLs is already an authorization redirect URI on the same provider.
 
 **Why a stage binding and not our own flow.** Owning a `designation: invalidation` flow would
 re-arm §8.17's second-order trap: with `brand.flow_invalidation` unpinned, `ToDefaultFlow.get_flow`
@@ -1880,8 +1881,9 @@ user-visible: [#831](https://github.com/TiagoJVO/beekeepingit/issues/831).
 **Verified by.** [`scripts/check-logout-invalidation-posture.sh`](../../scripts/check-logout-invalidation-posture.sh)
 (offline, `task repo:lint` → `task ci`) asserts the stage, its `!KeyOf` binding onto the pinned
 upstream flow, that every provider carries a logout allow-list containing the origins it must accept
-back, that **every** logout-typed URL is one of the rendered origins or the tightened localhost
-regex, and that no entry in the file owns an invalidation-designation flow. Review of the first
+back, that **every** logout-typed entry is `matching_mode: strict` and names one of the four
+reviewed targets (the two rendered origins and the two localhost dev ports — no regex, in any
+spelling), and that no entry in the file owns an invalidation-designation flow. Review of the first
 version showed those assertions were **structurally evadable** — the guard is only worth what it
 rejects — so it now also pins the things that make an entry _mean_ what it reads as: exactly one
 stage entry, one binding entry and one `redirect_uris:` block per provider, no
@@ -1891,7 +1893,7 @@ already exists, a falsy `conditions:` skips the plan), no duplicate
 `target:`/`stage:`/`url:`/`matching_mode:`/`redirect_uri_type:` keys (PyYAML is silently last-wins,
 and a second `redirect_uris:` block that keeps the authorization entries while dropping the logout
 ones leaves sign-in green and 400s every sign-out),
-`matching_mode: strict` on the two rendered origins (under `fullmatch` a rendered origin read as a
+`matching_mode: strict` on **every** logout entry (under `fullmatch` a rendered origin read as a
 `regex` turns every unescaped `.` into a wildcard and admits a neighbouring registrable domain), and
 `invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
 off a flow nothing plans). Every key and value is read with **quotes tolerated on either side** —
@@ -1902,7 +1904,27 @@ blank line or a re-indented item used to end the walk and silently drop every en
 it is mutation-checked against twenty-eight deliberately broken copies of the blueprint — binding
 removed, allow-list removed, an `https://.*` target, an owned invalidation flow, stage removed,
 `logout` flipped back to `authorization`, a bracketed logout regex, a bracketed authorization regex,
-plus each evasion above in both its bare and its quoted spelling — and **all twenty-eight fail it**. Live, the logout e2e in
+plus each evasion above in both its bare and its quoted spelling — and **all twenty-eight fail it**.
+
+Those mutants no longer live in a reviewer's scratch directory: they are
+[`scripts/test-logout-invalidation-posture.sh`](../../scripts/test-logout-invalidation-posture.sh),
+which `task repo:lint` runs **alongside** the check — the posture #822's guard established, because
+a guard that quietly stops looking is worse than no guard. Its 26 cases add four evasions a later
+review found in the guard itself. A **quoted model** (`- model: "authentik_flows.flow"`, which
+prettier preserves, so `format-check` did not launder it) bypassed the owned-invalidation-flow
+assertion outright. A **top-level entry the walker did not recognise** (`- id:` before `model:`) was
+folded into the previous entry and shipped a `regex https://evil.example/.*` logout target
+unexamined. A **second binding onto the shared invalidation flow** was invisible to a count that
+matched target _and_ stage — and one at `order: 0` runs before the logout stage and can send the
+browser away with the SSO cookie intact. And a **policy binding** onto the logout stage binding is
+`conditions:` by another name, since authentik skips a stage whose bound policies deny. All four are
+now rejected. The guard additionally asserts it is reading the file the chart actually ships: it
+hardcodes a path while the chart renders `files/{{ .Values.blueprintFile }}`, and `.Files.Get`
+returns the empty string for a missing path while raising nothing — so a repointed value would
+deploy an **empty** blueprint, with no provider and a 404 discovery document, while `helm lint`,
+`helm template` and every posture guard stayed green.
+
+Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
