@@ -86,7 +86,7 @@ tasks:
       - ./scripts/check-federation-source-posture.sh
 
   authorization-redirect-posture:
-    desc: "Verify no provider allow-lists a redirect URI outside the rendered origins + numeric-port localhost (#822, NFR-SEC-1)"
+    desc: "Verify no provider allow-lists a redirect URI outside the rendered origins + the strict localhost dev ports, and that none uses `[`, `]` or `\\d` (#822, NFR-SEC-1)"
     cmds:
       - ./scripts/check-authorization-redirect-posture.sh
       # The guard is the whole regression control for an account-takeover-grade
