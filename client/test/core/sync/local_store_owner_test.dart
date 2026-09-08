@@ -19,19 +19,45 @@ class _FakePrefs implements LocalPrefs {
   void remove(String key) => values.remove(key);
 }
 
-/// A [LocalPrefs] whose backend is unavailable — the browser shape where
-/// `localStorage` throws (site data blocked, a partitioned third-party
-/// context, a quota-full origin).
+/// What a browser `localStorage` failure looks like on the Dart side: an
+/// opaque object thrown across the JS interop boundary (a `SecurityError` when
+/// site data is blocked or the page is a partitioned third-party context, a
+/// `QuotaExceededError` when the origin is full). Deliberately **not** a Dart
+/// `Error` subtype — those are programming bugs and the production code
+/// rethrows them rather than reclassifying them as "storage unavailable"
+/// (dart-conventions.md); `_BuggyPrefs` below covers that half.
+class _StorageFailure {
+  const _StorageFailure();
+
+  @override
+  String toString() => 'SecurityError: storage unavailable';
+}
+
+/// A [LocalPrefs] whose backend is unavailable.
 class _ThrowingPrefs implements LocalPrefs {
   @override
-  String? read(String key) => throw StateError('storage unavailable');
+  String? read(String key) => throw const _StorageFailure();
+
+  @override
+  void write(String key, String value) => throw const _StorageFailure();
+
+  @override
+  void remove(String key) => throw const _StorageFailure();
+}
+
+/// A [LocalPrefs] implementation with a *bug* in it, as distinct from an
+/// unavailable backend. The production code must let this escape rather than
+/// swallow it into a silent, data-destructive purge.
+class _BuggyPrefs implements LocalPrefs {
+  @override
+  String? read(String key) => throw StateError('bug in the prefs backend');
 
   @override
   void write(String key, String value) =>
-      throw StateError('storage unavailable');
+      throw StateError('bug in the prefs backend');
 
   @override
-  void remove(String key) => throw StateError('storage unavailable');
+  void remove(String key) => throw StateError('bug in the prefs backend');
 }
 
 /// A syntactically valid, unsigned JWT carrying [claims] as its payload —
@@ -252,5 +278,100 @@ void main() {
         completion(isTrue),
       );
     });
+
+    test('a BUG in the prefs backend escapes rather than being swallowed as '
+        '"storage unavailable" (dart-conventions.md)', () {
+      expect(
+        ensureLocalStoreBelongsTo(
+          owner: const KnownOwner('user-a'),
+          prefs: _BuggyPrefs(),
+          purge: () async {},
+        ),
+        throwsA(isA<StateError>()),
+        reason:
+            'an Error out of a one-line marker accessor is a programming '
+            'mistake. Reclassifying it would turn it into an unexplained '
+            'purge of unsynced offline work instead of a fixable crash',
+      );
+    });
   });
+
+  group('clearPerUserPrefs (#664, D-38)', () {
+    test('removes every per-user key, including the owner marker', () {
+      final prefs = _FakePrefs();
+      for (final key in kPerUserPrefsKeys) {
+        prefs.write(key, 'user-a value');
+      }
+      prefs.write('bk.some_device_key', 'kept');
+
+      clearPerUserPrefs(prefs);
+
+      expect(prefs.values.keys, ['bk.some_device_key']);
+    });
+
+    test('the list covers the caches that would otherwise leak the previous '
+        'identity and org id to user B', () {
+      expect(
+        kPerUserPrefsKeys,
+        containsAll(<String>[
+          kProfileCacheKey,
+          kOrganizationCacheKey,
+          kLocalStoreSubjectKey,
+        ]),
+        reason:
+            'bk.profile/bk.organization are read as last-known-good whenever a '
+            'post-login fetch fails or the device is offline, so a store-only '
+            'purge would still hand user B the previous name, email and org id',
+      );
+    });
+
+    test('one key the backend refuses does not stop the others being '
+        'cleared', () {
+      var refusals = 0;
+      final prefs = _PartlyRefusingPrefs(
+        refuse: kOrganizationCacheKey,
+        onRefuse: () => refusals++,
+      );
+      for (final key in kPerUserPrefsKeys) {
+        prefs.values[key] = 'user-a value';
+      }
+
+      clearPerUserPrefs(prefs);
+
+      expect(refusals, 1);
+      expect(prefs.values.keys, [kOrganizationCacheKey]);
+    });
+
+    test('a BUG in the backend still escapes', () {
+      expect(
+        () => clearPerUserPrefs(_BuggyPrefs()),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+}
+
+/// A [LocalPrefs] that refuses exactly one key, the way a storage backend can
+/// fail per-entry rather than wholesale.
+class _PartlyRefusingPrefs implements LocalPrefs {
+  _PartlyRefusingPrefs({required this.refuse, required this.onRefuse});
+
+  final String refuse;
+  final void Function() onRefuse;
+  final Map<String, String> values = {};
+
+  @override
+  String? read(String key) => values[key];
+
+  @override
+  void write(String key, String value) => values[key] = value;
+
+  @override
+  void remove(String key) {
+    if (key == refuse) {
+      onRefuse();
+      throw const _StorageFailure();
+    }
+    values.remove(key);
+  }
 }

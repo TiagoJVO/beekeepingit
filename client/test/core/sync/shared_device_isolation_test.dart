@@ -27,6 +27,12 @@ class _FakeStore implements LocalStoreEngine {
 
   final List<Map<String, Object?>> rows;
 
+  /// The SQL of the last [watch], so a test can assert the predicate it is
+  /// modelling is the one the repository actually issued - otherwise these
+  /// tests would keep passing against a re-implemented filter even if the
+  /// real `WHERE` clause changed underneath them.
+  String? lastSql;
+
   /// A single-event stream (not a live one): each test reads `.first` once,
   /// after the purge under test has already settled.
   @override
@@ -34,6 +40,7 @@ class _FakeStore implements LocalStoreEngine {
     String sql, [
     List<Object?> args = const [],
   ]) {
+    lastSql = sql;
     final organizationId = args.isEmpty ? null : args.first;
     return Stream.value(
       rows
@@ -133,6 +140,14 @@ void main() {
             'the IS NULL half of the org filter lets user A\'s offline row '
             'through for user B, in a completely different org',
       );
+      expect(
+        store.lastSql?.replaceAll(RegExp(r'\s+'), ' '),
+        contains('organization_id = ? OR organization_id IS NULL'),
+        reason:
+            'the predicate this test models must be the one the repository '
+            'really issues - otherwise a change to the real WHERE clause '
+            'would silently stop being covered here',
+      );
     });
 
     test('a different user signing in purges the store, unsynced rows '
@@ -159,6 +174,37 @@ void main() {
         reason:
             'nothing survives the purge — the synced row is gone too, and '
             'comes back down the bucket for whoever legitimately owns it',
+      );
+      expect(prefs.values[kLocalStoreSubjectKey], 'sub-user-b');
+    });
+
+    test('the purge also drops the localStorage caches, so user B does not '
+        'inherit the previous user profile and organization (AC 1)', () async {
+      final store = _FakeStore(_userADeviceRows());
+      final prefs = _FakePrefs()
+        ..write(kLocalStoreSubjectKey, 'sub-user-a')
+        ..write(kProfileCacheKey, '{"name":"User A"}')
+        ..write(kOrganizationCacheKey, '{"id":"org-a"}')
+        ..write(kNotificationDedupStateKey, '{"hive-12":"notified"}');
+
+      await ensureLocalStoreBelongsTo(
+        owner: const KnownOwner('sub-user-b'),
+        prefs: prefs,
+        purge: () async {
+          await store.clear();
+          clearPerUserPrefs(prefs);
+        },
+      );
+
+      expect(
+        prefs.values.keys,
+        [kLocalStoreSubjectKey],
+        reason:
+            'only the freshly-stamped marker survives. bk.profile and '
+            'bk.organization are read as last-known-good on any failed or '
+            'offline post-login fetch, so leaving them would hand user B the '
+            'previous identity and, via organizationProvider, the previous '
+            'org id - the value every repository read is scoped by',
       );
       expect(prefs.values[kLocalStoreSubjectKey], 'sub-user-b');
     });

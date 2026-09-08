@@ -205,10 +205,13 @@ from the list it sits in.
 powerSyncProvider: open PowerSyncDatabase(appSchema) → ownership check → BeekeepingitConnector,
   gated by SyncGate
 local_store_owner.dart: ensureLocalStoreBelongsTo() runs between the open and the wiring —
-  compares the signed-in OIDC sub against the bk.local_store_subject marker and purges the
-  store on a mismatch, so a shared device never hands user B user A's rows, including the
-  unsynced (NULL organization_id) ones (#664, D-38, sync.md §3.5). Same sub → no purge;
-  a boot that resolves signed out defers instead of purging.
+  compares the signed-in OIDC sub against the bk.local_store_subject marker and, on a
+  mismatch, purges the store AND the per-user localStorage keys (kPerUserPrefsKeys, the
+  same list logout uses) — so a shared device never hands user B user A's rows, including
+  the unsynced (NULL organization_id) ones, nor A's cached profile/organization snapshots
+  (#664, D-38, sync.md §3.5). Same sub → no purge; a boot that resolves signed out defers
+  instead of purging. ensureStoreOwnershipOrTeardown() wraps it in powersync_service so a
+  failed purge still closes the db handle before the error propagates.
 BeekeepingitConnector (powersync_connector.dart):
   fetchCredentials → GET /v1/sync/token   (OIDC access token → short-TTL PowerSync token)
      only once the caller has an active membership (#622) — hasOrganizationProvider; without

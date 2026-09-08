@@ -192,7 +192,12 @@ PowerSync types directly.
   offline, not yet stamped by write-back) matches for **any** org, so the previous user's unsynced
   rows are visible to the next user in any organization. The check compares the signed-in OIDC
   `sub` against a marker persisted alongside the store (`bk.local_store_subject`, durable
-  `localStorage` — the store it guards is durable too) and clears on a mismatch. The **same**
+  `localStorage` — the store it guards is durable too) and clears on a mismatch. It clears **both
+  storage layers**: the PowerSync database and the per-user `localStorage` keys
+  (`kPerUserPrefsKeys` — the same list logout uses). The second half matters because
+  `bk.profile`/`bk.organization` are read as last-known-good whenever a post-login fetch fails or
+  the device is offline (#390), so a store-only purge would still hand the next user the previous
+  user's identity and org id. The **same**
   subject returning (token expiry, browser restart) never purges, which is what keeps unsynced
   offline work alive for the person who wrote it (FR-OF-1). Unproven ownership — no marker, a
   corrupt one, or a signed-in session whose `sub` cannot be read — **fails closed** and purges; a

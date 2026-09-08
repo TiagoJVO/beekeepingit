@@ -116,6 +116,13 @@ void _purge(Ref ref) {
       // enforces the guarantee; failing silently here must never crash the
       // app over a background consistency sweep.
     }
+    // #664/D-38: invalidate the OWNER classification too, and before the
+    // provider that reads it. `storeOwnerProvider` is not autoDispose, so a
+    // rebuild would otherwise re-run the ownership check against the *stale*
+    // KnownOwner cached from the session that is going away — re-stamping
+    // `bk.local_store_subject` with a subject whose session just ended, which
+    // is exactly the identifier `clearPerUserPrefs` is there to drop.
+    if (ref.mounted) ref.invalidate(storeOwnerProvider);
     if (ref.mounted) ref.invalidate(powerSyncProvider);
   }();
 }

@@ -180,14 +180,19 @@ Future<bool> ensureLocalStoreBelongsTo({
 /// `QuotaExceededError` when the origin is full. Letting either escape would
 /// take the whole sync layer down for a user whose store is in fact their own.
 ///
-/// `on Object` rather than a narrower clause is deliberate here, against this
-/// repo's usual rule: what `package:web`'s `localStorage` throws across the JS
-/// interop boundary is not a Dart type this code can name, and the answer is
-/// the same whatever it is.
+/// `on Object` rather than a narrower clause, because what `package:web`'s
+/// `localStorage` throws across the JS interop boundary is not a Dart type this
+/// code can name, and the answer is the same whatever it is. **`Error` is
+/// re-thrown**, though, per `dart-conventions.md`: a `NoSuchMethodError` or
+/// `TypeError` out of these one-line bodies is a bug in a [LocalPrefs]
+/// implementation, and silently reclassifying it as "storage unavailable"
+/// would turn a programming mistake into an unexplained, data-destructive
+/// purge instead of a crash someone can fix.
 String? _readMarker(LocalPrefs prefs) {
   try {
     return prefs.read(kLocalStoreSubjectKey);
   } on Object catch (e, st) {
+    if (e is Error) rethrow;
     // Unreadable marker == unproven owner: purge. Same answer as absent.
     developer.log(
       'store-owner marker unreadable — treating the store as unproven',
@@ -203,6 +208,7 @@ void _removeMarker(LocalPrefs prefs) {
   try {
     prefs.remove(kLocalStoreSubjectKey);
   } on Object catch (e, st) {
+    if (e is Error) rethrow;
     // Non-fatal: a marker that could not be cleared is about to be overwritten
     // on success, and on failure the caller's next open re-reads whatever is
     // actually there and re-decides.
@@ -219,6 +225,7 @@ void _writeMarker(LocalPrefs prefs, String owner) {
   try {
     prefs.write(kLocalStoreSubjectKey, owner);
   } on Object catch (e, st) {
+    if (e is Error) rethrow;
     // The store IS clean at this point, so nothing leaks — but with no marker
     // persisted the next open will purge again. Loud rather than silent: a
     // storage backend that cannot keep this marker (a quota-full origin, or a

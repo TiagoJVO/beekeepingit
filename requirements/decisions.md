@@ -1099,6 +1099,14 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **What is gained:** a different user signing in on the same device sees nothing of the previous
   user's, synced or unsynced, and sees it from the first frame rather than after a reconcile that
   offline never comes.
+- **The purge covers both storage layers, not just the store.** Clearing the PowerSync database
+  alone would leave the previous user's `localStorage` snapshots (`bk.profile`, `bk.organization`,
+  the notification preferences and dedup state) in place — and those are read as last-known-good
+  whenever a post-login fetch fails or the device is simply offline (`#390`). The next user would
+  then see the previous user's name, email and organization, and `organizationProvider` would
+  resolve to the previous user's **org id**, which is the value every repository read is scoped by.
+  So the per-user key list (`kPerUserPrefsKeys`) is shared with logout and cleared by the same
+  purge.
 - **What is accepted as lost:** user A's **unsynced offline work is destroyed** when user B signs in
   on that device. This is a real cost for an offline-first field app (`FR-OF-1`), accepted on the
   grounds that those rows were never user B's to keep and that the alternative is a tenancy leak.

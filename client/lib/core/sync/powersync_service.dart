@@ -152,6 +152,71 @@ class TeardownGuard {
 /// `ref` to hang shared state off of.
 final _teardownGuard = TeardownGuard();
 
+/// #664/D-38's ownership check as [powerSyncProvider] actually performs it:
+/// run [ensureLocalStoreBelongsTo], and if it throws, make sure the database
+/// handle that was already opened still gets closed before the failure
+/// propagates.
+///
+/// A failure **must** propagate — `powerSyncProvider` erroring is the correct
+/// outcome for "could not prove this store is yours", never handing it out
+/// anyway. But at the call site `ref.onDispose` has not adopted the database
+/// yet, so nothing else in the app would ever close that handle, and the
+/// provider's retry would then open a SECOND instance against the same file
+/// (PowerSync's own docs: "unexpected results"). Handing it to the same
+/// [TeardownGuard] the live session uses makes the next build wait for the
+/// close instead of racing it.
+///
+/// [closeDb] is wrapped because a rejected future left on the guard would
+/// rethrow out of every later `waitForPrior()`, wedging the tab's sync layer
+/// until a full reload — so a close that also fails is logged, not surfaced.
+/// The *original* error still wins, which is the one worth reporting.
+///
+/// `@visibleForTesting` and parameterised over the guard and the close, in
+/// the same style as [applySyncPreconditions] and [sessionTeardown] below,
+/// because the suite's `debugOpenPowerSyncDatabase` stub never completes —
+/// so this ordering is unreachable through `powerSyncProvider` itself.
+@visibleForTesting
+Future<void> ensureStoreOwnershipOrTeardown({
+  required StoreOwner owner,
+  required LocalPrefs prefs,
+  required Future<void> Function() purge,
+  required TeardownGuard guard,
+  required Future<void> Function() closeDb,
+}) async {
+  try {
+    final purged = await ensureLocalStoreBelongsTo(
+      owner: owner,
+      prefs: prefs,
+      purge: purge,
+    );
+    if (purged) {
+      // The only place in the client that destroys unsynced work with no user
+      // action, and a security-relevant event on a shared device (NFR-SEC-1),
+      // so it is recorded — the way both other purge sites already log. The
+      // subject itself is deliberately NOT logged.
+      developer.log(
+        'local store purged on open: the signed-in subject differs from the '
+        'one it was opened for, or could not be proven (D-38, #664)',
+        name: 'sync',
+      );
+    }
+  } on Object {
+    guard.registerTeardown(() async {
+      try {
+        await closeDb();
+      } on Object catch (e, st) {
+        developer.log(
+          'closing the store after a failed ownership check also failed',
+          name: 'sync',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    });
+    rethrow;
+  }
+}
+
 /// Opens the on-device PowerSync database (local SQLite over OPFS/IndexedDB on
 /// web) and connects it to the backend via [BeekeepingitConnector] — gated by
 /// [SyncGate] (FR-OF-3, sync.md §7.1): the first `connect()` call, and every
@@ -201,51 +266,25 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   //
   // Deliberately here — after the open, before the connector/gate wiring below
   // and before any repository can hold a `LocalStoreEngine` over this database
-  // — so no read of another user's rows is even briefly possible. The wipe goes
-  // through [PowerSyncLocalStore] rather than `db.disconnectAndClear()`
-  // directly, so it uses the same NFR-ARC-2 seam (#55) the other two purge
-  // sites do.
-  try {
-    final purged = await ensureLocalStoreBelongsTo(
-      owner: owner,
-      prefs: prefs,
-      purge: PowerSyncLocalStore(db).clear,
-    );
-    if (purged) {
-      // The only place in the client that destroys unsynced work with no user
-      // action, and a security-relevant event on a shared device (NFR-SEC-1),
-      // so it is recorded — the way both other purge sites already log. The
-      // subject itself is deliberately NOT logged.
-      developer.log(
-        'local store purged on open: the signed-in subject differs from the '
-        'one it was opened for, or could not be proven (D-38, #664)',
-        name: 'sync',
-      );
-    }
-  } on Object {
-    // A failure propagates: `powerSyncProvider` erroring is the correct
-    // outcome for "could not prove this store is yours", never handing it out
-    // anyway. But `ref.onDispose` further down has not adopted `db` yet, so
-    // nothing else in the app would ever close this handle — and Riverpod's
-    // retry would then open a SECOND instance against the same file. Hand it
-    // to the same [TeardownGuard] the live session uses, so the next build
-    // waits for the close instead of racing it. The close is wrapped because a
-    // rejected future left on the guard would rethrow out of every later
-    // `waitForPrior()`, wedging the tab's sync layer until a full reload.
-    _teardownGuard.registerTeardown(() async {
-      try {
-        await db.close();
-      } on Object catch (e, st) {
-        developer.log(
-          'closing the store after a failed ownership check also failed',
-          name: 'sync',
-          error: e,
-          stackTrace: st,
-        );
-      }
-    });
-    rethrow;
-  }
+  // — so no read of another user's rows is even briefly possible.
+  await ensureStoreOwnershipOrTeardown(
+    owner: owner,
+    prefs: prefs,
+    purge: () async {
+      // The wipe goes through [PowerSyncLocalStore] rather than
+      // `db.disconnectAndClear()` directly, so it uses the same NFR-ARC-2 seam
+      // (#55) the other two purge sites do.
+      await PowerSyncLocalStore(db).clear();
+      // ...and the sibling `localStorage` caches, which are just as much the
+      // previous user's: `bk.profile`/`bk.organization` are read as
+      // last-known-good whenever a post-login fetch fails or the device is
+      // offline, so leaving them would hand user B user A's identity and org
+      // id one storage layer over (see `kPerUserPrefsKeys`).
+      clearPerUserPrefs(prefs);
+    },
+    guard: _teardownGuard,
+    closeDb: db.close,
+  );
 
   // Read into a local rather than handing the connector a `ref` to re-read
   // (#622): [BeekeepingitConnector] outlives this provider — PowerSync can

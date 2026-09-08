@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
 import 'package:beekeepingit_client/core/sync/local_store_owner.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
@@ -1173,4 +1174,120 @@ void main() {
       );
     });
   });
+
+  group('ensureStoreOwnershipOrTeardown (#664, D-38 - the wiring itself)', () {
+    test(
+      'a clean check purges and does NOT hand the database to teardown',
+      () async {
+        final guard = TeardownGuard();
+        final prefs = _MarkerPrefs()..values[kLocalStoreSubjectKey] = 'sub-a';
+        var purges = 0;
+        var closes = 0;
+
+        await ensureStoreOwnershipOrTeardown(
+          owner: const KnownOwner('sub-b'),
+          prefs: prefs,
+          purge: () async => purges++,
+          guard: guard,
+          closeDb: () async => closes++,
+        );
+
+        expect(purges, 1);
+        expect(closes, 0, reason: 'the session is live; ref.onDispose owns it');
+        expect(prefs.values[kLocalStoreSubjectKey], 'sub-b');
+      },
+    );
+
+    test('the same subject is a no-op: no purge, no teardown', () async {
+      final guard = TeardownGuard();
+      final prefs = _MarkerPrefs()..values[kLocalStoreSubjectKey] = 'sub-a';
+      var purges = 0;
+      var closes = 0;
+
+      await ensureStoreOwnershipOrTeardown(
+        owner: const KnownOwner('sub-a'),
+        prefs: prefs,
+        purge: () async => purges++,
+        guard: guard,
+        closeDb: () async => closes++,
+      );
+
+      expect(purges, 0);
+      expect(closes, 0);
+    });
+
+    test(
+      'a failed purge rethrows AND closes the database exactly once, so the '
+      'retry does not open a second instance against the same file',
+      () async {
+        final guard = TeardownGuard();
+        var closes = 0;
+        final closed = Completer<void>();
+
+        await expectLater(
+          ensureStoreOwnershipOrTeardown(
+            owner: const KnownOwner('sub-b'),
+            prefs: _MarkerPrefs()..values[kLocalStoreSubjectKey] = 'sub-a',
+            purge: () async => throw StateError('wipe failed'),
+            guard: guard,
+            closeDb: () async {
+              closes++;
+              await Future<void>.delayed(const Duration(milliseconds: 5));
+              closed.complete();
+            },
+          ),
+          throwsA(isA<StateError>()),
+          reason:
+              'never hand out a store we failed to clean - powerSyncProvider '
+              'erroring is the correct outcome',
+        );
+
+        await guard.waitForPrior();
+        expect(closes, 1);
+        expect(
+          closed.isCompleted,
+          isTrue,
+          reason: 'the next build waits for the close instead of racing it',
+        );
+      },
+    );
+
+    test('a close that ALSO fails does not poison the guard for every later '
+        'caller', () async {
+      final guard = TeardownGuard();
+
+      await expectLater(
+        ensureStoreOwnershipOrTeardown(
+          owner: const KnownOwner('sub-b'),
+          prefs: _MarkerPrefs()..values[kLocalStoreSubjectKey] = 'sub-a',
+          purge: () async => throw StateError('wipe failed'),
+          guard: guard,
+          closeDb: () async => throw StateError('close failed'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      await expectLater(
+        guard.waitForPrior(),
+        completes,
+        reason:
+            'a rejected future left on the guard would rethrow out of every '
+            'later waitForPrior(), wedging the sync layer until a reload',
+      );
+    });
+  });
+}
+
+/// An in-memory [LocalPrefs] for the ownership-marker tests.
+class _MarkerPrefs implements LocalPrefs {
+  final Map<String, String> values = {};
+
+  @override
+  String? read(String key) => values[key];
+
+  @override
+  void write(String key, String value) => values[key] = value;
+
+  @override
+  void remove(String key) => values.remove(key);
 }
