@@ -117,6 +117,12 @@ const (
 	// synchronously, so it is short: a slow relay becomes a recorded, visible,
 	// retryable failure rather than a request that hangs.
 	sendTimeout = 15 * time.Second
+
+	// recordTimeout bounds the outcome write that follows the send. It is
+	// detached from the request's cancellation (the outcome must be recorded
+	// even if the admin closed the tab) but must not be unbounded: it is a
+	// single indexed UPDATE, and on the resend path it decides 200 vs 500.
+	recordTimeout = 5 * time.Second
 )
 
 // invitationSender carries everything the delivery step needs. Built once per
@@ -175,7 +181,14 @@ func (s invitationSender) deliver(ctx context.Context, bearer string, invitation
 			slog.String("reason", reason))
 	}
 
-	updated, err := s.q.RecordInvitationDeliveryOutcome(context.WithoutCancel(ctx), sqlcgen.RecordInvitationDeliveryOutcomeParams{
+	// Detached from the request's cancellation for the same reason as the send
+	// above, but BOUNDED: this single UPDATE is what decides the resend's 200
+	// vs 500, and an unbounded wait on a wedged database would pin a pool
+	// connection and the admin's request behind it indefinitely.
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer recordCancel()
+
+	updated, err := s.q.RecordInvitationDeliveryOutcome(recordCtx, sqlcgen.RecordInvitationDeliveryOutcomeParams{
 		ID:             invitation.ID,
 		OrganizationID: invitation.OrganizationID,
 		DeliveryStatus: status,
@@ -214,6 +227,11 @@ func claimDeliverySlot(ctx context.Context, txq *sqlcgen.Queries, invitationID, 
 // extended to resends by #854). Called inside the caller's transaction, after
 // LockOrganizationForUpdate, so the count cannot move between being read and
 // being acted on.
+//
+// The allowance is counted in MESSAGES, not invitations: see
+// CountInvitationDeliveryBudgetSince for why a per-row count let a resend loop
+// run about ten times past the stated ceiling, and for the one direction in
+// which the sum deliberately over-charges.
 //
 // Fails CLOSED by construction: a count that cannot be read returns an error
 // and aborts the transaction rather than letting the send through.

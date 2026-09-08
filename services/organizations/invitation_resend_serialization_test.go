@@ -321,13 +321,15 @@ func TestInvitationDelivery_ClaimsTheAttemptSlotBeforeSending(t *testing.T) {
 	if observed[0].LastDeliveryAt == nil {
 		t.Error("during the create send last_delivery_at is NULL — a lost outcome write would leave the first resend uncooled")
 	}
-	// The resend's send: attempt 2, and the cooldown clock already restarted
-	// (the test backdated it by five minutes, so a stamp inside the last
-	// minute can only be this attempt's own claim).
+	// The resend's send: attempt 2, and the cooldown clock already restarted.
+	// The test backdated the stamp by five minutes, so anything fresher than
+	// that can only be this attempt's own claim — the margin is deliberately
+	// loose (three minutes against a five-minute backdate) because the stamp
+	// comes from the container's clock and time.Since from the test process's.
 	if observed[1].Attempts != 2 {
 		t.Errorf("during the resend delivery_attempts = %d, want 2 — the attempt must be claimed before the mail leaves", observed[1].Attempts)
 	}
-	if observed[1].LastDeliveryAt == nil || time.Since(*observed[1].LastDeliveryAt) > time.Minute {
+	if observed[1].LastDeliveryAt == nil || time.Since(*observed[1].LastDeliveryAt) > 3*time.Minute {
 		t.Errorf("during the resend last_delivery_at = %v, want a stamp from this attempt's own claim", observed[1].LastDeliveryAt)
 	}
 }
@@ -373,10 +375,16 @@ func TestResendInvitation_SpendsTheOrganizationsHourlyBudget(t *testing.T) {
 		t.Fatalf("resend status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
 
-	// Nineteen more sends fit in the same hour; the twentieth does not,
-	// because the resend already took a slot.
+	// The budget is counted in MESSAGES (a sum of delivery_attempts), so that
+	// resend pulled its invitation's whole attempt history into this hour: the
+	// create-time attempt plus the resend itself, two of the twenty slots. That
+	// over-charge on an out-of-window row is deliberate and documented on
+	// CountInvitationDeliveryBudgetSince — the sum may never be lower than the
+	// mail actually sent, so the ceiling fails closed. Eighteen creates
+	// therefore still fit; the nineteenth does not.
 	const budget = 20
-	for i := range budget - 1 {
+	const fits = budget - 2
+	for i := range fits {
 		rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
 			"email": fmt.Sprintf("invitee%d@example.com", i),
 		})
@@ -388,14 +396,80 @@ func TestResendInvitation_SpendsTheOrganizationsHourlyBudget(t *testing.T) {
 		"email": "one-too-many@example.com",
 	})
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("invitation after a resend + %d creates status = %d, want 429 — the resend must have spent a budget slot, body = %s",
-			budget-1, rec.Code, rec.Body.String())
+		t.Fatalf("invitation after a resend + %d creates status = %d, want 429 — the resend must have spent budget, body = %s",
+			fits, rec.Code, rec.Body.String())
 	}
-	// The first create, the resend, and the nineteen creates — and nothing for
+	// The first create, the resend, and the eighteen creates — and nothing for
 	// the refused one.
-	const wantMessages = 1 + 1 + (budget - 1)
+	const wantMessages = 1 + 1 + fits
 	if got := len(mailer.messages()); got != wantMessages {
 		t.Errorf("relay received %d messages, want %d — the refused invitation must not have been mailed", got, wantMessages)
+	}
+}
+
+// #854 security review (HIGH): the budget counts MESSAGES, not invitation rows.
+//
+// The first shape of this fix counted rows in the window, which charged an
+// invitation once no matter how much mail it emitted. An admin session could
+// therefore create a handful of invitations and then resend each of them once a
+// minute forever without the count ever moving — roughly ten times the ceiling
+// the 429, the OpenAPI description and auth.md all state. This pins the ceiling
+// to what those documents say: repeated resends of ONE invitation exhaust the
+// organization's hour.
+func TestResendInvitation_RepeatedResendsExhaustTheBudget(t *testing.T) {
+	adminSub := "a1111111-1111-4111-8111-111111111111"
+	adminUserID := "a0000000-0000-7000-8000-0000000000a1"
+
+	mailer := &fakeMailer{}
+	f := newOrgFixtureWithMailer(t,
+		map[string]stubUser{adminSub: {UserID: adminUserID}},
+		nil,
+		api.WithMailer(mailer, testAppBaseURL),
+	)
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "b0000000-0000-7000-8000-000000000858"
+	created := createOrgAndInvitation(t, f, adminBearer, orgID, "Loop Apiary Co.", "victim0@example.com")
+
+	// Three invitations, so the organization's hour (20 messages) runs out
+	// before any single row's lifetime cap (10 attempts) does — otherwise the
+	// per-invitation cap would answer first and prove nothing about the budget.
+	ids := []string{created.ID}
+	for i := 1; i < 3; i++ {
+		rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+			"email": fmt.Sprintf("victim%d@example.com", i),
+		})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create invitation %d status = %d, body = %s", i, rec.Code, rec.Body.String())
+		}
+		var inv api.InvitationResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &inv); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		ids = append(ids, inv.ID)
+	}
+
+	// Resend them round-robin, stepping over each cooldown by backdating
+	// rather than sleeping. A 429 is the pass: the hour ran out. A 409 means
+	// the only thing that ever stopped the loop was one row's own lifetime
+	// cap — which is the pre-fix behaviour, with the organization's budget
+	// never moving no matter how much mail left.
+	var refused bool
+	for i := range 40 {
+		id := ids[i%len(ids)]
+		backdateDelivery(t, f, id, 5*time.Minute)
+		rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations/"+id+"/resend", adminBearer, nil)
+		if rec.Code == http.StatusTooManyRequests {
+			refused = true
+			break
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("resend %d status = %d, want 200 or 429 — a resend loop must exhaust the organization's hourly budget, not a single invitation's attempt cap, body = %s",
+				i, rec.Code, rec.Body.String())
+		}
+	}
+	if !refused {
+		t.Fatal("a resend loop never hit the organization's hourly budget — the budget is counting invitation rows, not messages")
 	}
 }
 

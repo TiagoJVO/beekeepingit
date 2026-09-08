@@ -441,15 +441,7 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		})
 		if txErr != nil {
 			if errors.Is(txErr, errInvitationBudget) {
-				// The 429's detail states the LIMIT and nothing else -- not
-				// how many the organization has used, not when the window
-				// opened. A rate-limit response that narrates the tenant's
-				// own recent activity is a side channel for anyone who has
-				// gained an admin session, and it buys the honest admin
-				// nothing the Retry-After header does not already give them.
-				problem.Write(w, r, problem.TooManyRequests(
-					fmt.Sprintf("an organization may send at most %d invitation emails per hour", maxInvitationsPerWindow),
-					int(invitationRateWindow.Seconds())))
+				writeInvitationBudgetExceeded(w, r)
 				return
 			}
 			if isUniqueViolation(txErr) {
@@ -503,11 +495,28 @@ var (
 	// errInvitationCooling -- still inside its per-invitation cooldown.
 	errInvitationCooling = errors.New("invitation is still within its resend cooldown")
 	// errInvitationSlotRefused -- the atomic claim matched zero rows although
-	// the checks above had passed. Unreachable while the per-org lock is
-	// held, and kept anyway: the claim, not those checks, is what actually
-	// authorizes a send, so its refusal must have a code path (#854).
+	// the checks above had passed. REACHABLE, and the proof that the claim
+	// (not those checks) is what authorizes a send: revokeInvitationHandler
+	// deliberately takes no per-org lock, so a revoke committing between this
+	// transaction's read and its claim leaves the claim matching nothing --
+	// and no mail goes out, which is exactly right.
 	errInvitationSlotRefused = errors.New("invitation delivery slot refused")
 )
+
+// writeInvitationBudgetExceeded answers the hourly outbound-mail budget's 429,
+// identically on the create and resend paths -- they spend one budget, so they
+// owe the caller one answer.
+//
+// The detail states the LIMIT and nothing else: not how many the organization
+// has used, not when the window opened. A rate-limit response that narrates the
+// tenant's own recent activity is a side channel for anyone who has gained an
+// admin session, and it buys the honest admin nothing the Retry-After header
+// does not already give them.
+func writeInvitationBudgetExceeded(w http.ResponseWriter, r *http.Request) {
+	problem.Write(w, r, problem.TooManyRequests(
+		fmt.Sprintf("an organization may send at most %d invitation emails per hour", maxInvitationsPerWindow),
+		int(invitationRateWindow.Seconds())))
+}
 
 // resendInvitationHandler retries the outbound email for one still-pending
 // invitation (#641 AC 5: "a failed send is visible to the admin and
@@ -620,13 +629,7 @@ func resendInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 					"this invitation was sent very recently; wait before sending it again",
 					int(wait.Seconds())+1))
 			case errors.Is(txErr, errInvitationBudget):
-				// Same wording, and the same silence about usage, as the
-				// create path's 429: a rate-limit response that narrates the
-				// tenant's own recent activity is a side channel for anyone
-				// who has gained an admin session.
-				problem.Write(w, r, problem.TooManyRequests(
-					fmt.Sprintf("an organization may send at most %d invitation emails per hour", maxInvitationsPerWindow),
-					int(invitationRateWindow.Seconds())))
+				writeInvitationBudgetExceeded(w, r)
 			default:
 				logging.FromContext(r.Context()).ErrorContext(r.Context(), "claim invitation resend failed", slog.Any("error", txErr))
 				problem.Write(w, r, problem.Internal())
@@ -763,6 +766,21 @@ func acceptPendingInvitationByEmail(ctx context.Context, pool *pgxpool.Pool, q *
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	txErr := withTx(ctx, pool, func(tx pgx.Tx) error {
 		txq := q.WithTx(tx)
+
+		// Take the per-org lock FIRST, like every other org-touching
+		// transaction here (#854 security review). Not for serialization --
+		// AcceptInvitation's own WHERE status = 'pending' already makes the
+		// accept atomic -- but for LOCK ORDER. Without it this transaction
+		// takes the invitation row and then, via memberships'
+		// organization_id foreign key, a FOR KEY SHARE lock on the
+		// organization row; a concurrent resend or create holds that
+		// organization row FOR UPDATE and is waiting on the invitation. That
+		// is a deadlock cycle, and the side that loses it is a 500 out of
+		// GET /v1/organizations/me at the invitee's very first login. Every
+		// transaction here now takes the organization row first.
+		if _, err := txq.LockOrganizationForUpdate(ctx, invitation.OrganizationID); err != nil {
+			return fmt.Errorf("lock organization for invitation accept: %w", err)
+		}
 
 		accepted, err := txq.AcceptInvitation(ctx, invitation.ID)
 		if err != nil {
