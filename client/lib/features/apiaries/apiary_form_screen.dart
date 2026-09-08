@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
 import '../../core/geo/device_location.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
@@ -243,7 +244,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.apiaryLoadError('$e'))));
+          .showSnackBar(appToast(l10n.apiaryLoadError('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -438,9 +439,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.apiarySaveError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.apiarySaveError('$e')));
     }
   }
 
@@ -486,9 +485,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.apiaryDeleteError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.apiaryDeleteError('$e')));
     }
   }
 

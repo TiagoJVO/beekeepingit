@@ -7,6 +7,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -111,14 +112,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.profileSaveError(e.detail))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(appToast(l10n.profileSaveError(e.detail)));
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.profileSaveError('$e'))));
+          .showSnackBar(appToast(l10n.profileSaveError('$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -150,9 +150,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.accountSyncNowError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.accountSyncNowError('$e')));
     } finally {
       if (mounted) setState(() => _syncing = false);
     }

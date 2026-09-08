@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -80,15 +81,13 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.organizationSaveError(e.detail))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(appToast(l10n.organizationSaveError(e.detail)));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.organizationSaveError('$e'))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(appToast(l10n.organizationSaveError('$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
