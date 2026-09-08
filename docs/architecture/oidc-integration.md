@@ -256,7 +256,10 @@ optional.
   behind the existing `AuthPlatform` seam. **Not** `openid_client_browser` (implicit flow).
 - **Logout** — persist the **`id_token`**; front-channel **GET** to `end_session_endpoint` with
   `id_token_hint` + `post_logout_redirect_uri` (clear local state **first** for offline-degrade);
-  optional `revocation_endpoint`. Replaces the Keycloak refresh-token POST.
+  optional `revocation_endpoint`. Replaces the Keycloak refresh-token POST. Both parameters are
+  load-bearing on the provider side: the hint is **required** once a logout allow-list exists, and
+  the redirect URI must be an **exact** member of it (§8, #237) — send the app's own origin, never a
+  computed or user-supplied destination.
 - **Account (password change)** — `OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings` (a config value, not a derived path).
 - **Federation hint (`beekeepingit_idp`, #363)** — the app's "Continue with Google" action sends
   the **same** authorize request as "Sign in" plus one extension parameter,
@@ -326,10 +329,21 @@ optional.
   `username_link` to route the match through it. Since #365 it also declares the
   **source-enrollment flow** `beekeepingit-source-enrollment` (SSO-gated, guarded `user_write`,
   the reused default user-login stage) that each source's `enrollment_flow` references — the write
-  path for the resolver's enroll branch ([auth.md §8.15](auth.md)).
+  path for the resolver's enroll branch ([auth.md §8.15](auth.md)). Since #237 it additionally
+  binds a **`user_logout` stage into the provider invalidation flow** (upstream's flow ships with
+  no stages, so RP-initiated logout left the SSO session alive) and declares the **logout
+  allow-list** — `redirect_uri_type: logout` entries on both providers, which is what makes
+  authentik honour `post_logout_redirect_uri` at all, and validate it strictly
+  ([auth.md §8.18](auth.md)).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
+  which since #237 rests on three specific internals a bump must re-verify — that
+  `post_logout_redirect_uris` is still the `redirect_uri_type: logout` **filter over
+  `redirect_uris`** rather than a field of its own, that `SessionEndStage` still prefers
+  `PLAN_CONTEXT_POST_LOGOUT_REDIRECT_URI` over its interstitial, and that a stage bound into the
+  provider invalidation flow still runs **before** the appended `SessionEndStage`
+  ([auth.md §8.18](auth.md));
   `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
   bump must not resurrect the managed built-in on the provider), the default authentication
   flow's stage-binding shape the #361 entries splice into, **`default_user_change_email` staying

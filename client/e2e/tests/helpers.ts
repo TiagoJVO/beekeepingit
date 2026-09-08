@@ -498,6 +498,12 @@ export async function countMessagesTo(
 // (exactly the #366 registration e2e's squatter symptom).
 export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
 
+// The IdP ORIGIN, anchored the same way and for the same reason. Used to assert
+// a sign-in is being HELD at the provider — e.g. #237's logout guard, which is
+// only meaningful if the browser is on the auth host with a credential form in
+// front of it rather than back on the app with an SSO cookie doing the work.
+export const AUTH_ORIGIN_RE = /^https:\/\/auth\.beekeepingit\.local/;
+
 /**
  * `page.waitForURL`, but settled on **commit** rather than on `load` (#836).
  *

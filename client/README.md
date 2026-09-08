@@ -77,6 +77,17 @@ hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 | `OIDC_ACCOUNT_URL`  | `https://auth.beekeepingit.local:8443/if/user/#/settings`          | Provider self-service page (password change), opened in a new tab       |
 | `OIDC_REDIRECT_URI` | _(empty → the app's own origin)_                                   | Post-login redirect URI                                                 |
 
+**Leave `OIDC_REDIRECT_URI` empty unless you also edit the IdP.** Since
+[#237](https://github.com/TiagoJVO/beekeepingit/issues/237) the provider validates
+`post_logout_redirect_uri` **strictly**, against a separate logout allow-list that holds only the
+**bare origins** (`docs/architecture/auth.md` §8.18). The authorization list is looser — it also
+accepts `<origin>/…` — so setting this to something like `<origin>/callback` logs in fine and then
+makes every **sign-out** a 400 at the IdP; and because the redirect never happens, the SSO session
+survives. If a deployment needs a non-origin redirect URI, add a matching
+`redirect_uri_type: logout` entry in
+`infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml` and in
+`scripts/check-logout-invalidation-posture.sh` in the same change.
+
 ## Structure
 
 | Path                        | What's there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |

@@ -529,18 +529,18 @@ build**. Under Authentik, **email verification + SMTP (#361, §8.10) and self-se
 recovery/password-reset remains **provider flow config in EPIC-14**; the fixed contract values are in
 [oidc-integration.md §5, §7](oidc-integration.md#7-client-contract-flutter-web-pwa):
 
-| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something.                                                                                                                                |
-| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. Creating an organization is **open to any self-registered user with a verified email**, with no invitation or approval gate (D-3/#362, §8.12). |
-| **Upstream federation**       | **Built (#363, §8.13):** Google as an Authentik **OAuth source**, offered as "Continue with Google" on the app's sign-in screen and on the provider's own login card. Credentials are infrastructure config (an out-of-band Secret env-mounted into the worker, read by the blueprint's `!Env`), never repo values or ConfigMap contents. **Self-service registration via Google is open (#365, §8.15)**: a strictly-verified upstream address matching no local account enrolls through a dedicated, SSO-gated flow; everything else still creates nothing. Domain services are unchanged: the minted token's `iss`/`aud`/`sub` are identical to a password login's (D-7).                                                                  |
-| **Account linking**           | **Built (#364, §8.14):** an already-linked identity resolves on the upstream's stable **subject** alone. A first, unlinked sign-in links **only** when the upstream's own verification flag is strictly `true` **and** exactly one active, non-superuser, already-`email_verified` local account claims that address — as its current address or in `attributes.known_emails`, the per-account history of addresses this deployment has itself seen verified (written solely by §8.10's stamp). Every ambiguity — unknown, duplicate, unverified either side — is the same `DENY`, creating nothing. No claim, contract or service changes; no user's `sub` ever changes.                                                                    |
-| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing the **server-side SSO cookie** at the IdP. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync.                                                                                                                                                                                     |
+| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something.                                                                                                                                                                                                                                                                                                                                                       |
+| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. Creating an organization is **open to any self-registered user with a verified email**, with no invitation or approval gate (D-3/#362, §8.12).                                                                                                                                                                                                                        |
+| **Upstream federation**       | **Built (#363, §8.13):** Google as an Authentik **OAuth source**, offered as "Continue with Google" on the app's sign-in screen and on the provider's own login card. Credentials are infrastructure config (an out-of-band Secret env-mounted into the worker, read by the blueprint's `!Env`), never repo values or ConfigMap contents. **Self-service registration via Google is open (#365, §8.15)**: a strictly-verified upstream address matching no local account enrolls through a dedicated, SSO-gated flow; everything else still creates nothing. Domain services are unchanged: the minted token's `iss`/`aud`/`sub` are identical to a password login's (D-7).                                                                                                                                                                                                                                                                                         |
+| **Account linking**           | **Built (#364, §8.14):** an already-linked identity resolves on the upstream's stable **subject** alone. A first, unlinked sign-in links **only** when the upstream's own verification flag is strictly `true` **and** exactly one active, non-superuser, already-`email_verified` local account claims that address — as its current address or in `attributes.known_emails`, the per-account history of addresses this deployment has itself seen verified (written solely by §8.10's stamp). Every ambiguity — unknown, duplicate, unverified either side — is the same `DENY`, creating nothing. No claim, contract or service changes; no user's `sub` ever changes.                                                                                                                                                                                                                                                                                           |
+| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync. The client half is only half the guarantee: clearing the **server-side SSO session** and returning to the app both take **provider-side** configuration, which is what **§8.18 (#237)** builds — a `user_logout` stage bound into the provider invalidation flow, and `post_logout_redirect_uri` allow-listed as a logout-typed redirect URI. Before that the SSO cookie survived Sign out and the browser stopped on the provider's session-end interstitial. |
 
 > Lifetimes are **starting points**, to be confirmed against a **security review** (EPIC-14, #15) and
 > field-UX testing — not hard requirements. The blueprint sets these as concrete validities rather
@@ -582,7 +582,7 @@ security review). The middleware here is also the **producer** of the `organizat
 
 | §7/§3.3 item                                    | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` revokes the **server-side SSO session**, not just local tokens, and degrades to local-only clearing offline (D-10). It performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint).                                                                                                                 |
+| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first so it degrades to local-only clearing offline (D-10) — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint). Sending that request is all the client can do; whether it actually **revokes the server-side SSO session** is decided provider-side, and only became true with **#237 (§8.18)**   |
 | **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below). It is **not empty**: the dev/CI seed user has been a member since the Authentik cut-over (#191), and since **#465** that membership is surfaced to the admin app as the verified `platform_operator` claim (EPIC-18's platform tier — [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) |
@@ -1762,6 +1762,172 @@ and its two guards changed — no Go service, no client, no token, no requiremen
   `KeyOf: failed to find entry with 'id' of 'flow-default-provider-authorization'`). It costs
   nothing operationally — the file is still recorded ERROR and retried — but read such a message as
   "an entry failed", not as "that specific reference is missing".
+
+## 8.18 As built (#237) — Sign out ends the provider session, and comes back
+
+**The defect.** Sign out did the client half correctly (§7, §8.5) and then stopped: the browser sat
+on Authentik's "You've logged out of BeekeepingIT" interstitial and never returned to `/login`, and
+the provider session behind it stayed alive, so the next sign-in completed with **no password**. The
+second half is the one that matters — §7 promises logout revokes the **server-side SSO session**,
+not just the local token cache (NFR-SEC-1) — and it was never true. Found by the walking-skeleton
+e2e (#162/PR #234), whose logout test was `test.fixme`'d on it.
+
+**One root cause, two symptoms.** Both providers' `invalidation_flow` is upstream's
+`default-provider-invalidation-flow`, and at the pinned 2026.5.4 that flow has **no stage bindings
+at all** — its whole upstream body is a designation, a name, a title and `authentication: none`
+(`blueprints/default/flow-default-provider-invalidation.yaml`). `EndSessionView.get`
+(`providers/oauth2/views/end_session.py`) deletes the provider's `AccessToken`s, plans that flow, and
+appends an in-memory `SessionEndStage` **last**. With no stages of its own:
+
+- nothing ends the authentik session, so `request.user.is_authenticated` is still true when
+  `SessionEndStage.get_challenge` (`flows/stage.py`) runs — **symptom (b)**; and
+- that stage only redirects when the plan carries `PLAN_CONTEXT_POST_LOGOUT_REDIRECT_URI`, which
+  `EndSessionView.validate` sets **only if `provider.post_logout_redirect_uris` is non-empty**. It
+  was empty, so the `post_logout_redirect_uri` both apps send was silently dropped and the stage
+  fell through to its `ak-stage-session-end` challenge — **symptom (a)**.
+
+**The fix, both halves, in the blueprint.**
+
+- **(b) Session.** A `user_logout` stage (`beekeepingit-provider-invalidation-logout`) bound into
+  that flow at order 10. `FlowPlanner` builds the flow's own bindings before `EndSessionView`
+  appends `SessionEndStage`, so the logout always runs **first**; `UserLogoutStageView` calls
+  Django's `logout()` (which flushes the session) and then `executor.stage_ok()`, which re-writes
+  the remaining plan into the **new** session — so the flow survives its own session flush.
+- **(a) Return.** `post_logout_redirect_uris` is **not a field** at 2026.5.4: it is a property over
+  the provider's existing `redirect_uris`, filtered to `redirect_uri_type: logout`, while the
+  authorize view matches the complementary `authorization_redirect_uris`
+  (`providers/oauth2/models.py`). The logout allow-list is therefore **four** added entries on the
+  PWA provider (`appOrigin`, `adminOrigin`, and a strict literal for each of the two localhost dev
+  ports) and two on the admin provider — and it widens **no** authorization target, nor any CORS
+  origin: every one of those URLs is already an authorization redirect URI on the same provider.
+
+**Why a stage binding and not our own flow.** Owning a `designation: invalidation` flow would
+re-arm §8.17's second-order trap: with `brand.flow_invalidation` unpinned, `ToDefaultFlow.get_flow`
+scans invalidation flows **ordered by slug**, and any `beekeepingit-*` slug sorts ahead of
+`default-invalidation-flow` — so authentik's own UI logout would silently start running our flow. A
+binding adds no flow, so no designation ordering changes and no new brand pin is needed. Same shape
+as §8.10's email-verification bindings and §8.13's idp-hint binding.
+
+**Open-redirect posture (the reason this is a security change, not a UX one).** Declaring logout
+URIs flips authentik from _ignore the parameter_ to **strict, fail-closed validation of it**, done
+by authentik itself: a `post_logout_redirect_uri` matching none of the entries is a **400
+`invalid_request`**, never a redirect; an `id_token_hint` becomes **required** alongside it; and
+`FORBIDDEN_URI_SCHEMES` is rejected outright. Nothing in the list is user-supplied — the two origins
+are this chart's own `global.appOrigin` / `global.adminOrigin`, so every environment overlay
+allow-lists exactly its own hosts, and the dev exceptions are **strict literals, one per real dev
+port** (`http://localhost:5175` for the Flutter client, `http://localhost:5174` for the admin Vite
+server) — exactly the spelling and exactly the ports the **authorization** entries use since
+[#822](https://github.com/TiagoJVO/beekeepingit/issues/822). No regex, in any spelling: matching is
+`fullmatch`, so `http://localhost:.*` also accepts `http://localhost:@evil.example` — which a
+browser resolves to `evil.example` with `localhost:` as userinfo — while `\\d+` allow-lists Unicode
+decimal digits (`http://localhost:٤٥` matches) and raises inside `cors_allow`, and `[0-9]+` is a
+bracketed netloc (below). A strict literal has no metacharacter at all, and it is also the only
+form that grants a localhost origin real CORS on `/token` and `/userinfo`, since `token.py` builds
+that allow-list from **all** `redirect_uris`, unfiltered. A new dev port is a deliberate edit to
+the blueprint and to both guards.
+
+**No redirect URI may contain `[` or `]`.** The bracketed spelling took the whole deployment down
+on this change's first CI run.
+Authentik derives its **CORS allow-list from `redirect_uris`** and `urlparse()`s **every** entry,
+regex-mode included (`providers/oauth2/utils.py::cors_allow`); the image's Python raises
+`ValueError: Invalid IPv6 URL` on a netloc with data before a `[` (`_check_bracketed_netloc`). One
+bracketed entry therefore **500s every request carrying an `Origin` header** — the discovery
+document included — so every browser sign-in failed with "Failed to fetch" while the in-cluster
+readiness probe, which sends no `Origin`, reported the discovery endpoint healthy. The only symptom
+was 15 of 25 e2e tests timing out. `scripts/check-logout-invalidation-posture.sh` rejects `[` or `]`
+in **any** redirect URI on either provider, logout and authorization alike, and
+`scripts/check-authorization-redirect-posture.sh` (#822) additionally validates **every** redirect
+URI — logout-typed ones included — against one reviewed `<matching_mode> <url>` allow-list, which
+is where the two localhost literals are enumerated.
+
+**Why the admin origin is on the PWA provider.** The admin app signs out through **this**
+application's `end_session_endpoint`, not its own: it is pointed at the beekeepingit **issuer**
+(§8.5/#460), so oidc-client-ts discovers the endpoint under `/application/o/beekeepingit/` and
+`application_slug` resolves to the PWA provider. Its `id_token_hint` verifies there because
+`scope-admin-audience` already rewrites admin tokens to that issuer and the `beekeepingit-pwa`
+audience — the two values `EndSessionView.validate` decodes the hint against. Declaring the list is
+consequently **all-or-nothing**: any origin that legitimately signs out through an application must
+be listed, or it regresses from an interstitial to a 400.
+
+**The client half had to be bounded too.** The blueprint makes the provider do the right thing; it
+cannot make the browser get there. `logout()` runs three best-effort steps before the front-channel
+redirect — the local-store wipe, discovery, and refresh-token revocation — each wrapped in a catch
+and each, until now, awaited with no bound. A catch only handles a **throw**: when the PowerSync
+wipe simply never completed, sign-out was parked forever, with no end-session request, no
+navigation, and a UI still showing the user signed in. The un-`fixme`'d e2e caught exactly that (a
+confirmed "Sign out" click followed by 60s of zero network activity). All three are now bounded by
+the same `_kAuthNetworkTimeout` that already keeps a dead link from parking boot restore (§8.14/#390),
+with a regression test that injects a never-completing `clear()` and asserts the redirect is still
+issued. The bound guarantees sign-out completes; it does not explain the stall, and when it fires the
+local database is left un-wiped on a just-signed-out device — tracked as
+[#836](https://github.com/TiagoJVO/beekeepingit/issues/836).
+
+**What sign-out still does _not_ do.** Ending the SSO session does **not** revoke the 30-day
+`offline_access` refresh token. `EndSessionView.get` deletes only the provider's 15-minute
+`AccessToken`s, and `RefreshToken` deliberately shadows the `session` foreign key
+(`providers/oauth2/models.py`), so the refresh token outlives the session that minted it and stays
+redeemable. The only thing that kills it is the client's best-effort `cred.revoke()` in
+[`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) —
+which sits inside a `try` that begins with `await _issuer()`, so an **offline** sign-out never
+reaches it and the token remains valid until it expires. Revocation is therefore **client-driven and
+best-effort, not a server-side guarantee**; making it durable is
+[#830](https://github.com/TiagoJVO/beekeepingit/issues/830). A second consequence of the strict
+validation this section introduces: a **second admin tab** signing out after the first sends
+`post_logout_redirect_uri` with no `id_token_hint` (oidc-client-ts sends the former
+unconditionally and the latter only when the shared `localStorage` user store still holds a user,
+which the first tab cleared), so it 400s instead of returning to `/login` — fail-closed, but
+user-visible: [#831](https://github.com/TiagoJVO/beekeepingit/issues/831).
+
+**Verified by.** [`scripts/check-logout-invalidation-posture.sh`](../../scripts/check-logout-invalidation-posture.sh)
+(offline, `task repo:lint` → `task ci`) asserts the stage, its `!KeyOf` binding onto the pinned
+upstream flow, that every provider carries a logout allow-list containing the origins it must accept
+back, that **every** logout-typed entry is `matching_mode: strict` and names one of the four
+reviewed targets (the two rendered origins and the two localhost dev ports — no regex, in any
+spelling), and that no entry in the file owns an invalidation-designation flow. Review of the first
+version showed those assertions were **structurally evadable** — the guard is only worth what it
+rejects — so it now also pins the things that make an entry _mean_ what it reads as: exactly one
+stage entry, one binding entry and one `redirect_uris:` block per provider, no
+`state:`/`conditions:` on the stage, the binding **or either provider** (all three make an entry
+present and inert — `absent` deletes, `created` skips the update on an environment where the object
+already exists, a falsy `conditions:` skips the plan), no duplicate
+`target:`/`stage:`/`url:`/`matching_mode:`/`redirect_uri_type:` keys (PyYAML is silently last-wins,
+and a second `redirect_uris:` block that keeps the authorization entries while dropping the logout
+ones leaves sign-in green and 400s every sign-out),
+`matching_mode: strict` on **every** logout entry (under `fullmatch` a rendered origin read as a
+`regex` turns every unescaped `.` into a wildcard and admits a neighbouring registrable domain), and
+`invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
+off a flow nothing plans). Every key and value is read with **quotes tolerated on either side** —
+`redirect_uri_type: "logout"` is the same entry to PyYAML, but a bare `: logout` pattern missed it,
+so an `https://evil.example/.*` entry written that way was never recognised as a logout target and
+never reached the allow-list assertion at all. And the list is walked by indentation, because a
+blank line or a re-indented item used to end the walk and silently drop every entry below it. All of
+it is mutation-checked against twenty-eight deliberately broken copies of the blueprint — binding
+removed, allow-list removed, an `https://.*` target, an owned invalidation flow, stage removed,
+`logout` flipped back to `authorization`, a bracketed logout regex, a bracketed authorization regex,
+plus each evasion above in both its bare and its quoted spelling — and **all twenty-eight fail it**.
+
+Those mutants no longer live in a reviewer's scratch directory: they are
+[`scripts/test-logout-invalidation-posture.sh`](../../scripts/test-logout-invalidation-posture.sh),
+which `task repo:lint` runs **alongside** the check — the posture #822's guard established, because
+a guard that quietly stops looking is worse than no guard. Its 26 cases add four evasions a later
+review found in the guard itself. A **quoted model** (`- model: "authentik_flows.flow"`, which
+prettier preserves, so `format-check` did not launder it) bypassed the owned-invalidation-flow
+assertion outright. A **top-level entry the walker did not recognise** (`- id:` before `model:`) was
+folded into the previous entry and shipped a `regex https://evil.example/.*` logout target
+unexamined. A **second binding onto the shared invalidation flow** was invisible to a count that
+matched target _and_ stage — and one at `order: 0` runs before the logout stage and can send the
+browser away with the SSO cookie intact. And a **policy binding** onto the logout stage binding is
+`conditions:` by another name, since authentik skips a stage whose bound policies deny. All four are
+now rejected. The guard additionally asserts it is reading the file the chart actually ships: it
+hardcodes a path while the chart renders `files/{{ .Values.blueprintFile }}`, and `.Files.Get`
+returns the empty string for a missing path while raising nothing — so a repointed value would
+deploy an **empty** blueprint, with no provider and a 404 discovery document, while `helm lint`,
+`helm template` and every posture guard stayed green.
+
+Live, the logout e2e in
+[`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
+past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
+and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
 
 ## 9. Acceptance-criteria traceability (#109)
 
