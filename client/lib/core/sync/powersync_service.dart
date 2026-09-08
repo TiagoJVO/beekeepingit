@@ -7,6 +7,7 @@ import 'package:powersync/powersync.dart';
 import '../../features/organization/organization_repository.dart';
 import '../../features/settings/sync_settings_repository.dart';
 import '../auth/auth_controller.dart';
+import '../diagnostics_836.dart';
 import 'connectivity_probe.dart';
 import 'connectivity_signal.dart';
 import 'local_store.dart';
@@ -57,8 +58,12 @@ Future<PowerSyncDatabase> _openDatabase() async {
   final openOverride = debugOpenPowerSyncDatabase;
   if (openOverride != null) return openOverride();
 
+  bk836('db:construct:begin');
   final db = PowerSyncDatabase(schema: appSchema, path: _dbFilename);
+  bk836('db:construct:end');
+  bk836('db:initialize:begin');
   await db.initialize();
+  bk836('db:initialize:end');
   return db;
 }
 
@@ -130,9 +135,12 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // login, or the #125 membership-loss purge's `ref.invalidate`) could open a
   // new [PowerSyncDatabase] against the same on-disk file while the old
   // one's `db.close()` is still in flight.
+  bk836('provider:build:begin');
   await _teardownGuard.waitForPrior();
+  bk836('provider:waitForPrior:done');
 
   final db = await _openDatabase();
+  bk836('provider:open:done');
 
   // Read into a local rather than handing the connector a `ref` to re-read
   // (#622): [BeekeepingitConnector] outlives this provider — PowerSync can
@@ -531,22 +539,32 @@ void Function() sessionTeardown({
   required TeardownGuard guard,
 }) {
   return () {
+    bk836('teardown:sync:begin');
     // The synchronous half. `cancel()` detaches the listener right here; the
     // Future it returns is only awaited below, so nothing about the ordering
     // of the async steps changes.
     final cancelled = statusSub.cancel();
+    bk836('teardown:statusSub.cancel:called');
     gate.dispose();
+    bk836('teardown:gate.dispose:done');
     probe.dispose();
+    bk836('teardown:probe.dispose:done');
 
     // The async remainder, fire-and-forget: Riverpod's `ref.onDispose` is a
     // `void Function()` and never awaits a returned Future, so it is stashed
     // for the *next* [powerSyncProvider] instance to await instead.
     guard.registerTeardown(() async {
+      bk836('teardown:async:begin');
       await cancelled;
+      bk836('teardown:cancelled:awaited');
       await disconnect();
+      bk836('teardown:disconnect:done');
       await close();
+      bk836('teardown:close:done');
       disposeConnector();
+      bk836('teardown:async:end');
     });
+    bk836('teardown:sync:end');
   };
 }
 

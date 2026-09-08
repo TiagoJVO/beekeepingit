@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:openid_client/openid_client.dart';
 
 import '../config/app_config.dart';
+import '../diagnostics_836.dart';
 import '../storage/local_prefs.dart';
 import '../sync/local_store.dart';
 import '../sync/powersync_service.dart';
@@ -295,7 +296,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     ref.read(loginErrorProvider.notifier).state = null;
     try {
       final platform = _platform ??= _injectedPlatform ?? createAuthPlatform();
-      final issuer = await _issuer();
+      final issuer = await _issuer().timeout(_authNetworkTimeout);
       final verifier = randomVerifier();
       final flow = Flow.authorizationCodeWithPKCE(
         _client(issuer),
@@ -368,6 +369,9 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// not a user action; see `local_data_purge.dart`'s own note on the same
   /// question for that path.)
   Future<void> logout() async {
+    bk836('logout:enter');
+    bk836Heartbeat('logout');
+    bk836MicrotaskProbe('logout');
     final session = state.value;
     final platform = _platform;
 
@@ -378,11 +382,17 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // session that looks logged out. Best-effort: a wipe failure must not
     // block the user from finishing logout.
     try {
+      bk836('store:resolve:begin');
       final store =
           await (_injectedLocalStore ??
-              () => ref.read(localStoreProvider.future))();
-      await store.clear();
+                  () => ref.read(localStoreProvider.future))()
+              .timeout(_authNetworkTimeout);
+      bk836('store:resolve:end');
+      bk836('store:clear:begin');
+      await store.clear().timeout(_authNetworkTimeout);
+      bk836('store:clear:end');
     } catch (e, st) {
+      bk836('store:failed:$e');
       // Deliberately catch-all (not narrowed to Exception): a test double's
       // wipe failure (or a real PowerSync failure) can surface as a
       // StateError — an Error, not an Exception — and this must stay
@@ -399,17 +409,30 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // `ref.mounted` guards against the async gap above racing this
     // controller's own disposal (e.g. a test container torn down mid-await;
     // see auth_controller_test.dart) — invalidating a disposed Ref throws.
+    bk836('invalidate:begin mounted=${ref.mounted}');
     if (ref.mounted) ref.invalidate(powerSyncProvider);
+    bk836('invalidate:end');
 
     // Clear local session state — the redirect below may never complete
     // offline, but the user must still end up locally logged out.
+    bk836('clearLocalSession:begin');
     _clearLocalSession();
+    bk836('clearLocalSession:end');
+    bk836('stateNull:begin');
     state = const AsyncData(null);
+    bk836('stateNull:end');
 
-    if (session == null || platform == null) return;
+    if (session == null || platform == null) {
+      bk836(
+        'early-return session=${session == null} platform=${platform == null}',
+      );
+      return;
+    }
 
     try {
+      bk836('issuer:begin');
       final issuer = await _issuer();
+      bk836('issuer:end');
       final metadata = issuer.metadata;
 
       // Best-effort refresh-token revocation (optional per §7).
@@ -420,8 +443,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
             refreshToken: session.refreshToken,
             idToken: session.idToken.isNotEmpty ? session.idToken : null,
           );
-          await cred.revoke();
+          bk836('revoke:begin');
+          await cred.revoke().timeout(_authNetworkTimeout);
+          bk836('revoke:end');
         } on Exception catch (e, st) {
+          bk836('revoke:failed');
           // Non-fatal: front-channel end-session below still ends the session.
           developer.log(
             'logout(): best-effort refresh-token revocation failed',
@@ -441,9 +467,14 @@ class AuthController extends AsyncNotifier<AuthSession?> {
             'post_logout_redirect_uri': platform.redirectUri,
           },
         );
+        bk836('assignLocation:begin');
         platform.assignLocation(logoutUrl.toString());
+        bk836('assignLocation:end');
+      } else {
+        bk836('assignLocation:skipped endSession=${endSession == null}');
       }
     } on Exception catch (e, st) {
+      bk836('endSession:failed:$e');
       // Offline / discovery failure: local state is already cleared above, so
       // the user is logged out locally. The provider SSO session/cookie will
       // outlive this device until it expires naturally.
