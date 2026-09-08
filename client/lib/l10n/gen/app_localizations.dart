@@ -3610,6 +3610,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Close'**
   String get toastDetailsCloseAction;
+
+  /// The shell header's title on the not-found screen (#638). A short noun phrase like every other entry in app_shell's `_titleFor`, not a sentence: the body message carries the explanation. Replaces go_router's untranslated 'Page Not Found' fallback
+  ///
+  /// In en, this message translates to:
+  /// **'Not found'**
+  String get notFoundTitle;
+
+  /// Body of the not-found screen (#638), rendered as the screen's EmptyState message: says what happened in the user's own terms and points at the shell's navigation, which this screen keeps. Deliberately does not name the attempted location — that is diagnostics, not something the user can act on
+  ///
+  /// In en, this message translates to:
+  /// **'The link you followed doesn\'t lead anywhere in the app.\n\nIt may be out of date, or whatever it pointed to may have been deleted. Nothing else has changed — carry on from Home, or from any other area.'**
+  String get notFoundMessage;
+
+  /// Primary action on the not-found screen (#638) — the in-body exit, beside the shell's own back control
+  ///
+  /// In en, this message translates to:
+  /// **'Go to Home'**
+  String get notFoundHomeAction;
 }
 
 class _AppLocalizationsDelegate

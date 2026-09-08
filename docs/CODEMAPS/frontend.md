@@ -11,6 +11,9 @@ i18n en-GB/pt-PT (`lib/l10n/`, D-34), accessibility + gloves-friendly targets. E
 
 ```text
 redirect gate:  !auth → /login │ profile incomplete → /profile │ no org → /organization/new
+onException:    any unmatched location → /home/not-found (#638; logs the attempted URI, never
+                renders it — `onException` rather than `errorBuilder` precisely because
+                `errorBuilder` draws outside the shell by construction)
 /login                     LoginScreen            features/auth
 /profile                   ProfileScreen          features/profile   (onboarding FR-ONB-1)
 /organization/new          OrganizationScreen     features/organization (onboarding FR-ONB-2)
@@ -104,6 +107,18 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
   │                        allClear, needsAttention. Rows tap to the record; "view all" taps
   │                        to the filtered list. Reads NO clock: every badge rides on the
   │                        summary's single `now`. No FAB, no own Scaffold)
+  │   └ not-found          NotFoundScreen         routing/            ◄ #638, FR-UX-2/NFR-I18N-1
+  │                        (where the router's `onException` sends EVERY unmatched location.
+  │                        Nested under /home, inside the shell, on purpose: go_router's own
+  │                        fallback page is built by the ROOT navigator, so it replaced the
+  │                        whole shell and left a user arriving from a stale link with one
+  │                        link and no navigation. Here the shell survives and its Back pops
+  │                        to /home — which nesting, not a sibling route, is what guarantees.
+  │                        Home being the landing screen (D-35) also means the highlighted tab
+  │                        is the one Back leads to, so none of the branch-focus surprise
+  │                        `journeyActivityDetail` documents. A LITERAL path, deliberately not
+  │                        a `/:path(.*)` catch-all, which would shadow the branches declared
+  │                        after it. The attempted location is LOGGED, never rendered)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
   │   │                    list — date-range/activity-type/status filters (combinable), plan-vs-
   │   │                    done progress badge per row, tap row → detail (#48); `?status=open`

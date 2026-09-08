@@ -159,9 +159,19 @@ jobs:
             # inert and the app cannot start offline. Required after EVERY
             # `flutter build web` — scripts/check-app-shell-precache-wired.sh
             # fails the lint gate if a build site ever loses it.
+            # TZ pinned, not the runner default (#665): the client's
+            # day-difference rules (todo_due.dart, apiary_visit_recency.dart,
+            # home_screen.dart) count on UTC midnights precisely so a DST
+            # transition can't shorten a day, and Dart reads the PROCESS's local
+            # zone with no way for a test to change it. On a UTC runner every
+            # midnight is 24h apart, so those tests pass against either
+            # convention and guard nothing. Europe/Lisbon is the project's own
+            # zone and observes DST, so the transition cases can actually fail
+            # here. Applies to `flutter test` only — the analyze/build steps
+            # around it are zone-independent.
             ( task dart:l10n-check \
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
-              && flutter analyze && flutter test \
+              && flutter analyze && TZ=Europe/Lisbon flutter test \
               && flutter build web --release --no-web-resources-cdn \
               && dart run tool/build_app_shell_cache.dart build/web )
           elif [ -f "$COMPONENT_PATH/package.json" ]; then

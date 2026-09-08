@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +37,7 @@ import '../features/todos/todo_filters.dart';
 import '../features/todos/todo_form_screen.dart';
 import '../features/todos/todos_list_screen.dart';
 import '../shell/app_shell.dart';
+import 'not_found_screen.dart';
 
 final _apiariesBranchKey = GlobalKey<NavigatorState>(
   debugLabel: 'apiariesBranch',
@@ -94,6 +97,42 @@ final routerProvider = Provider<GoRouter>((ref) {
     // with this one.
     initialLocation: '/home',
     refreshListenable: refresh,
+    // Unmatched locations (#638, FR-UX-2, NFR-I18N-1). Without this
+    // go_router answers for the app: it renders its own fallback page —
+    // `GoException: no routes for location: /activities/new` above a bare
+    // "Home" link — built by the ROOT navigator, so the whole [AppShell]
+    // goes with it. A user arriving from a stale bookmark or a shared link
+    // was shown the framework's diagnostics, in English whatever their
+    // locale, with a single escape and no navigation.
+    //
+    // `onException` rather than `errorBuilder` precisely so the answer can
+    // be a real route: `errorBuilder` renders outside the shell by
+    // construction, while redirecting into `/home/not-found` (below) makes
+    // the not-found screen an ordinary page of the app, with every shell
+    // affordance intact and Home one Back away.
+    //
+    // The attempted location is LOGGED, never rendered: it is diagnostics,
+    // and putting an arbitrary untranslated path back on the screen is the
+    // very thing #638 reports. The PATH only — an inbound link's query and
+    // fragment are the parts that could carry a token, and the path alone is
+    // the whole diagnostic.
+    onException: (context, state, router) {
+      developer.log(
+        'router exception at ${state.uri.path} — showing the not-found screen',
+        name: 'routing',
+        error: state.error,
+      );
+      // Every GoException lands here, not just "no routes for location":
+      // go_router also wraps anything thrown out of the `redirect` below. If
+      // that ever happens, re-navigating would throw again on the next parse
+      // and loop unbounded — `redirectLimit` does not help, because each
+      // `go()` starts a fresh parse with a fresh history. Bailing out when we
+      // are already at the destination bounds it at one hop: the worst case
+      // degrades to go_router's own fallback page, which is what shipped
+      // before this route existed, rather than to a spin.
+      if (state.uri.path == '/home/not-found') return;
+      router.go('/home/not-found');
+    },
     redirect: (context, state) {
       final authed = ref.read(isAuthenticatedProvider);
       final atLogin = state.matchedLocation == '/login';
@@ -376,6 +415,35 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/home',
                 name: 'home',
                 builder: (context, state) => const HomeScreen(),
+                routes: [
+                  // Where `onException` above sends every unmatched location
+                  // (#638, FR-UX-2, NFR-I18N-1). Nested UNDER `/home`, and in
+                  // the home branch, for three reasons:
+                  //
+                  // * it keeps the app shell, which is the substance of the
+                  //   defect — go_router's own fallback replaced the whole
+                  //   shell, leaving a user who arrived from a stale link
+                  //   with one link and no navigation at all;
+                  // * nesting puts `/home` under it in the branch's stack, so
+                  //   the shell's Back pops to Home. A sibling of `/home`
+                  //   would render the same screen with a Back button that
+                  //   popped nothing — a dead end wearing an exit's clothes;
+                  // * Home is the app's landing screen (D-35), so the tab the
+                  //   shell highlights while this shows is the one the user
+                  //   is one Back away from anyway — none of the
+                  //   branch-focus surprise the `journeyActivityDetail` route
+                  //   below documents.
+                  //
+                  // Deliberately a LITERAL path, never a `/:path(.*)`
+                  // catch-all: go_router matches routes in declaration order,
+                  // and a catch-all in this branch would shadow the journeys
+                  // and todos branches that follow it.
+                  GoRoute(
+                    path: 'not-found',
+                    name: 'notFound',
+                    builder: (context, state) => const NotFoundScreen(),
+                  ),
+                ],
               ),
             ],
           ),
