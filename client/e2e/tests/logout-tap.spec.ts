@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { enableSemantics, scrollFlutterViewTo, submitIdpCredentials } from "./helpers";
+import {
+  enableSemantics,
+  scrollFlutterViewTo,
+  submitIdpCredentials,
+  waitForUrlCommitted,
+} from "./helpers";
 
 /**
  * #836 — **the Sign out tap reaches the widget, and sign-out starts.**
@@ -36,9 +41,11 @@ import { enableSemantics, scrollFlutterViewTo, submitIdpCredentials } from "./he
 const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 
-test("tapping Sign out actually starts sign-out (#836, FR-ONB, NFR-SEC-1)", async ({ page }) => {
+test("tapping Sign out actually starts sign-out (#836, FR-AU-1, NFR-SEC-1)", async ({ page }) => {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
-  await page.waitForURL(/\/home/, { timeout: 60_000 });
+  // The OIDC callback is a full page load, so this wait settles on `commit`
+  // for the same reason the post-logout one does — see `waitForUrlCommitted`.
+  await waitForUrlCommitted(page, /\/home/);
   await enableSemantics(page);
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 30_000 });
 
