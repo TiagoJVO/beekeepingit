@@ -235,9 +235,27 @@ entries:
   # `UserLogoutStage` declares nothing but a name, so owning it costs nothing
   # and cannot race another blueprint file's apply.
   #
-  # Guarded offline by scripts/check-logout-invalidation-posture.sh and live by
-  # the logout e2e in client/e2e/tests/slice.spec.ts, which re-opens sign-in
-  # after Sign out and fails unless the IdP asks for credentials again.
+  # BLAST RADIUS: INSTANCE-WIDE, NOT PER-PROVIDER. This binds onto upstream's
+  # SHARED `default-provider-invalidation-flow`, which is the default
+  # `invalidation_flow` of EVERY OAuth2/proxy provider created in this authentik
+  # instance — so a future provider (an outpost, a third app) inherits a full
+  # SSO logout on RP-initiated logout without opting in. That is the behaviour
+  # we want, but it is inherited rather than declared, so say so: the guard only
+  # checks the two providers THIS file declares. Exactly one binding belongs on
+  # that flow, and the guard now counts every binding onto it — a second one, at
+  # any order, is a conversation.
+  #
+  # `order:` lives inside `identifiers:`, which is the LOOKUP KEY — so changing
+  # it later CREATES A SECOND binding rather than moving this one, and
+  # blueprints never prune. On any environment that already applied the old
+  # order, the stage would then be bound twice on the same flow. Re-ordering is
+  # an add plus an explicit `state: absent` entry for the old row, in the same
+  # change. (Repo-wide shape: the #361/#363 bindings below do the same.)
+  #
+  # Guarded offline by scripts/check-logout-invalidation-posture.sh (whose
+  # negative cases run alongside it as scripts/test-logout-invalidation-posture.sh)
+  # and live by the logout e2e in client/e2e/tests/slice.spec.ts, which re-opens
+  # sign-in after Sign out and fails unless the IdP asks for credentials again.
   # Written up in docs/architecture/auth.md §8.18.
   - model: authentik_stages_user_logout.userlogoutstage
     id: stage-provider-invalidation-logout

@@ -129,6 +129,7 @@ blueprint="${1:-${repo_root}/infra/helm/beekeepingit/charts/authentik/files/beek
 # #599 identifiers-only pin entry.
 logout_stage_id="stage-provider-invalidation-logout"
 inval_flow_pin_id="flow-default-provider-invalidation"
+logout_binding_id="binding-provider-invalidation-logout"
 # Providers that MUST carry a logout allow-list, and the rendered origin each
 # one must accept back. The PWA provider carries the admin origin too: the admin
 # app signs out through THIS application's end_session_endpoint (it is pointed at
@@ -141,10 +142,41 @@ if [ ! -f "${blueprint}" ]; then
   exit 1
 fi
 
+# The chart does NOT read the path above. It renders
+# `files/{{ .Values.blueprintFile }}`
+# (charts/authentik/templates/blueprint-configmap.yaml), and `.Files.Get`
+# returns the EMPTY STRING for a path that is not in the chart while raising
+# nothing. So repointing that value — a rename, a typo, a second blueprint —
+# ships a ConfigMap with no provider, no application and no seed user, and OIDC
+# discovery 404s, while `helm lint`, `helm template` and every posture guard in
+# this directory stay green against a file nothing mounts. `blueprintFile` is
+# not in values.schema.json either, so nothing rejects a bogus value.
+#
+# Asserted rather than derived: deriving would need a YAML parser in a guard
+# that is deliberately parser-free, and it would make this guard FOLLOW a
+# repoint and then fail with "these entries are missing" — which reads like a
+# blueprint regression rather than "someone moved the file". Skipped when an
+# explicit path is given: that is a test fixture (review finding, #237).
+if [ "$#" -eq 0 ]; then
+  chart_values="${repo_root}/infra/helm/beekeepingit/charts/authentik/values.yaml"
+  blueprint_basename="$(basename "${blueprint}")"
+  if ! grep -qE "^blueprintFile:[[:space:]]*[\"']?${blueprint_basename}[\"']?[[:space:]]*\$" \
+    "${chart_values}"; then
+    printf '✗ [logout-invalidation] %s no longer sets `blueprintFile: %s`, so this guard is\n' \
+      "${chart_values}" "${blueprint_basename}" >&2
+    printf '  asserting over a file the chart does not ship. `.Files.Get` returns "" for a path\n' >&2
+    printf '  that is not in the chart and raises nothing, so a repointed value deploys an EMPTY\n' >&2
+    printf '  blueprint with every check green. Repoint this guard in the same change, or\n' >&2
+    printf '  restore the value.\n' >&2
+    exit 1
+  fi
+fi
+
 # Strip whole-line comments only. An inline `#` would be inside a quoted string
 # or a block scalar here (the brand's `branding_custom_css` carries `#E8B979`),
 # and none of the keys below ever carry a trailing comment.
 awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
+    -v LOGOUT_BINDING="${logout_binding_id}" \
     -v PWA="${pwa_provider_id}" -v ADMIN="${admin_provider_id}" '
   # The only redirect targets a logout entry may name, each with the ONE
   # `matching_mode` that makes it mean what it reads as. Compared as literal
@@ -243,9 +275,37 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   # ---- entry boundaries -----------------------------------------------------
   /^[[:space:]]*#/ { next }
 
+  # Every `redirect_uris:` KEY in the file, reconciled in END against the number
+  # of lists this parser actually WALKED. A list written in a shape the walker
+  # does not recognise would otherwise be invisible rather than rejected — the
+  # difference between "no bad entry found" and "no entry looked at" (ported
+  # from check-authorization-redirect-posture.sh, review finding).
+  /redirect_uris[[:space:]]*:/ { keys_in_file++ }
+
+  # A top-level entry this parser does not recognise — a flow-map
+  # `  - { model: ..., attrs: {...} }`, reordered keys (`  - id:` first), or
+  # extra spaces after the dash — is folded into the PREVIOUS entry body and
+  # carries a whole provider past every check below. Reproduced in review: an
+  # extra oauth2provider appended at EOF with `  - id:` before `model:`,
+  # carrying a `regex https://evil.example/.*` logout target, passed this guard
+  # untouched. Blueprint entries must be block-style.
+  /^  - / && !/^  - model:/ {
+    fail("top-level entry written in a form this guard cannot parse: `" $0 "`. Blueprint " \
+         "entries must be block-style `  - model: <model>` so every provider, stage and " \
+         "binding is examined — anything else is folded into the previous entry and never " \
+         "looked at.")
+  }
+
   /^  - model:/ {
     flush()
+    # Normalised, not raw: `- model: "authentik_flows.flow"` and a trailing
+    # space are both valid YAML and identical to PyYAML, but they defeat an
+    # anchored match. A quoted model was a full bypass of assertion (3) — and
+    # prettier PRESERVES those quotes, so `format-check` did not launder it
+    # either (review finding).
     entry_model = $0; sub(/^  - model:[[:space:]]*/, "", entry_model)
+    gsub(/[[:space:]"]/, "", entry_model)
+    gsub(sprintf("%c", 39), "", entry_model)   # a single quote, unwritable inline here
     entry_id = ""; in_uris = 0; item = ""; n_items = 0
     body = ""
     next
@@ -274,7 +334,7 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   # also why `n_items`/`items` must be cleared here and not only in flush().
   # The duplicate itself is still failed, in the provider branch below.
   /^[[:space:]]*redirect_uris:[[:space:]]*$/ {
-    in_uris = 1; uris_indent = match($0, /[^ ]/) - 1
+    in_uris = 1; lists_parsed++; uris_indent = match($0, /[^ ]/) - 1
     item = ""; n_items = 0; delete items
     next
   }
@@ -322,6 +382,28 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
         fail("invalidation binding `" entry_id "` declares `stage:` " key_count(body, "stage") \
              " times — last-wins, so the stage that actually binds may not be `" LOGOUT_STAGE "`.")
     }
+
+    # (2b) ANY binding onto the pinned invalidation flow, not just ours. The
+    # count above matches target AND stage, so a SECOND binding onto the same
+    # flow carrying a different stage is invisible to it — and a redirect stage
+    # bound at `order: 0` runs BEFORE the logout stage and sends the browser
+    # away, leaving the SSO cookie alive with every other signal green (review
+    # finding). This flow is upstream shared infrastructure: exactly one
+    # binding belongs on it, and a second one is a conversation, not a merge.
+    if (entry_model ~ /authentik_flows\.flowstagebinding/ &&
+        body ~ ("target[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" INVAL_PIN "([^A-Za-z0-9_-]|$)"))
+      n_inval_binding++
+
+    # (2c) a POLICY binding onto our stage binding is `conditions:` by another
+    # name: authentik evaluates policies attached to a FlowStageBinding and
+    # SKIPS the stage when they deny, so a denying policy ends the session half
+    # of #237 exactly as `conditions: [false]` would — which this guard already
+    # rejects (review finding).
+    if (entry_model ~ /authentik_policies\.policybinding/ &&
+        body ~ ("target[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" LOGOUT_BINDING "([^A-Za-z0-9_-]|$)"))
+      fail("entry `" entry_id "` binds a POLICY onto `" LOGOUT_BINDING "`. authentik SKIPS a " \
+           "stage whose bound policies deny, so this disables the logout stage exactly as " \
+           "`conditions:` would — and the invalidation path must stay unconditional (#237).")
 
     # (3) nothing in this file may OWN an invalidation-designation flow.
     if (entry_model ~ /authentik_flows\.flow$/ &&
@@ -478,6 +560,17 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
       fail("expected EXACTLY ONE `authentik_flows.flowstagebinding` binding `" LOGOUT_STAGE \
            "` onto `" INVAL_PIN "` by !KeyOf, found " (n_binding+0) ". An unbound logout stage ends " \
            "nothing, and a second binding entry decides what the first one meant.")
+    if (n_inval_binding != 1)
+      fail("expected EXACTLY ONE `flowstagebinding` onto `" INVAL_PIN "`, found " \
+           (n_inval_binding+0) ". That flow is upstream shared infrastructure: a SECOND " \
+           "binding on it — any stage, any order — runs alongside the logout stage, and one " \
+           "at a lower `order` runs BEFORE it and can send the browser away with the SSO " \
+           "session intact.")
+    if (keys_in_file != lists_parsed)
+      fail("found " (keys_in_file+0) " `redirect_uris:` key(s) in the file but walked " \
+           (lists_parsed+0) ". A list this parser cannot see is not a list it approved — the " \
+           "difference between no bad entry found and no entry looked at. Write every " \
+           "`redirect_uris:` as a block-style key with its items indented under it.")
     if (!seen_pwa)   fail("provider entry `" PWA "` not found — this guard has drifted from the blueprint.")
     if (!seen_admin_provider) fail("provider entry `" ADMIN "` not found — this guard has drifted from the blueprint.")
     if (bad) exit 1
