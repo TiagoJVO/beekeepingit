@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
@@ -147,7 +148,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.todoLoadError('$e'))));
+          .showSnackBar(appToast(l10n.todoLoadError('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -237,7 +238,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(l10n.todoSaveError('$e'))));
+      messenger.showSnackBar(appToast(l10n.todoSaveError('$e')));
     }
   }
 
@@ -269,10 +270,8 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            wasDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
-          ),
+        appToast(
+          wasDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
         ),
       );
     } finally {
@@ -307,9 +306,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.todoDeleteError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.todoDeleteError('$e')));
     }
   }
 

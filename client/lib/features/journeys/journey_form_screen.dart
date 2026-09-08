@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
@@ -119,7 +120,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.journeyLoadError('$e'))));
+          .showSnackBar(appToast(l10n.journeyLoadError('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -177,9 +178,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeySaveError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.journeySaveError('$e')));
     }
   }
 
@@ -202,9 +201,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeyCloseError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.journeyCloseError('$e')));
     }
   }
 
@@ -237,9 +234,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeyDeleteError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.journeyDeleteError('$e')));
     }
   }
 

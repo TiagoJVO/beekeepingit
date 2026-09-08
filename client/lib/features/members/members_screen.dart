@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
@@ -67,14 +68,13 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       if (fieldErrors.containsKey('email')) {
         setState(() => _emailError = fieldErrors['email']);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.membersInviteError(e.detail))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(appToast(l10n.membersInviteError(e.detail)));
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+          .showSnackBar(appToast(l10n.membersInviteError('$e')));
     } finally {
       if (mounted) setState(() => _inviting = false);
     }
@@ -91,7 +91,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+          .showSnackBar(appToast(l10n.membersInviteError('$e')));
     } finally {
       if (mounted) setState(() => _revokingIds.remove(invitationId));
     }
@@ -104,7 +104,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+          .showSnackBar(appToast(l10n.membersInviteError('$e')));
     } finally {
       if (mounted) setState(() => _loadingMoreMembers = false);
     }
@@ -117,7 +117,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+          .showSnackBar(appToast(l10n.membersInviteError('$e')));
     } finally {
       if (mounted) setState(() => _loadingMoreInvitations = false);
     }
