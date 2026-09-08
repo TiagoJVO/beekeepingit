@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/l10n/supported_locales.dart';
+import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/auth/login_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
@@ -140,6 +141,97 @@ void main() {
         expect(find.byKey(const Key('login-error-message')), findsOneWidget);
         // Both actions stay available — either one is the retry affordance.
         expect(find.byKey(const Key('login-google-button')), findsOneWidget);
+        expect(find.byKey(const Key('login-button')), findsOneWidget);
+      },
+    );
+  });
+
+  // #647 (FR-ONB-1, FR-UX-1). The screen used to paper over the missing
+  // control with instructional copy ("New here? Tap Sign in — you can create
+  // your account on the next screen"), sending a new user to press the button
+  // labelled the opposite of what they want and then hunt for a small link on
+  // the provider's page. The prototype specifies TWO entry points.
+  group('Create account (#647)', () {
+    testWidgets('the sign-in screen offers a distinct create-account action, '
+        'and the instructional workaround copy is gone', (tester) async {
+      await tester.pumpWidget(
+        _buildLoginScreen(
+          overrides: [
+            oidcIssuerProvider.overrideWith(
+              (ref) => Future<Issuer>.error(Exception('not reached')),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('login-create-account-button')),
+        findsOneWidget,
+      );
+      // AC: the label is the externalized EN string, never a literal.
+      expect(find.text('Create account'), findsOneWidget);
+      // AC: the copy that told the user to press the wrong button is gone.
+      expect(find.textContaining('New here?'), findsNothing);
+      expect(find.textContaining('next screen'), findsNothing);
+      // The one honey primary action on the screen is still "Sign in" —
+      // the new entry point is deliberately secondary (D-18, prototype).
+      expect(find.byType(PrimaryActionButton), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping it while offline surfaces the same error affordance as '
+      '"Sign in" rather than an unhandled exception',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildLoginScreen(
+            overrides: [
+              oidcIssuerProvider.overrideWith(
+                (ref) => Future<Issuer>.error(
+                  Exception('discovery unreachable while offline'),
+                ),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('login-error-message')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('login-create-account-button')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('login-error-message')), findsOneWidget);
+        // Every action stays available — any of them is the retry affordance.
+        expect(
+          find.byKey(const Key('login-create-account-button')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('login-button')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a deployment with no account-creation entry point configured offers no '
+      'button rather than one that dead-ends',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildLoginScreen(
+            overrides: [
+              oidcIssuerProvider.overrideWith(
+                (ref) => Future<Issuer>.error(Exception('not reached')),
+              ),
+              registrationUrlProvider.overrideWithValue(''),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('login-create-account-button')),
+          findsNothing,
+        );
+        // Sign-in is unaffected.
         expect(find.byKey(const Key('login-button')), findsOneWidget);
       },
     );

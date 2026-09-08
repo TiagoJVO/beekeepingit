@@ -163,9 +163,18 @@ while IFS="$(printf '\t')" read -r env defines; do
   issuer="$(dart_define "$defines" OIDC_ISSUER)"
   gateway="$(dart_define "$defines" GATEWAY_BASE_URL)"
   account="$(dart_define "$defines" OIDC_ACCOUNT_URL)"
+  # The provider's self-service account-creation entry point (#647). Checked
+  # like OIDC_ACCOUNT_URL because it has the SAME failure mode plus one more:
+  # the app sends its pending authorize request there in an origin-RELATIVE
+  # `next`, so a value off the auth host names a path that host does not serve.
+  # Its ABSENCE is drift too — the compile-time default is the local dev auth
+  # host, so a release built without it would ship a "Create account" button
+  # pointing at `auth.beekeepingit.local`.
+  registration="$(dart_define "$defines" OIDC_REGISTRATION_URL)"
   powersync="$(dart_define "$defines" POWERSYNC_URL)"
   for pair in "OIDC_ISSUER=$issuer" "GATEWAY_BASE_URL=$gateway" \
-    "OIDC_ACCOUNT_URL=$account" "POWERSYNC_URL=$powersync"; do
+    "OIDC_ACCOUNT_URL=$account" "OIDC_REGISTRATION_URL=$registration" \
+    "POWERSYNC_URL=$powersync"; do
     [ -n "${pair#*=}" ] || err "$env: workflow has no --dart-define=${pair%%=*}"
   done
 
@@ -193,6 +202,7 @@ while IFS="$(printf '\t')" read -r env defines; do
   expect "$env" "OIDC_ISSUER vs services.oidc.issuerUrl" "$issuer" "$issuer_url"
   expect "$env" "OIDC_ISSUER host vs gateway.authHost" "$(url_host "$issuer")" "$auth_host"
   expect "$env" "OIDC_ACCOUNT_URL host vs gateway.authHost" "$(url_host "$account")" "$auth_host"
+  expect "$env" "OIDC_REGISTRATION_URL host vs gateway.authHost" "$(url_host "$registration")" "$auth_host"
   # POWERSYNC_URL is the gateway origin + the /sync-stream/ route, so its authority
   # must match appHost too (a same-origin path difference is not drift).
   expect "$env" "POWERSYNC_URL host vs gateway.appHost" "$(url_host "$powersync")" "$app_host"

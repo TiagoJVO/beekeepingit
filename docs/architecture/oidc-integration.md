@@ -261,6 +261,23 @@ optional.
   the redirect URI must be an **exact** member of it (§8, #237) — send the app's own origin, never a
   computed or user-supplied destination.
 - **Account (password change)** — `OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings` (a config value, not a derived path).
+- **Create account (`OIDC_REGISTRATION_URL`, #647)** — the login screen's second entry point sends the
+  browser to the provider's **self-service account-creation** page, a **config value exactly like
+  `OIDC_ACCOUNT_URL`** (`https://auth.beekeepingit.local:8443/if/flow/beekeepingit-enrollment/`) — so the
+  enrolment **flow slug is a deployment detail, never a constant in client code**, and the app keeps no
+  provider knowledge beyond this contract (D-7). The request it carries is the **standard** authorize
+  request: `register()` and `login()` run the **same builder** (`_startAuthorize`), so PKCE
+  `code_challenge`/verifier, `state`, `scope` and `redirect_uri` are identical and **no new redirect URI
+  is registered** — the Authentik allow-list (`scripts/check-authorization-redirect-posture.sh`, #822) is
+  untouched. That pending request rides in the return parameter **`next`**, written **origin-relative**
+  (`/path?query`) — the same form the provider's own executor stores (auth.md §8.13), and the reason it is
+  not an open-redirect vector. `OIDC_REGISTRATION_URL` **must therefore sit on the issuer's origin**; a
+  value that does not (or an empty one) falls back to the plain authorize request, whose login page still
+  carries the provider's own "Sign up" link — never a dead end. Provider side: `auth.md` §8.11. Client
+  side: `kRegistrationReturnParam` and `AuthController.register` in
+  `client/lib/core/auth/auth_controller.dart`; both halves pinned by
+  `client/test/core/auth/auth_controller_test.dart` and exercised live by
+  `client/e2e/tests/registration.spec.ts`.
 - **Federation hint (`beekeepingit_idp`, #363)** — the app's "Continue with Google" action sends
   the **same** authorize request as "Sign in" plus one extension parameter,
   **`beekeepingit_idp=<source slug>`** (`google`), asking the provider to go straight to that

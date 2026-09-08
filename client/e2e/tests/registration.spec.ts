@@ -24,8 +24,9 @@ const AUTH_ORIGIN_RE = /^https:\/\/auth\.beekeepingit\.local/;
  * NFR-TST-1). Proves, against the live stack, that:
  *
  *   1. a user with NO invitation can register with an email address and
- *      password through the IdP's enrollment flow, reached from the app's own
- *      sign-in redirect via the login page's "Sign up." link (#366 AC 1),
+ *      password through the IdP's enrollment flow, reached from the login
+ *      screen's own "Create account" action (#366 AC 1; the entry point
+ *      itself is #647 — see startSignUp),
  *   2. the registration is HELD unverified on the emailed one-time link — no
  *      session, no token, and a pending invitation for the address stays
  *      unclaimable the whole time (AC 2/3),
@@ -81,23 +82,51 @@ const SEED_SUB = "11111111-1111-4111-8111-111111111111";
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * From the app's login screen, start the OIDC redirect and follow the IdP
- * login page's enrollment link ("Need an account? Sign up." — rendered by the
- * identification stage because the blueprint sets its enrollment_flow). Going
- * through the app first matters: it puts the OAuth authorize request into the
- * flow's ?next, which the enrollment flow preserves all the way through the
- * emailed link, so completing registration lands back IN THE APP (AC 4).
+ * From the app's login screen, start registration through the screen's own
+ * "Create account" action (#647, FR-ONB-1/FR-UX-1) and land on the IdP's
+ * enrollment flow.
+ *
+ * This is the assertion #647 is really about, so it is made here rather than
+ * only in widget tests. Until #647 the app had no such control: this helper
+ * clicked "Sign in" and then hunted for the IdP login page's "Need an account?
+ * Sign up." link, which is what the login copy told real users to do. That
+ * link still exists (the identification stage renders it because the blueprint
+ * sets its enrollment_flow) and is still the fall-back for a deployment that
+ * configures no OIDC_REGISTRATION_URL — it is simply no longer the way in.
+ *
+ * What must NOT change is the ?next chain: the action builds the same OAuth
+ * authorize request as "Sign in" and hands it to the enrollment flow as an
+ * origin-relative ?next, which the flow preserves all the way through the
+ * emailed link, so completing registration lands back IN THE APP (AC 4). The
+ * assertions below pin exactly that — a "Create account" button that reached
+ * the flow WITHOUT carrying the authorize request would still show the
+ * enrollment form and then strand the user at the IdP.
  */
 async function startSignUp(page: Page) {
   await gotoAppRoot(page);
   await enableSemantics(page);
-  const appSignIn = page.getByRole("button", { name: /sign in/i });
-  await appSignIn.waitFor({ state: "visible", timeout: 60_000 });
-  await appSignIn.click();
+  const createAccount = page.getByRole("button", { name: /create account/i });
+  await createAccount.waitFor({ state: "visible", timeout: 60_000 });
+  await createAccount.click();
 
-  const signUp = page.getByRole("link", { name: /sign up/i });
-  await signUp.waitFor({ state: "visible", timeout: 30_000 });
-  await signUp.click();
+  await page.waitForURL(
+    (url) =>
+      AUTH_ORIGIN_RE.test(url.origin) &&
+      url.pathname.startsWith("/if/flow/beekeepingit-enrollment"),
+    { timeout: 30_000 },
+  );
+
+  // The pending authorize request rode along, relative, under `next` — this is
+  // what makes enrollment finish in the app instead of on the IdP's user page.
+  const next = new URL(page.url()).searchParams.get("next");
+  expect(next).toBeTruthy();
+  expect(next!.startsWith("/")).toBe(true);
+  const authorize = new URL(next!, page.url());
+  expect(authorize.pathname).toContain("/authorize");
+  expect(authorize.searchParams.get("response_type")).toBe("code");
+  expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+  expect(authorize.searchParams.get("code_challenge")).toBeTruthy();
+  expect(authorize.searchParams.get("state")).toBeTruthy();
 }
 
 /**
@@ -227,7 +256,7 @@ test.describe("self-service registration (#366)", () => {
         }
       });
 
-      // ── Register through the login page's Sign up link (AC 1) ─────────────
+      // ── Register through the app's own "Create account" action (AC 1) ───
       const inboxBefore = await messageIdsTo(request, INVITEE_EMAIL);
       await startSignUp(page);
       await submitEnrollmentForm(page, INVITEE_USERNAME, INVITEE_EMAIL);

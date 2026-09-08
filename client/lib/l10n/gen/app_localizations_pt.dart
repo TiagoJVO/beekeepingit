@@ -16,14 +16,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appLogoLabel => 'Logótipo BeekeepingIT';
 
   @override
-  String get loginPrompt =>
-      'Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.';
+  String get loginPrompt => 'Inicie sessão para gerir os seus apiários.';
 
   @override
   String get loginButton => 'Iniciar sessão';
 
   @override
   String get loginWithGoogleButton => 'Continuar com a Google';
+
+  @override
+  String get loginCreateAccountButton => 'Criar conta';
 
   @override
   String get loginError =>
