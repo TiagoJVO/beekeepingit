@@ -230,12 +230,20 @@ entries:
         #     `http://localhost:٤٥` would pass while resolving to nothing like a
         #     port.
         #   * `(/.*)?` is safe — an `@` after the first `/` is PATH, never
-        #     userinfo — and OPTIONAL, so the bare origin still matches, which is
-        #     what the CORS derivation below reads.
-        #   * It also un-breaks CORS: `cors_allow` compares scheme, hostname and
-        #     then `urlparse(entry).port`, and `urlparse("http://localhost:.*")
-        #     .port` RAISES ValueError, so a localhost `Origin` turned a /token
-        #     or /userinfo response into a 500 (providers/oauth2/utils.py).
+        #     userinfo — and OPTIONAL, because the PWA sends its BARE ORIGIN as
+        #     the `redirect_uri` (`auth_platform_web.dart`), while the admin app
+        #     sends `http://localhost:5174`. A query with no path
+        #     (`http://localhost:5174?next=x`) no longer matches; nothing here
+        #     sends that shape.
+        #   * It also stops 500ing CORS: `cors_allow` (providers/oauth2/utils.py)
+        #     compares scheme, then hostname, then `urlparse(entry).port`, and
+        #     `urlparse("http://localhost:.*").port` RAISES ValueError while
+        #     scheme+hostname match first for ANY localhost `Origin` — so a
+        #     localhost origin turned /token and /userinfo into a 500. It does
+        #     NOT start granting localhost CORS: `urlparse` reads `[0-9]+(` as a
+        #     bracketed host, so this entry now simply does not match an Origin
+        #     (a clean denial). Real localhost CORS would need its own STRICT
+        #     entry, like the appOrigin/adminOrigin ones below.
         # Guarded by scripts/check-authorization-redirect-posture.sh.
         - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
         - { matching_mode: regex, url: '{{ .Values.global.appOrigin | replace "." "\\." }}/.*' }
@@ -449,8 +457,9 @@ entries:
         # provider's entry above: `.*` after `localhost:` fullmatches
         # `http://localhost:@evil.example`, which a browser resolves to
         # evil.example with `localhost:` as userinfo, leaking the `?code=` — and
-        # it made `urlparse(...).port` raise inside `cors_allow` (#822,
-        # NFR-SEC-1). Guarded by scripts/check-authorization-redirect-posture.sh.
+        # it made `urlparse(...).port` raise inside `cors_allow`, 500ing any
+        # localhost Origin (#822, NFR-SEC-1). Guarded by
+        # scripts/check-authorization-redirect-posture.sh.
         - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
         - { matching_mode: regex, url: '{{ .Values.global.adminOrigin | replace "." "\\." }}/.*' }
         - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
