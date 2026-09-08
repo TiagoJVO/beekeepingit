@@ -12,26 +12,35 @@ import (
 )
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations.organizations (id, name, address, created_by)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, registration_number, created_by, created_at, updated_at
+INSERT INTO organizations.organizations (id, name, address, locale, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, address, registration_number, locale, created_by, created_at, updated_at
 `
 
 type CreateOrganizationParams struct {
 	ID        pgtype.UUID `json:"id"`
 	Name      string      `json:"name"`
 	Address   string      `json:"address"`
+	Locale    string      `json:"locale"`
 	CreatedBy pgtype.UUID `json:"created_by"`
 }
 
 // Creates the org (FR-ONB-2). Paired with CreateMembership in the same DB
 // transaction (api/organizations.go) so the creator's admin membership is
 // never observable without its org, or vice versa (D-3).
+// locale (#641, migration 00008) is seeded from the CREATING admin's own
+// profile locale, not defaulted: the creator is the organization's first admin
+// (D-3), so their language is the only signal the system has about the
+// organization's working language at the moment it comes into existence. It is
+// the fallback the invitation email uses for an invitee with no known profile
+// (FR-ONB-3 AC 3, NFR-I18N-1). An unknown/unsupported value is normalized to
+// the column default in Go before it reaches here (api/organizations.go).
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (OrganizationsOrganization, error) {
 	row := q.db.QueryRow(ctx, createOrganization,
 		arg.ID,
 		arg.Name,
 		arg.Address,
+		arg.Locale,
 		arg.CreatedBy,
 	)
 	var i OrganizationsOrganization
@@ -40,6 +49,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.Name,
 		&i.Address,
 		&i.RegistrationNumber,
+		&i.Locale,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -48,7 +58,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 }
 
 const getOrganizationForUpdate = `-- name: GetOrganizationForUpdate :one
-SELECT id, name, address, registration_number, created_by, created_at, updated_at
+SELECT id, name, address, registration_number, locale, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 FOR UPDATE
@@ -68,6 +78,7 @@ func (q *Queries) GetOrganizationForUpdate(ctx context.Context, id pgtype.UUID) 
 		&i.Name,
 		&i.Address,
 		&i.RegistrationNumber,
+		&i.Locale,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -165,7 +176,7 @@ SET name = $2,
     registration_number = $4,
     updated_at = $5
 WHERE id = $1
-RETURNING id, name, address, registration_number, created_by, created_at, updated_at
+RETURNING id, name, address, registration_number, locale, created_by, created_at, updated_at
 `
 
 type UpdateOrganizationParams struct {
@@ -194,6 +205,7 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		&i.Name,
 		&i.Address,
 		&i.RegistrationNumber,
+		&i.Locale,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

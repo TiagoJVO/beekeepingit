@@ -652,6 +652,78 @@ abstract class AppLocalizations {
   /// **'Revoked'**
   String get invitationStatusRevoked;
 
+  /// Invitation state (#641) when the invitation exists but its email attempt has not been recorded as finished — deliberately not 'Pending', which claims the email was delivered
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get invitationDeliverySending;
+
+  /// Invitation state (#641) when the invitation email failed to send (delivery_status 'failed'); the reason follows on its own line
+  ///
+  /// In en, this message translates to:
+  /// **'Not sent'**
+  String get invitationDeliveryFailed;
+
+  /// Explanation for the 'not_configured' delivery_error code (#641) — no SMTP relay is provisioned here (#417)
+  ///
+  /// In en, this message translates to:
+  /// **'Sending email is not set up in this environment yet.'**
+  String get invitationDeliveryErrorNotConfigured;
+
+  /// Explanation for the 'rejected' delivery_error code (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'The mail server rejected this address.'**
+  String get invitationDeliveryErrorRejected;
+
+  /// Explanation for the 'relay_unavailable' delivery_error code (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'The mail server could not be reached.'**
+  String get invitationDeliveryErrorRelayUnavailable;
+
+  /// Explanation for the 'render_failed' delivery_error code (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'The invitation email could not be prepared.'**
+  String get invitationDeliveryErrorRenderFailed;
+
+  /// Explanation for the 'never_sent' delivery_error code (#641) — written by migration 00008's backfill for invitations created before the send path existed
+  ///
+  /// In en, this message translates to:
+  /// **'This invitation was created before invitations were emailed. Send it now.'**
+  String get invitationDeliveryErrorNeverSent;
+
+  /// Fallback explanation for a delivery_error code this client version does not know (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'The email could not be sent.'**
+  String get invitationDeliveryErrorUnknown;
+
+  /// Tooltip/action to retry the invitation email (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'Send the invitation again'**
+  String get membersResendButton;
+
+  /// Snackbar after a resend attempt that actually delivered (#641)
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation email sent.'**
+  String get membersResendSuccess;
+
+  /// Snackbar after a resend attempt that failed again (#641) — says so plainly instead of implying success
+  ///
+  /// In en, this message translates to:
+  /// **'Still could not send it: {reason}'**
+  String membersResendStillFailing(String reason);
+
+  /// Snackbar after creating an invitation whose email failed (#641) — the invitation exists, so this is not an error, but it must not claim the email went out
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation created, but the email could not be sent: {reason}'**
+  String membersInviteCreatedNotSent(String reason);
+
   /// Action to fetch the next cursor-paginated page of members/invitations (server: limit/cursor/page.next_cursor)
   ///
   /// In en, this message translates to:

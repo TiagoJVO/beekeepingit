@@ -6,6 +6,7 @@ package problem
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 // FieldError carries field-level validation detail, used in 422 responses.
@@ -24,6 +25,11 @@ type Problem struct {
 	Instance string       `json:"instance,omitempty"`
 	Code     string       `json:"code,omitempty"`
 	Errors   []FieldError `json:"errors,omitempty"`
+	// RetryAfter is the RFC 9110 §10.2.3 delay in whole seconds, mirrored
+	// into the response's Retry-After header by Write. Only 429 responses set
+	// it today (#641's invitation rate limit / resend cooldown); zero means
+	// "no advice", and the header is then omitted entirely.
+	RetryAfter int `json:"retry_after,omitempty"`
 }
 
 const mediaType = "application/problem+json"
@@ -36,6 +42,9 @@ func Write(w http.ResponseWriter, r *http.Request, p Problem) {
 		p.Instance = r.URL.Path
 	}
 	w.Header().Set("Content-Type", mediaType)
+	if p.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(p.RetryAfter))
+	}
 	w.WriteHeader(p.Status)
 	_ = json.NewEncoder(w).Encode(p)
 }
@@ -67,6 +76,28 @@ func NotFound(detail string) Problem {
 // mismatch, or a uniqueness constraint violation).
 func Conflict(detail string) Problem {
 	return Problem{Title: "Conflict", Status: http.StatusConflict, Detail: detail, Code: "resource.conflict"}
+}
+
+// TooManyRequests builds a 429 Problem for a caller who has exceeded a rate
+// limit (#641: an organization's invitation-send budget, and the per-invitation
+// resend cooldown). retryAfterSeconds, when > 0, is also written as the
+// standard Retry-After header by the caller — the Problem body carries it too
+// so a JSON-only client need not read headers.
+//
+// The detail must describe the LIMIT, never the caller's position relative to
+// other tenants' activity: a rate-limit response is a side channel if it leaks
+// anything the caller could not otherwise observe.
+func TooManyRequests(detail string, retryAfterSeconds int) Problem {
+	p := Problem{
+		Title:  "Too Many Requests",
+		Status: http.StatusTooManyRequests,
+		Detail: detail,
+		Code:   "rate.limited",
+	}
+	if retryAfterSeconds > 0 {
+		p.RetryAfter = retryAfterSeconds
+	}
+	return p
 }
 
 // ValidationFailed builds a 422 Problem carrying field-level detail.

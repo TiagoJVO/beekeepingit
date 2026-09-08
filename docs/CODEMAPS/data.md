@@ -46,7 +46,9 @@ organizations (id PK, name, address, registration_number, created_by, created_at
 memberships   (id PK, organization_id FK→organizations, user_id, role[admin|user],
                status[active|invited|removed], UNIQUE(organization_id,user_id))
 invitations   (id PK, organization_id FK→organizations, email, role,
-               status[pending|accepted|expired|revoked], invited_by, timestamps)
+               status[pending|accepted|expired|revoked], invited_by, timestamps,
+               delivery_status[pending|sent|failed], delivery_error, delivery_attempts,
+               last_delivery_at — the outbound-email axis, #641)
 audit_log     (… entity_type[organization|membership|invitation], change JSONB)
 ```
 
@@ -201,6 +203,7 @@ data: they exist only so a delete can persist its device-time LWW comparator wit
 identity:       00001 create_users · 00002 rename keycloak_sub→oidc_sub · 00003 audit_log
 organizations:  00001 create_organizations · 00002 create_invitations · 00003 audit_log
                 … · 00006 BASELINE · 00007 add_organization_registration_number
+                00008 add_invitation_delivery_and_org_locale
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
                 00007 org-scoped counter unique · 00008 BASELINE (squash of 00001-00008)

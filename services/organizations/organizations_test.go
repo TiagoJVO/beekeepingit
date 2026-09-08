@@ -40,6 +40,10 @@ type stubUser struct {
 	// /internal/users/names endpoint returns for this user (#44 member-names
 	// composition). Empty for most tests that predate it.
 	Name string
+	// Locale is identity.users.locale (#641), the signal the invitation email
+	// picks its language from. Empty for tests that predate it, which the
+	// send path treats exactly like an unknown profile.
+	Locale string
 }
 
 // stubIdentity stands in for the identity service's internal resolve
@@ -94,7 +98,7 @@ func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 			want := strings.ToLower(r.URL.Path[len(byEmailPrefix):])
 			for _, u := range s.users {
 				if u.Email != "" && strings.ToLower(u.Email) == want {
-					_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email})
+					_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email, "locale": u.Locale})
 					return
 				}
 			}
@@ -108,7 +112,7 @@ func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email})
+		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email, "locale": u.Locale})
 	}))
 	t.Cleanup(s.srv.Close)
 	return s
@@ -144,6 +148,16 @@ func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixtur
 	return newOrgFixtureInternal(t, users, nil)
 }
 
+// newOrgFixtureWithMailer is newOrgFixtureWithEmailClaims plus #641's
+// outbound-email wiring: the router is built with api.WithMailer, so the
+// invitation send path actually runs against the given fake sender instead of
+// the mail.Unconfigured() default. routerOpts lets a test add
+// api.WithClock for the resend cooldown.
+func newOrgFixtureWithMailer(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim, routerOpts ...api.RouterOption) *orgFixture {
+	t.Helper()
+	return newOrgFixtureInternal(t, users, claimsBySub, routerOpts...)
+}
+
 // tokenClaim is the JWT-level email/email_verified pair a test controls,
 // deliberately independent of stubUser.Email (the identity.users profile
 // field the internal resolve response carries). The security regression
@@ -177,7 +191,7 @@ func newOrgFixtureWithEmailClaims(t *testing.T, users map[string]stubUser, claim
 // services/apiaries/main_test.go and services/sync/main_test.go's own
 // injectClaims (which also layers directly on authn.Claims rather than
 // extending authtest).
-func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim) *orgFixture {
+func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim, routerOpts ...api.RouterOption) *orgFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -240,7 +254,7 @@ func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub 
 		t.Fatalf("New: %v", err)
 	}
 	userResolver := api.NewHTTPUserResolver(identity.srv.URL, nil)
-	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver)))
+	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver, routerOpts...)))
 
 	return &orgFixture{srv: srv, idp: idp, identity: identity, pool: pool}
 }

@@ -119,6 +119,60 @@ spec:
             - name: SEED_DEV_DATA
               value: "true"
             {{- end }}
+            {{- /*
+              Outbound email (#641, FR-ONB-3) — rendered ONLY for a service that
+              declares `mail: true` (today: organizations, for the invitation
+              email). Everything else stays exactly as it was: no new env, no
+              rolling restart, no reach it does not need.
+
+              The relay host/port/TLS/from come from `services.smtp` (dev/CI/
+              staging default to the in-cluster Mailpit sink, charts/mailpit —
+              ADR-0019 §4, so no dev or CI mail can ever reach a real inbox).
+              Credentials NEVER come from values: when smtp.existingSecret is
+              set, SMTP_USERNAME/SMTP_PASSWORD are pulled from that Secret's
+              `username`/`password` keys, the same out-of-band, cluster-state-
+              not-git idiom charts/authentik uses for its own relay (NFR-SEC-1).
+              A sink with no auth simply leaves it unset.
+
+              APP_BASE_URL is the browser-facing app origin the invitation's
+              sign-up link is built from. It is global.appOrigin — the SAME
+              value the OIDC redirect URIs are templated from — because a link
+              in an email that does not match where the app is actually served
+              is a dead end for the invitee (and the service refuses to enable
+              mail at all if it is missing or malformed).
+            */}}
+            {{- if $svc.mail }}
+            {{- with $root.Values.smtp }}
+            - name: SMTP_HOST
+              value: {{ .host | quote }}
+            - name: SMTP_PORT
+              value: {{ .port | quote }}
+            - name: SMTP_FROM
+              value: {{ .from | quote }}
+            {{- if .fromName }}
+            - name: SMTP_FROM_NAME
+              value: {{ .fromName | quote }}
+            {{- end }}
+            - name: SMTP_TLS
+              value: {{ .tls | quote }}
+            {{- if .existingSecret }}
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: username
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: password
+            {{- end }}
+            {{- end }}
+            {{- with $root.Values.global.appOrigin }}
+            - name: APP_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- range $k, $v := $svc.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

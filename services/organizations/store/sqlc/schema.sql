@@ -19,6 +19,12 @@ CREATE TABLE organizations.organizations (
     -- the organization-wide DEFAULT; apiaries carry an optional override
     -- (apiaries.apiaries.registration_number).
     registration_number      TEXT NOT NULL DEFAULT '',
+    -- #641 (migration 00008): the org's own language, the fallback the
+    -- invitation email uses when the invited address has no known profile
+    -- locale of its own (FR-ONB-3 AC 3, NFR-I18N-1). Seeded from the creating
+    -- admin's locale (D-3).
+    locale                   TEXT NOT NULL DEFAULT 'en-GB'
+                             CHECK (locale IN ('en-GB', 'pt-PT')),
     created_by               UUID,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -41,6 +47,13 @@ CREATE TABLE organizations.invitations (
     email           TEXT NOT NULL,
     role            TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'revoked')),
+    -- #641 (migration 00008) — the OUTBOUND-EMAIL axis, orthogonal to `status`
+    -- above (which is the invitee-driven lifecycle). See the migration's own
+    -- comment for why the two are separate columns.
+    delivery_status   TEXT NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'sent', 'failed')),
+    delivery_error    TEXT NOT NULL DEFAULT '',
+    delivery_attempts INTEGER NOT NULL DEFAULT 0,
+    last_delivery_at  TIMESTAMPTZ,
     invited_by      UUID NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()

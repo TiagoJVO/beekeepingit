@@ -158,11 +158,14 @@ func (q *Queries) GetActiveMembershipByUser(ctx context.Context, userID pgtype.U
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, name, address, registration_number, created_by, created_at, updated_at
+SELECT id, name, address, registration_number, locale, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 `
 
+// locale (#641, migration 00008) is read here because this is the read the
+// invitation-email path already makes for the org name -- the email needs
+// both, and adding a second query for one column would be worse.
 func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (OrganizationsOrganization, error) {
 	row := q.db.QueryRow(ctx, getOrganization, id)
 	var i OrganizationsOrganization
@@ -171,6 +174,7 @@ func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organiza
 		&i.Name,
 		&i.Address,
 		&i.RegistrationNumber,
+		&i.Locale,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -297,7 +301,10 @@ WHERE id = $1
 FOR UPDATE
 `
 
-// The last-admin guard's single per-org serialization point (#290, D-3): row-lock
+// The per-org serialization point for both the last-admin guard (#290, D-3) and
+// the invitation budget (#641 — CountInvitationsCreatedSince has exactly the same
+// TOCTOU shape as CountActiveAdmins, so createInvitationHandler takes this lock
+// before counting): row-lock
 // the organization itself FOR UPDATE at the top of every remove/change-role
 // transaction. All such writes on one org therefore serialize on this single row,
 // so the CountActiveAdmins check below runs against a stable admin set that no

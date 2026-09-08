@@ -672,6 +672,72 @@ admin-only routes and one accept-on-login step:
 - History recording (FR-HIS-1) for invite/accept/revoke landed with #165 (closed) — audit
   rows are written for these events; the deferral this bullet originally recorded is done.
 
+### 8.7.1 Updated by #641 — the invitation is actually **emailed**
+
+Everything above still holds; one thing it described was incomplete in a way that mattered.
+#27 built the invitation **record** and the accept-on-login **claim**, and nothing in between:
+**no email was ever sent**. The invited person was never told anything — the admin had to
+reach them by some other channel and tell them to register with exactly that address — while
+the admin's own screen showed `Pendente`, which everywhere else in the product means _sent,
+awaiting response_ (FR-ONB-3 says the admin "can invite members by email"; #641).
+
+- **The send lives in `organizations`, not in Authentik.** The IdP already sends mail
+  (§8.10, ADR-0019) and it was still the wrong home: an invitation names an organization and
+  an inviter that Authentik has never heard of, it fires on an app API call rather than
+  inside a flow, and its per-invitation outcome has to land in a column this service reads
+  back to the admin. Routing it through Authentik would have meant custom template volume
+  mounts on the external gitops HelmRelease (a cost ADR-0019 §5 already records) plus a way
+  to report the result back across the boundary. **The relay is shared infrastructure; the
+  message is ours** — `services/shared/mail` (SMTP transport, header-injection rejection,
+  RFC 2047 headers, multipart/alternative) plus
+  `services/organizations/api/invitation_email.go` (the EN/PT catalogs).
+- **Two independent states, not one.** `invitations.status` stays the **lifecycle** the
+  invitee drives (`pending`/`accepted`/`expired`/`revoked`); migration 00008 adds
+  `delivery_status` (`pending`/`sent`/`failed`), `delivery_error`, `delivery_attempts` and
+  `last_delivery_at` — what the **system's own send** did. Collapsing them would have made
+  "accepted" and "the email bounced" mutually exclusive, which they are not. The client shows
+  the lifecycle once it has resolved and the delivery state while it has not, so `Pendente`
+  now only ever means what it means everywhere else. The migration also **backfills every
+  pre-existing pending invitation to `failed` / `never_sent`**, because that is the truth
+  about them.
+- **Create commits first, then sends.** The row is committed, the email is attempted
+  synchronously with a bounded timeout, and the outcome is written back. A failed send is
+  therefore a **201 with `delivery_status: failed`**, never a 5xx — the invitation exists,
+  and reporting the create as failed would leave a real row behind an error message. Delivery
+  never gates acceptance either: `GetPendingInvitationByEmail` deliberately ignores
+  `delivery_status`, so an invitee told by phone can still be joined (the claim is still the
+  verified `email` claim, unchanged from above).
+- **Retry.** `POST /v1/organizations/{orgId}/invitations/{invitationId}/resend` — admin-only
+  and org-scoped like every other invitation write, `pending`-only, guarded by a
+  per-invitation cooldown and a total-attempts cap. No `audit_log` row: a delivery attempt
+  changes none of the invitation's own fields (history.md §3), and the attempt is recorded on
+  the row's delivery columns instead.
+- **Language (FR-ONB-3 AC 3, NFR-I18N-1).** The recipient's `identity.users.locale` when
+  identity knows the address, otherwise `organizations.organizations.locale` — a new column
+  seeded at org-creation time from the creating admin's own locale (D-3: the creator is the
+  first admin). Both narrow to `en-GB`/`pt-PT`; anything else degrades to English rather than
+  failing a send. Unlike §8.10's Authentik-rendered mail, this message is **genuinely
+  bilingual today** — it is our template, not a Django catalog, so the `pt-PT` negotiation
+  limitation recorded there does not apply.
+- **Security posture.** The invited address, the organization name and the inviter name are
+  all user-typed. Names are scrubbed of control characters and length-capped before reaching
+  the Subject, `html/template` escapes them in the HTML part, and `services/shared/mail`
+  **rejects** (never sanitizes) any CR/LF that still reaches a header. The sign-up link is
+  `APP_BASE_URL` + a constant `/login` path — no request input, so no open-redirect surface,
+  and deliberately **no token**: acceptance is still accept-on-login, so a forwarded or
+  logged link grants nothing. The message wording is byte-identical whether or not the
+  address already has an account, so it is not an account-existence oracle. `POST
+.../invitations` is rate limited per organization (an admin session must not be an open
+  relay) and the delivery reason stored and shown is a short code, never relay text.
+- **Environments.** Dev/CI/staging point at the in-cluster Mailpit sink (ADR-0019 §4), so the
+  whole path is exercisable end to end and no test mail can reach a real inbox
+  (`client/e2e/tests/invitation-email.spec.ts` proves it against the deployed stack).
+  **Real email still does not leave staging or prod**: that needs a relay and a sending
+  domain, which is [#417](https://github.com/TiagoJVO/beekeepingit/issues/417) — now purely
+  **deploy-time enablement**, not a code dependency. Until it lands, such an environment
+  records `delivery_status: failed` / `not_configured` per invitation, which the admin can
+  see and retry. The service never refuses to start over it.
+
 ## 8.8 As built (#28)
 
 Roles & permissions + the shared org-scoped authorization middleware (NFR-ROL-1, FR-TEN) landed
@@ -832,9 +898,13 @@ makes the claim mean something and revives that gate.
   verification emails render in English regardless of browser or user locale. Fixing PT mail needs
   an upstream fix or a `LANGUAGES` override in the deployment — tracked in
   [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on every version bump
-  (the msgid subject choice stands either way). **Limitation (deliberate):** the mail is also
-  Authentik-branded, not BeekeepingIT-branded — custom templates would have to be volume-mounted
-  into the Authentik pods via the external HelmRelease; deferred until branding matters.
+  (the msgid subject choice stands either way). **Superseded on #412:** the negotiation above was
+  re-run inside the container and `pt-PT` **does** reach the `pt_PT` catalogue — `pt-PT` narrows to
+  `pt`, and Python's gettext expands a bare `pt` to `pt_PT`. #412 was closed as invalid; the English
+  mail observed in the 2026-09-03 audit was sent to a browser advertising `en-GB`.
+  **~~Limitation (deliberate):~~ closed by #648** — the mail is BeekeepingIT-branded now
+  (§8.19): the chart ships the template as a ConfigMap and Authentik picks it up through
+  `AUTHENTIK_EMAIL__TEMPLATE_DIR`, which needs the external HelmRelease to mount it.
 - **Seed users.** `test.beekeeper@…` is seeded **verified** (a dev/CI-provisioned trusted account;
   the walking-skeleton e2e login stays linear) — also the documented escape hatch for
   ops-provisioned, out-of-band-verified accounts. A second seed user `unverified.beekeeper@…`
@@ -1956,6 +2026,125 @@ Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
+
+## 8.19 As built (#648) — the IdP surfaces look like this product
+
+**The finding.** Every Authentik page a user passes through was stock: the red **authentik**
+wordmark, a stock photograph background, a Bootstrap-blue primary button and a "Powered by
+authentik" footer, with `Log in to continue to BeekeepingIT` as the only string naming this
+product. That is a security finding, not a polish one (FR-ONB-1, FR-UX-1, NFR-SEC-1). The sign-in
+page is the **one** page in the product where a user types a password, and the app hands them to it
+on a **different hostname** — a page that looks like another product on an unfamiliar host is
+exactly the shape of a phishing hop, and we were teaching users to accept it. It also broke the
+prototype's "honey is the only primary action" rule at the worst possible place: the primary control
+of the auth flow was blue.
+
+**One brand row skins four surfaces.** `authentik_brands.brand` for `domain: authentik-default`
+applies to everything Authentik renders under that brand, so the sign-in flow
+(`default-authentication-flow`), the enrolment flow (`beekeepingit-enrollment`), the flow executor's
+post-submit end pages and the Django-rendered static pages (`.ak-static-page`) are all branded by the
+single entry the blueprint already carried for `branding_title`. The flow executor and the static
+pages are two different renderers, so both grounds are painted or the theme changes under the user
+mid-journey.
+
+**Why the branding is CSS and not the image fields.** `branding_logo`, `branding_favicon` and
+`branding_default_flow_background` are Django `FileField`s whose value must name something the
+**Authentik pod** can serve. This repo cannot put a file in that pod: the Authentik workload is an
+external Flux `HelmRelease` in the `beekeepingit-gitops` repo (ADR-0012/ADR-0016) and this chart
+ships only ConfigMaps and Secrets. Pointing those fields at another origin or at a `data:` URI is a
+change whose failure mode is not local — a value the serializer rejects fails the **whole** blueprint
+(`Importer.apply` is atomic: no provider, no application, no login), and there is no cluster on a
+feature branch to prove it on. So the branding lives entirely in `branding_custom_css`, a plain
+`TextField` already proven to apply on this deployment, and the mark is inlined as a `data:` URI
+through Helm's `.Files.Get` — inline because the password-entry page must fetch **nothing** from a
+third party or from another origin, and because a remote logo would make the login page depend on the
+app's static hosting being up. **The browser-tab favicon is the one surface CSS cannot reach** and is
+still Authentik's; changing it needs the `branding_favicon` FileField and therefore a live cluster to
+prove the entry applies — tracked separately.
+
+**What this branding is, and is not.** `branding_custom_css` is served **unauthenticated** by the
+brand API — it is public, and trivially copyable by anyone building a lookalike. So this is a
+**consistency** control, not the anti-phishing control: the product looks like itself everywhere, so
+"this doesn't look right" becomes a signal a user can act on. The durable controls are the origin plus
+TLS, and the password manager's origin matching (later, WebAuthn's origin binding). Read §8.19 that
+way rather than as a claim that a branded page is a safe page. The same fact is why nothing in that
+field may ever be conditional on identity.
+
+**Two silent rewrites this CSS has to survive** (both found in review, both now guarded). Authentik
+does not serve the field verbatim: `brands/utils.py` applies
+`custom_css.translate(_json_script_escapes)` before `base/skeleton.html` writes it into a `<style>`
+element, mapping `<`, `>` and `&` to the literal sequences `<`, `>`, `&`. CSS reads
+`\u` as an escaped literal `u`, so a **child combinator does not survive**:
+`.pf-c-login__main-footer-links-item>a` reaches the browser as the single class
+`.pf-c-login__main-footer-links-itemu003Ea` — valid CSS, no console error, and the D-18 hit-target
+floor on those links silently gone. And **no text colour is set on `body`**: PatternFly colours text
+there and lets almost everything inherit, brand CSS is injected last, so a cream `color` on `body`
+would win — including inside `.pf-c-login__main`, which paints its own background and is **white**
+under PatternFly's light theme. A light-`prefers-color-scheme` device would then lose exactly the
+inherited copy (the "continue to BeekeepingIT" identity string) while explicitly-coloured text
+survived. The ground is painted; the text colour is left to PatternFly, and
+`attributes.settings.theme: dark` asks for the theme whose palette agrees with it — a JSONField, so
+its failure mode is "not honoured", not "the blueprint fails to apply", and the CSS is correct either
+way.
+
+**Every value is the app's own.** The CSS this replaced used `#E8B979` on `#1a120b` — two hexes that
+appear nowhere in the app. They read as brand colours and were nobody's brand. Every hex on both
+branded surfaces is now a token in
+[`client/lib/theming/brand_tokens.dart`](../../client/lib/theming/brand_tokens.dart) — honey
+`#F0A81F` / honeyHover `#F7B637` / onHoney `#3A2E14` / plum950 `#221D31` / cream `#F6F3EC` on the
+flow pages, plus paper, ink, muted and hairline in the email — which is the file that carries the
+measured contrast ratios and the role rules, so the primary control on the password page is the
+**same** honey fill as the app's `PrimaryActionButton`. Typography names Playfair Display (brand) and
+Archivo (body) with system fallbacks: those faces are bundled in the PWA, not in the Authentik pod,
+and a Google Fonts `<link>` on the password page would leak every sign-in to a third party.
+Accessibility (D-18) rides along — stock PatternFly controls are ~36px and the flow footer links have
+no hit box, so a 44x44 floor and a 3px `:focus-visible` ring are applied to these pages too.
+
+**The confirmation email.** `files/email/account_confirmation.html` shadows Authentik's built-in
+template because Django searches `TEMPLATES[0]["DIRS"]` — `[CONFIG.get("email.template_dir")]`,
+i.e. `AUTHENTIK_EMAIL__TEMPLATE_DIR` — **before** the per-app loader, so the email stage keeps
+pointing at the same template **name** and nothing about the flow changes. That direction is
+deliberate: if the file is not mounted, the built-in template renders and mail still goes out. The
+failure mode of the override is "unbranded email", never "no email". It does **not** `{% extends %}`
+upstream's `email/base.html` — those block names are internal API that moves between releases, and
+extending it would inherit the very logo and footer this issue removes. It carries no images (Gmail
+and Outlook block `data:` URIs and there is no stable public host for a remote logo), so the wordmark
+is text.
+
+**i18n (NFR-I18N-1, D-34).** Nothing here introduces a translatable string. The only literal on the
+flow pages is the product name, a proper noun in both `en-GB` and `pt-PT`; every visible string in
+the email is one of Authentik's **own** msgids, copied byte-for-byte from the template it shadows, so
+the shipped `pt_PT` catalogue keeps translating it (see §8.10 — `pt-PT` negotiates to `pt`, and
+Python's gettext expands `pt` to the `pt_PT` catalogue). The flow **titles** ("Sign in", "Create your
+account") remain English: `Flow.title` is a database field with no per-locale form, which is a
+pre-existing gap this change neither creates nor closes.
+
+**The sender.** `authentik.email.from` became `fromName` + `fromAddress`, rendered as
+`BeekeepingIT <address>`. The display name is branding and is decided here — a confirmation mail
+whose sender reads as a bare address on an unfamiliar domain is the same phishing-shaped hand-off one
+surface further on. The **address** is not ours to decide: the real sending domain and the SPF/DKIM/
+DMARC records behind it belong to [#417](https://github.com/TiagoJVO/beekeepingit/issues/417), so it
+stays an obviously-unroutable `.local` placeholder rather than an invented public domain, and #417
+sets one value per environment. Real outbound mail does not leave staging or prod until it lands.
+
+**The post-logout page, deliberately deprioritised.** #648's criteria were written when signing out
+parked the browser on Authentik's `ak-stage-session-end` interstitial. [#237](https://github.com/TiagoJVO/beekeepingit/issues/237)
+(§8.18) removed that: sign-out now redirects straight back to the app, so a user on the happy path
+never sees the page. It is still branded — it is a `.ak-static-page` and the same brand row paints it,
+at zero extra cost — but it is deliberately not the surface any of the work above was shaped around,
+and no live check is spent on it.
+
+**Guard.** [`scripts/check-authentik-brand-posture.sh`](../../scripts/check-authentik-brand-posture.sh),
+run by `task repo:lint`, asserts one live, unquoted, un-gated brand entry (a quoted model name,
+`state: absent` and `conditions:` are each a way to look present and do nothing — see §8.18), the
+primary control filled with honey, every hex present as a token in `brand_tokens.dart`, the mark
+inlined through `.Files.Get` and byte-identical to `client/web/icons/Icon-192.png` (Helm's
+`.Files.Get` returns the **empty string** for a missing path and raises nothing, so a renamed file
+ships an empty data URI and a green render), the email override wired and still on Authentik's
+msgids, and the sender still split. Its 25 negative cases run with it
+([`scripts/test-authentik-brand-posture.sh`](../../scripts/test-authentik-brand-posture.sh)), for the
+same reason the logout and redirect guards carry theirs: a textual guard can stop looking without
+saying so.
 
 ## 9. Acceptance-criteria traceability (#109)
 

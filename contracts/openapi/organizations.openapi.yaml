@@ -13,7 +13,9 @@ info:
   version: 0.1.0
   description: >-
     Organization CRUD, membership and email invitations. The user who creates an
-    organization becomes its admin and invites others by email (D-3); an invited user who
+    organization becomes its admin and invites others by email (D-3); creating the
+    invitation actually sends that email, in the recipient's language where known and
+    otherwise the organization's (#641), and an invited user who
     logs in is auto-joined to the inviting organization on their first `GET /organizations/me`
     poll rather than being prompted to create a new one (FR-ONB-3). Org scope and role
     are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org --
@@ -349,7 +351,13 @@ paths:
     post:
       operationId: createInvitation
       summary: Invite a member by email (admin only)
-      description: Sends an email invitation to join this organization (D-3, FR-ONB-3).
+      description: >-
+        Creates the invitation and immediately attempts to email it to the invited
+        address (D-3, FR-ONB-3, #641). The invitation is committed first, so a relay
+        problem never loses it: the response is `201` either way, and the returned
+        `delivery_status` says whether the email actually went out. A `failed` delivery
+        is retryable via `POST .../invitations/{invitationId}/resend`. Rate limited per
+        organization -- this endpoint causes mail to be sent to a caller-chosen address.
       tags: [Invitations]
       requestBody:
         required: true
@@ -375,6 +383,8 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':
           $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: './_shared/components.openapi.yaml#/components/responses/TooManyRequests'
 
   /organizations/{orgId}/invitations/{invitationId}:
     parameters:
@@ -398,6 +408,46 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
         '404':
           $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
+  /organizations/{orgId}/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+    post:
+      operationId: resendInvitation
+      summary: Send the invitation email again (admin only)
+      description: >-
+        Attempts the invitation email again for a still-`pending` invitation and returns
+        the invitation with the outcome of that attempt (#641, FR-ONB-3). This is the
+        retry half of "a failed send is visible to the admin and retryable" -- it is an
+        action, not an edit: the request has no body and nothing about the invitation
+        itself changes, only `delivery_status`, `delivery_error` and `last_delivery_at`.
+        Usable for an already-`sent` invitation too (the "they say it never arrived" case).
+        Rate limited per invitation by a short cooldown and by a total-attempts cap;
+        an invitation that is no longer `pending`, or that has exhausted its attempts,
+        is a `409`.
+      tags: [Invitations]
+      responses:
+        '200':
+          description: The attempt has finished; the body carries its outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '429':
+          $ref: './_shared/components.openapi.yaml#/components/responses/TooManyRequests'
 
   # Platform-operator-only cross-organization lookup (#468, EPIC-18 #463, D-7, D-32).
   # Deliberately NOT under /organizations/{orgId} -- there is no single org in scope, by
@@ -656,7 +706,36 @@ components:
             status:
               type: string
               enum: [pending, accepted, expired, revoked]
-          required: [id, email, role, status]
+              description: >-
+                The invitation's LIFECYCLE -- what the invitee has done with it. Only the
+                invitee (or an admin revoking) moves this. See `delivery_status` for what
+                the outbound email did; the two are independent.
+            delivery_status:
+              type: string
+              enum: [pending, sent, failed]
+              description: >-
+                What the invitation EMAIL did (#641, FR-ONB-3). `pending` means an attempt
+                is in flight or was never recorded, `sent` that the relay accepted the
+                message, `failed` that it did not. Before #641 there was no send step at
+                all and `status` alone read `pending` forever, which the admin screen
+                showed as if the invitation had been delivered and was awaiting a reply.
+            delivery_error:
+              type: string
+              description: >-
+                Short, stable, machine-readable reason for a `failed` delivery --
+                `not_configured` (no relay is provisioned in this environment yet, #417),
+                `rejected` (the relay refused the address or the message),
+                `relay_unavailable` (the relay could not be reached), `render_failed`,
+                or `never_sent` (created before this feature existed). Clients localize
+                it (EN/PT); it never carries relay, credential or recipient detail.
+                Absent when delivery did not fail.
+            last_delivery_at:
+              type: [string, "null"]
+              format: date-time
+              description: >-
+                When the last send attempt finished, successful or not. `null` when no
+                attempt has ever been made.
+          required: [id, email, role, status, delivery_status]
 
     InvitationCreate:
       type: object

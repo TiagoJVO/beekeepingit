@@ -100,4 +100,8 @@ authentik:
     useTls: true
     useSsl: false
     timeout: 10
-    from: no-reply@beekeepingit.example # TODO: real domain
+    # Sender split into name + address on #648. The address stays a placeholder: the
+    # real sending domain (and its SPF/DKIM/DMARC records) is #417's call, not a
+    # milestone-work decision — see charts/authentik/values.yaml.
+    fromName: BeekeepingIT
+    fromAddress: no-reply@beekeepingit.example # TODO(#417): real domain

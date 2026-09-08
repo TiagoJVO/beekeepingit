@@ -92,12 +92,25 @@ type memberNameListResponse struct {
 // InvitationResponse is the client-facing invitation shape
 // (contracts/openapi/organizations.openapi.yaml's Invitation schema).
 type InvitationResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID     string `json:"id"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
+	Status string `json:"status"`
+	// DeliveryStatus / DeliveryError / LastDeliveryAt are the OUTBOUND-EMAIL
+	// axis (#641, migration 00008), deliberately separate from Status above.
+	// Status is the invitation's lifecycle, which only the invitee can move;
+	// this is what the system's own send did. The admin screen needs both to
+	// tell the truth: before #641 it showed "pending" forever for an email
+	// that had never been sent at all.
+	//
+	// DeliveryError is a short, stable CODE ("not_configured", "rejected",
+	// "relay_unavailable"), never a message -- the client localizes it
+	// (EN/PT) and a code cannot leak relay or recipient detail into a screen.
+	DeliveryStatus string     `json:"delivery_status"`
+	DeliveryError  string     `json:"delivery_error,omitempty"`
+	LastDeliveryAt *time.Time `json:"last_delivery_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type invitationListResponse struct {
@@ -125,7 +138,7 @@ type invitationCreateRequest struct {
 // Invite/revoke now open their own local transaction (pool, not just q) so
 // their #165 audit_log row commits atomically with the domain write
 // (history.md section 4) -- see createInvitationHandler/revokeInvitationHandler.
-func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
+func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver, sender invitationSender) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
 	r.Get("/organizations/{orgId}/members/names", listMemberNamesHandler(q, resolver))
 	// Member lifecycle (#290) -- admin-only remove + change-role, implemented in
@@ -134,7 +147,13 @@ func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlc
 	r.Patch("/organizations/{orgId}/members/{userId}", changeMemberRoleHandler(pool, q, resolver))
 	r.Delete("/organizations/{orgId}/members/{userId}", removeMemberHandler(pool, q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
-	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver))
+	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver, sender))
+	// #641: the retry half of "a failed send is visible to the admin and
+	// retryable". A POST on a sub-resource rather than a PATCH on the
+	// invitation, because it is an ACTION (attempt a send now) and not an
+	// edit of the invitation's own state -- nothing in the Invitation schema
+	// is settable by the caller here.
+	r.Post("/organizations/{orgId}/invitations/{invitationId}/resend", resendInvitationHandler(q, resolver, sender))
 	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(pool, q, resolver))
 }
 
@@ -318,7 +337,7 @@ func listInvitationsHandler(q *sqlcgen.Queries, resolver UserResolver) http.Hand
 	}
 }
 
-func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver, sender invitationSender) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		member, ok := requireOrgAdmin(w, r, q, resolver)
 		if !ok {
@@ -355,9 +374,44 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		// the same local transaction as the domain insert (history.md section 4).
 		var invitation sqlcgen.OrganizationsInvitation
 		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		budget := sender.clock()
 		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
 			txq := q.WithTx(tx)
-			var err error
+
+			// Rate limit BEFORE the insert and INSIDE the transaction (#641
+			// security review). This endpoint now causes mail to be sent to
+			// an address the caller chose, so it is a spam/abuse amplifier if
+			// left unbounded -- see invitation_delivery.go's
+			// maxInvitationsPerWindow for the sizing rationale. Counted per
+			// organization, not per admin: the budget belongs to the tenant,
+			// so adding a second admin account must not double it.
+			//
+			// The org row is locked FOR UPDATE first, exactly as the
+			// last-admin guard does (#290, memberships.sql's
+			// LockOrganizationForUpdate). Without it the count and the insert
+			// are a TOCTOU pair: N concurrent requests with N distinct
+			// addresses all read the same pre-limit count and all insert, and
+			// the one control that stops a compromised admin session becoming
+			// an open relay does not hold under the only attack that matters.
+			// Locking serializes this org's invitation creations, so the
+			// count is stable until this transaction commits.
+			if _, err := txq.LockOrganizationForUpdate(r.Context(), member.OrgID); err != nil {
+				return fmt.Errorf("lock organization for invitation budget: %w", err)
+			}
+			count, err := txq.CountInvitationsCreatedSince(r.Context(), sqlcgen.CountInvitationsCreatedSinceParams{
+				OrganizationID: member.OrgID,
+				Since:          pgtype.Timestamptz{Time: budget.Add(-invitationRateWindow).UTC(), Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("count recent invitations: %w", err)
+			}
+			if count >= maxInvitationsPerWindow {
+				// Fails CLOSED by construction: a count that cannot be read
+				// returns the error above and aborts the transaction rather
+				// than letting the invitation through.
+				return errInvitationBudget
+			}
+
 			invitation, err = txq.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
 				ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 				OrganizationID: member.OrgID,
@@ -382,6 +436,18 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 			return nil
 		})
 		if txErr != nil {
+			if errors.Is(txErr, errInvitationBudget) {
+				// The 429's detail states the LIMIT and nothing else -- not
+				// how many the organization has used, not when the window
+				// opened. A rate-limit response that narrates the tenant's
+				// own recent activity is a side channel for anyone who has
+				// gained an admin session, and it buys the honest admin
+				// nothing the Retry-After header does not already give them.
+				problem.Write(w, r, problem.TooManyRequests(
+					fmt.Sprintf("an organization may create at most %d invitations per hour", maxInvitationsPerWindow),
+					int(invitationRateWindow.Seconds())))
+				return
+			}
 			if isUniqueViolation(txErr) {
 				problem.Write(w, r, problem.Conflict("this email already has a pending invitation to this organization"))
 				return
@@ -391,8 +457,111 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 			return
 		}
 
+		// The row is committed; NOW attempt the email (#641). A failed send
+		// is recorded on the row and reported in this 201 response, never
+		// turned into an error -- see invitation_delivery.go's package
+		// comment for why creating and delivering are separate outcomes.
+		delivered, err := sender.deliver(r.Context(), r.Header.Get("Authorization"), invitation)
+		if err != nil {
+			// The send outcome could not be PERSISTED -- unlike a failed
+			// send, that is a real fault. The invitation still exists, so
+			// this is still a 201; the row keeps delivery_status "pending"
+			// and the admin's resend action is the way out.
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "record invitation delivery failed", slog.Any("error", err))
+		} else {
+			invitation = delivered
+		}
+
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(member.OrgID)+"/invitations/"+uuidString(invitation.ID))
 		writeJSON(w, r, http.StatusCreated, toInvitationResponse(invitation))
+	}
+}
+
+// errInvitationBudget aborts the create transaction when the organization has
+// exhausted its hourly invitation budget (#641 security review). A sentinel
+// rather than a pre-transaction check so the count and the insert are one
+// atomic, serialized decision -- see createInvitationHandler.
+var errInvitationBudget = errors.New("organization invitation budget exhausted")
+
+// resendInvitationHandler retries the outbound email for one still-pending
+// invitation (#641 AC 5: "a failed send is visible to the admin and
+// retryable"). Admin-only and org-scoped like every other write here.
+//
+// Deliberately usable for an already-SENT invitation too, not only a failed
+// one: "I sent it, they say it never arrived" is the commonest real support
+// case, and refusing would leave the admin's only workaround as revoke-and-
+// re-invite, which throws away the invitation's history. The cooldown and the
+// attempt cap below are what keep that from becoming a mailbomb button.
+//
+// No audit_log row is written for a resend. history.md section 3 records
+// changes to an ENTITY's own fields, and a delivery attempt changes none of
+// them -- invitationFields (audit.go) projects email/role/status/invited_by,
+// all untouched here, so an audit row would carry an empty diff. The attempt
+// is recorded where it belongs instead: on the invitation's own
+// delivery_attempts / last_delivery_at columns, which the admin can see, plus
+// a structured log line.
+func resendInvitationHandler(q *sqlcgen.Queries, resolver UserResolver, sender invitationSender) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		member, ok := requireOrgAdmin(w, r, q, resolver)
+		if !ok {
+			return
+		}
+
+		invitationID, err := uuid.Parse(chi.URLParam(r, "invitationId"))
+		if err != nil {
+			problem.Write(w, r, problem.NotFound("invitation not found"))
+			return
+		}
+
+		invitation, err := q.GetInvitation(r.Context(), sqlcgen.GetInvitationParams{
+			ID:             pgtype.UUID{Bytes: invitationID, Valid: true},
+			OrganizationID: member.OrgID,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, problem.NotFound("invitation not found"))
+			return
+		}
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get invitation before resend failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		// Only a still-pending invitation is worth mailing about: an accepted
+		// one has already done its job, and a revoked or expired one must
+		// never be re-advertised to the address it was withdrawn from.
+		if invitation.Status != "pending" {
+			problem.Write(w, r, problem.Conflict("invitation is no longer pending"))
+			return
+		}
+
+		if invitation.DeliveryAttempts >= maxDeliveryAttempts {
+			problem.Write(w, r, problem.Conflict(
+				fmt.Sprintf("this invitation has already been attempted %d times; withdraw it and invite the address again", maxDeliveryAttempts)))
+			return
+		}
+
+		now := sender.clock()
+		if invitation.LastDeliveryAt.Valid {
+			if wait := resendCooldown - now.Sub(invitation.LastDeliveryAt.Time); wait > 0 {
+				problem.Write(w, r, problem.TooManyRequests(
+					"this invitation was sent very recently; wait before sending it again",
+					int(wait.Seconds())+1))
+				return
+			}
+		}
+
+		delivered, err := sender.deliver(r.Context(), r.Header.Get("Authorization"), invitation)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "record invitation delivery failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		// 200, not 202: by the time this returns the attempt has finished and
+		// its outcome is in the body, so an admin who retried a failing
+		// invitation sees immediately whether it worked this time.
+		writeJSON(w, r, http.StatusOK, toInvitationResponse(delivered))
 	}
 }
 
@@ -554,14 +723,24 @@ func acceptPendingInvitationByEmail(ctx context.Context, pool *pgxpool.Pool, q *
 }
 
 func toInvitationResponse(inv sqlcgen.OrganizationsInvitation) InvitationResponse {
-	return InvitationResponse{
-		ID:        uuidString(inv.ID),
-		Email:     inv.Email,
-		Role:      inv.Role,
-		Status:    inv.Status,
-		CreatedAt: inv.CreatedAt.Time,
-		UpdatedAt: inv.UpdatedAt.Time,
+	out := InvitationResponse{
+		ID:             uuidString(inv.ID),
+		Email:          inv.Email,
+		Role:           inv.Role,
+		Status:         inv.Status,
+		DeliveryStatus: inv.DeliveryStatus,
+		DeliveryError:  inv.DeliveryError,
+		CreatedAt:      inv.CreatedAt.Time,
+		UpdatedAt:      inv.UpdatedAt.Time,
 	}
+	// A NULL last_delivery_at ("never attempted") stays a JSON null rather
+	// than becoming the zero time, which a client would render as 1 January
+	// year 1 -- the same class of screen-lies-to-you defect as #641 itself.
+	if inv.LastDeliveryAt.Valid {
+		t := inv.LastDeliveryAt.Time
+		out.LastDeliveryAt = &t
+	}
+	return out
 }
 
 // parsePage parses the shared limit/cursor query params (matches apiaries'
