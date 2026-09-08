@@ -369,6 +369,16 @@ template that `lookup`s them (e.g.
 [`charts/authentik/templates/config-secret.yaml`](helm/beekeepingit/charts/authentik/templates/config-secret.yaml)),
 not free-form.
 
+**Branded email templates need a mount in the external HelmRelease (#648).** The same
+chart-renders-it / external-release-consumes-it split as the blueprint ConfigMap: this chart renders
+`beekeepingit-authentik-email-templates` (the BeekeepingIT-branded
+`account_confirmation.html`) and sets `AUTHENTIK_EMAIL__TEMPLATE_DIR`, but the `beekeepingit-gitops`
+HelmRelease has to mount that ConfigMap at that directory on **both** the server and the worker, with
+each key landing at `email/<name>.html` (a ConfigMap key cannot contain `/`, so use `items:` +
+`path:`). Until it does, Authentik's own template renders: unbranded mail, never no mail — which is
+why this is safe to ship ahead of the mount, and also why it will not announce itself if the mount is
+wrong. See [`docs/architecture/auth.md` §8.19](../docs/architecture/auth.md).
+
 **On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
 `workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick
 `environment` (staging/prod) and `action` (up/down/scale-down/scale-up) in the Actions tab. Staging

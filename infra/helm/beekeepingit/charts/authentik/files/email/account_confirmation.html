@@ -1,0 +1,105 @@
+{# BeekeepingIT account-confirmation email (#648, FR-ONB-1, FR-UX-1, NFR-SEC-1, NFR-I18N-1).
+
+   WHAT THIS OVERRIDES, AND HOW. Authentik's Django settings put the configurable email
+   template dir FIRST in the template search path — `TEMPLATES[0]["DIRS"] =
+   [CONFIG.get("email.template_dir")]` (root/settings.py), and Django's `DIRS` loader runs
+   before the per-app loader. So a file at `<email.template_dir>/email/account_confirmation.html`
+   is served INSTEAD of `authentik/stages/email/templates/email/account_confirmation.html`,
+   with no change to the email stage: the blueprint keeps pointing at the same template NAME
+   (`template: email/account_confirmation.html`). That is deliberate — if this file is not
+   mounted, the built-in template still renders and mail still goes out. The failure mode of
+   the override is "unbranded email", never "no email".
+
+   The mount itself is NOT in this repo. This chart ships the file as a ConfigMap
+   (`beekeepingit-authentik-email-templates`, templates/email-templates-configmap.yaml) and
+   sets `AUTHENTIK_EMAIL__TEMPLATE_DIR`; the Authentik workload is an external Flux
+   HelmRelease in the beekeepingit-gitops repo (ADR-0012/ADR-0016), so mounting that
+   ConfigMap on the server + worker is a change there — see the PR's "Before merge" list.
+
+   NO `{% extends %}`. Upstream's template extends `email/base.html`, whose block names are
+   internal API that moves between releases; extending it would also inherit the authentik
+   logo and the "Powered by authentik" footer this issue exists to remove. Self-contained
+   costs a few more lines and cannot silently lose its body on a version bump.
+
+   NO IMAGES. Gmail and Outlook block `data:` image URIs outright, and this deployment has
+   no public, stable host for a remote logo (the PWA origin is per-environment and the
+   recipient may open the mail with no session). So the wordmark is TEXT in the brand's
+   display serif — it renders identically everywhere, including a text-only client.
+
+   i18n (NFR-I18N-1, D-34, #412). Every visible string is one of authentik's OWN msgids,
+   copied byte-for-byte from the template this replaces, so the shipped `pt_PT` catalog keeps
+   translating them; the send activates the request's negotiated language (`pt-PT` -> `pt` ->
+   the `pt_PT` catalog, verified in the container on #412). Introducing a new English string
+   here would be untranslated text on a page that is currently translated — do not.
+
+   COLOURS are tokens from client/lib/theming/brand_tokens.dart, the app's light scheme:
+   cream #F6F3EC ground, paper #FFFFFF card, ink #2B2438 body, honey #F0A81F primary fill
+   with onHoney #3A2E14 on it (6.5:1), muted #524B60 secondary text, hairline #E7E1D3 rules.
+   Inline styles only — email clients strip <style> blocks unpredictably.
+
+   CONTEXT provided by the email stage (stages/email/stage.py): `url`, `user`, `expires`,
+   `token`. Only `url` is used, exactly as upstream does.
+#}
+{% load i18n %}
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#F6F3EC;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F3EC;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+            <tr>
+              <td align="center" style="padding:8px 0 20px 0;font-family:'Playfair Display',Georgia,'Times New Roman',serif;font-size:28px;font-weight:700;color:#3A2E14;">
+                BeekeepingIT
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#FFFFFF;border:1px solid #E7E1D3;border-radius:12px;padding:32px 28px;font-family:Archivo,'Segoe UI',Helvetica,Arial,sans-serif;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="font-size:24px;font-weight:700;color:#2B2438;padding-bottom:16px;">
+                      {% trans 'Welcome!' %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="font-size:15px;line-height:24px;color:#2B2438;padding-bottom:28px;">
+                      {% trans "We're excited to have you get started. First, you need to confirm your account. Just press the button below."%}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom:8px;">
+                      <a id="confirm" href="{{ url }}" rel="noopener noreferrer" target="_blank" style="display:inline-block;min-width:200px;padding:14px 28px;background:#F0A81F;color:#3A2E14;font-size:16px;font-weight:600;text-decoration:none;border-radius:10px;">{% trans 'Confirm Account' %}</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px 8px;font-family:Archivo,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:20px;color:#524B60;word-break:break-all;overflow-wrap:break-word;">
+    {# The indentation of the next three lines is LOAD-BEARING and deliberately does not
+       match this file's. Django builds a `blocktrans` msgid from the LITERAL text between
+       the tags — newlines and leading spaces included — unless `trimmed` is given, and it
+       looks the catalogue up with that same literal at render time. So the msgid is
+       upstream's 4-space-indented three-line form, and re-indenting these lines to sit
+       neatly inside the table would silently produce a msgid no catalogue has: the line
+       would fall back to English for every pt-PT recipient with nothing to show for it
+       (`trimmed` would not help — upstream's catalogue entry is the untrimmed form).
+       Copied byte-for-byte from
+       authentik/stages/email/templates/email/account_confirmation.html.
+
+       This line is also what the verification e2e depends on. `pollForVerificationLink`
+       (client/e2e/tests/helpers.ts) reads the message's text/plain part — which Authentik
+       derives by stripping tags from this HTML — and regexes the first URL out of it. The
+       button's `href` does not survive that strip; the bare `{{ url }}` below does. Delete
+       this fallback line and the e2e stops finding a link, not just the user. #}
+    {% blocktrans with url=url %}
+    If that doesn't work, copy and paste the following link in your browser: {{ url }}
+    {% endblocktrans %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
