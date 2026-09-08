@@ -1,18 +1,35 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import 'todo_due.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
 
-DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+/// `isOverdue` moved to `todo_due.dart` (#661), which now owns every "what
+/// does this todo's due date mean right now" rule in one place. Re-exported
+/// so this file stays the single import the Todos tab's list/filter widgets
+/// need, exactly as it was before the move.
+export 'todo_due.dart' show isOverdue;
 
-/// The three-way lifecycle bucket a todo falls into (#53 AC: "distinguishes
-/// open, completed, and overdue todos"). [open] deliberately EXCLUDES an
-/// overdue todo — [overdue] is its own bucket — so the three states read as
-/// mutually exclusive both in the status filter dropdown and in `sortTodos`'
+/// Which lifecycle bucket a todo falls into (#53 AC: "distinguishes open,
+/// completed, and overdue todos").
+///
+/// [open], [overdue] and [done] partition the todos: [open] deliberately
+/// EXCLUDES an overdue todo — [overdue] is its own bucket — so those three
+/// read as mutually exclusive both in the status chip row and in `sortTodos`'
 /// status ordering, rather than "open" silently meaning "not done" (which
 /// would blur into overdue).
-enum TodoStatusFilter { all, open, overdue, done }
+///
+/// [needsAttention] (#661) is the one value that deliberately breaks out of
+/// that partition: it is a **preset**, not a fourth lifecycle state — the
+/// UNION of [overdue] and "due soon", per `todo_due.dart`'s [todoDueBucket].
+/// It exists because D-35's Home tasks section shows exactly that union and
+/// its "view all" link must open the list showing the same set; nothing else
+/// here can express a union (the filters AND together, and the [TodoDueFilter]
+/// presets are calendar windows, not the per-priority lead time). It overlaps
+/// [overdue] by design, which is why "mutually exclusive" is now a statement
+/// about the three lifecycle values and not about the enum as a whole.
+enum TodoStatusFilter { all, open, needsAttention, overdue, done }
 
 /// A due-date filter preset (#53 AC: "filterable by due date"). Presets
 /// (not a raw date-range picker, a judgment call documented in the PR
@@ -27,21 +44,15 @@ enum TodoSortField { dueDate, priority, status }
 
 enum SortDirection { ascending, descending }
 
-/// True when [todo] is open (not done) and its due date has already passed
-/// [today] — the calendar date only, never time-of-day (matches [Todo.
-/// dueDate]'s own plain `YYYY-MM-DD` shape, no time component to compare). A
-/// todo due exactly [today] is NOT overdue; a done todo is never overdue
-/// regardless of its due date; a todo with no due date can never be overdue.
-bool isOverdue(Todo todo, DateTime today) {
-  if (todo.isDone) return false;
-  if (todo.dueDate == null) return false;
-  final due = _dateOnly(DateTime.parse(todo.dueDate!));
-  return due.isBefore(_dateOnly(today));
-}
-
 /// Keeps only todos in [status]'s bucket relative to [today] (#53 AC:
 /// "filterable by status (open, completed, overdue)"), or every todo when
 /// [status] is [TodoStatusFilter.all] (the filter's cleared/default state).
+///
+/// [TodoStatusFilter.needsAttention] delegates wholesale to
+/// [todoNeedsAttention] (#661) rather than spelling out "overdue or due
+/// soon" here: that predicate — and the [todoDueBucket] behind it — is the
+/// app's single definition of the set, shared with D-35's Home summary and
+/// D-24's reminder engine.
 List<Todo> filterTodosByStatus(
   List<Todo> todos,
   TodoStatusFilter status,
@@ -51,6 +62,8 @@ List<Todo> filterTodosByStatus(
     TodoStatusFilter.all => todos,
     TodoStatusFilter.open =>
       todos.where((t) => !t.isDone && !isOverdue(t, today)).toList(),
+    TodoStatusFilter.needsAttention =>
+      todos.where((t) => todoNeedsAttention(t, today)).toList(),
     TodoStatusFilter.overdue =>
       todos.where((t) => isOverdue(t, today)).toList(),
     TodoStatusFilter.done => todos.where((t) => t.isDone).toList(),
@@ -67,7 +80,7 @@ List<Todo> filterTodosByPriority(List<Todo> todos, String? priority) {
 }
 
 DateTime _startOfWeek(DateTime today) {
-  final day = _dateOnly(today);
+  final day = dateOnly(today);
   // DateTime.weekday: Monday == 1 .. Sunday == 7.
   return day.subtract(Duration(days: day.weekday - 1));
 }
@@ -98,10 +111,10 @@ List<Todo> filterTodosByDue(
   if (due == TodoDueFilter.any) return todos;
   return todos.where((t) {
     if (t.dueDate == null) return false;
-    final d = _dateOnly(DateTime.parse(t.dueDate!));
+    final d = dateOnly(DateTime.parse(t.dueDate!));
     return switch (due) {
       TodoDueFilter.any => true,
-      TodoDueFilter.today => d == _dateOnly(today),
+      TodoDueFilter.today => d == dateOnly(today),
       TodoDueFilter.thisWeek =>
         !d.isBefore(_startOfWeek(today)) && !d.isAfter(_endOfWeek(today)),
       TodoDueFilter.thisMonth =>

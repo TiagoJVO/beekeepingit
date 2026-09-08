@@ -1762,6 +1762,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get todoFilterStatusOpen => 'Open';
 
   @override
+  String get todoFilterStatusNeedsAttention => 'Needs attention';
+
+  @override
   String get todoFilterStatusOverdue => 'Overdue';
 
   @override
@@ -2080,12 +2083,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String homeTasksViewAllOverdueAction(int count) {
+  String homeTasksViewAllAction(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'View all $count overdue tasks',
-      one: 'View the 1 overdue task',
+      other: 'View all $count tasks',
+      one: 'View the 1 task',
     );
     return '$_temp0';
   }

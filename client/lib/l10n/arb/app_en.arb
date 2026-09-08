@@ -2270,6 +2270,10 @@
   "@todoFilterStatusOpen": {
     "description": "Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)"
   },
+  "todoFilterStatusNeedsAttention": "Needs attention",
+  "@todoFilterStatusNeedsAttention": {
+    "description": "Status filter option for the overdue-or-due-soon preset — the same set Home's tasks section shows, per todo_due.dart's todoDueBucket (#661, D-35). A preset spanning two lifecycle states, not a status word for a single todo"
+  },
   "todoFilterStatusOverdue": "Overdue",
   "@todoFilterStatusOverdue": {
     "description": "Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later \"overdue todos\" example)"
@@ -2723,9 +2727,9 @@
       }
     }
   },
-  "homeTasksViewAllOverdueAction": "{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}",
-  "@homeTasksViewAllOverdueAction": {
-    "description": "Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)",
+  "homeTasksViewAllAction": "{count, plural, =1{View the 1 task} other{View all {count} tasks}}",
+  "@homeTasksViewAllAction": {
+    "description": "Home tasks section footer link into the Todos list, counted with the section's OWN full set — overdue plus due-soon — because the link now opens /todos?status=needsAttention, which shows exactly that set (#661, #658, D-35)",
     "placeholders": {
       "count": {
         "type": "int"

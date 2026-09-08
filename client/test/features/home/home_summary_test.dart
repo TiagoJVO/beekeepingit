@@ -262,34 +262,24 @@ void main() {
   });
 
   // The overdue half of the tasks section, counted over the full match set.
-  // The section is the UNION of overdue and due-soon, but its "view all"
-  // link opens only `/todos?status=overdue` until #661 lets the Todos tab
-  // express the union — so the link is labelled from this, not from
-  // `attentionTodos.count`.
-  group('overdueTodoCount (#658 review, #661)', () {
-    test('is zero when every attention todo is merely due soon', () {
+  // The section is the UNION of overdue and due-soon, and since #661 its
+  // "view all" link opens the Todos tab filtered to that same union
+  // (`?status=needsAttention`) and is labelled with this count. An
+  // `overdueTodoCount` used to sit beside it, for labelling the link with
+  // the overdue subset it could reach back then; it is gone, so what the
+  // label promises is pinned here instead.
+  group('attentionTodos.count — what the "view all" link promises (#661, '
+      'D-35)', () {
+    test('counts due-soon rows too, not just the overdue ones', () {
       final summary = _summary(
         todos: [
           _todo('a', dueDate: _daysFromNow(0), priority: todoPriorityHigh),
           _todo('b', dueDate: _daysFromNow(1), priority: todoPriorityHigh),
-        ],
-      );
-
-      expect(summary.attentionTodos.count, 2);
-      expect(summary.overdueTodoCount, 0);
-    });
-
-    test('counts only the overdue half of a mixed section', () {
-      final summary = _summary(
-        todos: [
-          _todo('late-1', dueDate: _daysAgo(2)),
-          _todo('late-2', dueDate: _daysAgo(8)),
-          _todo('soon', dueDate: _daysFromNow(0), priority: todoPriorityHigh),
+          _todo('late', dueDate: _daysAgo(2)),
         ],
       );
 
       expect(summary.attentionTodos.count, 3);
-      expect(summary.overdueTodoCount, 2);
     });
 
     test('counts past the preview cap, not just the rendered rows', () {
@@ -300,7 +290,7 @@ void main() {
       );
 
       expect(summary.attentionTodos.preview.length, kHomePreviewLimit);
-      expect(summary.overdueTodoCount, 6);
+      expect(summary.attentionTodos.count, 6);
     });
   });
 

@@ -160,7 +160,6 @@ class HomeSummary {
     required this.staleApiaries,
     required this.state,
     required this.readiness,
-    required this.overdueTodoCount,
     required this.now,
   });
 
@@ -186,16 +185,13 @@ class HomeSummary {
   /// sections it does have and a notice that the rest could not be read.
   final HomeDataReadiness readiness;
 
-  /// How many of [attentionTodos] are [TodoDueBucket.overdue], over the FULL
-  /// matching set rather than the capped preview.
-  ///
-  /// Exists so the tasks section's "view all" link can be labelled with the
-  /// subset it actually opens. The section is the UNION of overdue and
-  /// due-soon, but `/todos?status=overdue` is only its overdue half — the
-  /// Todos tab cannot express the union today (#661). Counted here rather
-  /// than in the widget because the widget only ever sees
-  /// [kHomePreviewLimit] rows and would under-report on any larger set.
-  final int overdueTodoCount;
+  // An `overdueTodoCount` used to live here, so the tasks section's "view
+  // all" link could be labelled with the overdue SUBSET it opened while the
+  // Todos tab could not express the union. #661 gave the tab a
+  // `needsAttention` filter over the same `todoDueBucket`, so the link now
+  // opens the whole section and is labelled with [attentionTodos]'s own
+  // count — the number already on the badge above it. Nothing needs the
+  // subset any more.
 
   /// The single instant all three sections were computed against
   /// ([buildHomeSummary]'s own `now` parameter) — carried here, exactly like
@@ -268,9 +264,6 @@ HomeSummary buildHomeSummary({
       readiness: readiness,
     ),
     readiness: readiness,
-    overdueTodoCount: attention
-        .where((a) => a.bucket == TodoDueBucket.overdue)
-        .length,
     now: now,
   );
 }

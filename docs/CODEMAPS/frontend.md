@@ -174,7 +174,10 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
       │                    FAB (#52/#389) routes to /todos/new, no pre-filled apiary;
       │                    row tap → detail (#293); `?status=`/`?due=` seed the filters from
       │                    the route (#658) — seeded INSIDE the mounted screen, never by
-      │                    writing the autoDispose filter providers before context.go)
+      │                    writing the autoDispose filter providers before context.go.
+      │                    `?status=needsAttention` (#661) is the overdue ∪ due-soon
+      │                    preset Home's "view all" opens — a union, not a fourth
+      │                    lifecycle bucket)
       ├ new                TodoFormScreen         features/todos (#293/#389; the ONLY create
       │                    entry point now — every FAB routes here, `?apiaryId=` optionally
       │                    pre-selects the apiary picker)
@@ -210,8 +213,9 @@ notification-engine helper for exactly this reason):
 
 | Rule                           | Lives in                                                                                                      | Consumers                                     |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| overdue                        | `features/todos/todo_filters.dart` `isOverdue`                                                                | todos list, notification engine, home         |
+| overdue                        | `features/todos/todo_due.dart` `isOverdue` (re-exported by `todo_filters.dart`)                               | todos list, notification engine, home         |
 | due soon (per-priority)        | `features/todos/todo_due.dart` `todoDueBucket` / `dueSoonWindowDays`                                          | notification engine, home                     |
+| needs attention (the union)    | `features/todos/todo_due.dart` `todoNeedsAttention` — literally "`todoDueBucket` bucketed it" (#661)          | todos list filter, home                       |
 | apiary not visited recently    | `features/apiaries/apiary_visit_recency.dart` `apiariesNotVisitedSince` (`apiaryVisitRecencyDays` = 30, D-35) | home                                          |
 | which branch a record opens in | `routing/branch_local_navigation.dart` (#666/#384)                                                            | home rows, activity rows, detail null-bounces |
 
