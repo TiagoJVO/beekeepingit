@@ -7,7 +7,9 @@
 -- delivery_status starts at its 'pending' DEFAULT and is NOT set here: the row
 -- must commit before the email is attempted (#641), so "created but not yet
 -- sent" is a real, observable state for the duration of one send. The handler
--- follows up with MarkInvitationDelivery.
+-- claims the attempt with ClaimInvitationDeliverySlot in this same transaction
+-- (#854 -- the attempt is charged before the mail leaves, never after) and
+-- follows up with RecordInvitationDeliveryOutcome once the send has finished.
 INSERT INTO organizations.invitations (id, organization_id, email, role, invited_by)
 VALUES ($1, $2, lower(sqlc.arg(email)), $3, $4)
 RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
@@ -70,11 +72,45 @@ WHERE id = $1 AND status = 'pending'
 RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
           delivery_attempts, last_delivery_at, invited_by, created_at, updated_at;
 
--- name: MarkInvitationDelivery :one
--- Records the outcome of ONE outbound-email attempt (#641, FR-ONB-3): the
--- initial send after CreateInvitation, or an admin-triggered resend.
--- delivery_attempts is incremented here rather than passed in, so two
--- concurrent attempts can never both write the same count.
+-- name: ClaimInvitationDeliverySlot :one
+-- Claims ONE outbound-email attempt for an invitation, atomically (#854,
+-- NFR-SEC-1). This single conditional UPDATE *is* the rate limit: it charges
+-- the attempt and restarts the cooldown clock in the same statement that
+-- checks them, so there is no window between reading the limits and acting on
+-- them.
+--
+-- Zero rows means the attempt was REFUSED — the invitation is no longer
+-- pending, its lifetime cap is spent, or it is still inside its cooldown — and
+-- the caller must not open an SMTP conversation. One row means the slot is the
+-- caller's and the returned row already reflects it.
+--
+-- Called by BOTH send paths: right after CreateInvitation inside the create
+-- transaction, and at the top of a resend. Before #854 the resend path read
+-- these two columns on the pool and let MarkInvitationDelivery increment them
+-- after the send, which is a read-then-act pair in two directions at once:
+-- concurrent resends of one invitation all saw the same pre-attempt state, and
+-- an outcome write that failed left the attempt uncharged although the mail had
+-- gone out (bookkeeping that failed OPEN).
+--
+-- Scoped by (id, organization_id) like every other write in this file
+-- (ADR-0002).
+UPDATE organizations.invitations
+SET delivery_attempts = delivery_attempts + 1,
+    last_delivery_at  = sqlc.arg(attempted_at)
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'pending'
+  AND delivery_attempts < sqlc.arg(max_attempts)
+  AND (last_delivery_at IS NULL OR last_delivery_at <= sqlc.arg(cooldown_cutoff))
+RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
+          delivery_attempts, last_delivery_at, invited_by, created_at, updated_at;
+
+-- name: RecordInvitationDeliveryOutcome :one
+-- Records what ONE outbound-email attempt DID (#641, FR-ONB-3), after
+-- ClaimInvitationDeliverySlot has already charged the attempt and stamped
+-- last_delivery_at. Outcome only: neither delivery_attempts nor
+-- last_delivery_at is touched here, so losing this write costs the admin an
+-- accurate status line — never a spent attempt or a cooldown (#854).
 --
 -- `updated_at` is deliberately NOT touched: it is the invitation's LWW/ETag
 -- version stamp for the domain row (data-model.md §4.3), and a delivery
@@ -87,24 +123,34 @@ RETURNING id, organization_id, email, role, status, delivery_status, delivery_er
 -- merely conventional.
 UPDATE organizations.invitations
 SET delivery_status   = sqlc.arg(delivery_status),
-    delivery_error    = sqlc.arg(delivery_error),
-    delivery_attempts = delivery_attempts + 1,
-    last_delivery_at  = sqlc.arg(last_delivery_at)
+    delivery_error    = sqlc.arg(delivery_error)
 WHERE id = $1 AND organization_id = $2
 RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
           delivery_attempts, last_delivery_at, invited_by, created_at, updated_at;
 
--- name: CountInvitationsCreatedSince :one
--- Rate-limit counter for POST .../invitations (#641 security review): how many
--- invitations has this organization created since `since`? An org admin can
--- otherwise point the service's relay at an unbounded list of arbitrary
--- addresses — a spam/abuse amplifier wearing a legitimate admin's credentials,
--- and a reputation risk for the sending domain (#417).
+-- name: CountInvitationDeliveryBudgetSince :one
+-- The organization's outbound-mail budget for one rolling window (#641
+-- security review, extended to resends by #854): how many of this
+-- organization's invitations have caused mail to be attempted since `since`?
+-- An org admin can otherwise point the service's relay at an unbounded list of
+-- arbitrary addresses — a spam/abuse amplifier wearing a legitimate admin's
+-- credentials, and a reputation risk for the sending domain (#417).
+--
+-- Counts a row when it was CREATED in the window (its create-time send) or last
+-- ATTEMPTED in the window (a resend). Creation and resend therefore share one
+-- budget, which is the point: the thing being bounded is mail leaving on behalf
+-- of one organization per hour, not the endpoint that triggered it. Counting
+-- only created_at — as this query did before #854 — left resend outside the
+-- ceiling entirely, since it can target any still-pending invitation of any
+-- age.
 --
 -- Counts EVERY invitation in the window regardless of status or delivery
 -- outcome: revoking or failing to deliver must not reset the budget, or the
 -- limit is trivially bypassed by revoking each invite after creating it.
--- Served by invitations_organization_id_created_at_idx (migration 00008).
+-- organization_id is the leading column of
+-- invitations_organization_id_created_at_idx (migration 00008), which narrows
+-- this to one tenant's own (small) set of rows before either date is examined.
 SELECT count(*)
 FROM organizations.invitations
-WHERE organization_id = $1 AND created_at >= sqlc.arg(since);
+WHERE organization_id = $1
+  AND (created_at >= sqlc.arg(since) OR last_delivery_at >= sqlc.arg(since));

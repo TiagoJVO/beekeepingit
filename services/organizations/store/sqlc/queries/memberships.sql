@@ -45,9 +45,9 @@ WHERE organization_id = $1 AND user_id = $2 AND status = 'active';
 
 -- name: LockOrganizationForUpdate :one
 -- The per-org serialization point for both the last-admin guard (#290, D-3) and
--- the invitation budget (#641 — CountInvitationsCreatedSince has exactly the same
--- TOCTOU shape as CountActiveAdmins, so createInvitationHandler takes this lock
--- before counting): row-lock
+-- the invitation send budget (#641, #854 — CountInvitationDeliveryBudgetSince has
+-- exactly the same TOCTOU shape as CountActiveAdmins, so createInvitationHandler
+-- and resendInvitationHandler both take this lock before counting): row-lock
 -- the organization itself FOR UPDATE at the top of every remove/change-role
 -- transaction. All such writes on one org therefore serialize on this single row,
 -- so the CountActiveAdmins check below runs against a stable admin set that no
