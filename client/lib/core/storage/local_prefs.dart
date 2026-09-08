@@ -64,3 +64,23 @@ const kNotificationPreferencesKey = 'bk.notification_prefs';
 /// policy) — see `features/notifications/notification_dedup_store.dart`.
 /// Purged on logout for the same reason as [kNotificationPreferencesKey].
 const kNotificationDedupStateKey = 'bk.notification_state';
+
+/// Marker key recording the **OIDC subject the on-device local store was
+/// opened for** (#664, D-38) — read and written by
+/// `core/sync/local_store_owner.dart`'s `ensureLocalStoreBelongsTo`, which
+/// `powerSyncProvider` calls the moment the database is opened. A different
+/// `sub` than the one recorded here means the store belongs to a previous user
+/// of this shared device, and it is purged before anyone reads it
+/// (FR-TEN-1, FR-TEN-2, NFR-SEC-1).
+///
+/// Durable (`localStorage`) rather than per-tab session storage, deliberately:
+/// the store it guards is itself durable (SQLite over OPFS/IndexedDB), so a
+/// marker that vanished on a browser restart would purge every returning
+/// user's unsynced offline work — the exact loss D-38 exists to avoid
+/// (FR-OF-1).
+///
+/// Purged on logout (`auth_controller.dart`'s `_clearLocalSession`) like every
+/// other key here, so no user identifier outlives a session on a shared
+/// device. That can never weaken the guarantee: a missing marker fails
+/// **closed** (purge), and logout has already wiped the store anyway.
+const kLocalStoreSubjectKey = 'bk.local_store_subject';

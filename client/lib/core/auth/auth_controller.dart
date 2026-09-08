@@ -496,6 +496,14 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // see kNotificationPreferencesKey/kNotificationDedupStateKey's own docs.
     prefs.remove(kNotificationPreferencesKey);
     prefs.remove(kNotificationDedupStateKey);
+    // #664/D-38: the marker naming whose OIDC subject the local store was
+    // opened for (core/sync/local_store_owner.dart). The store itself has just
+    // been wiped above, so leaving a stale owner behind would be a user
+    // identifier outliving its session on a shared device for nothing.
+    // Dropping it is safe by construction — a missing marker fails CLOSED in
+    // `ensureLocalStoreBelongsTo`, i.e. the next sign-in purges rather than
+    // trusts.
+    prefs.remove(kLocalStoreSubjectKey);
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when

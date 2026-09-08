@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
+import 'package:beekeepingit_client/core/sync/local_store_owner.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
 import 'package:beekeepingit_client/core/sync/sync_gate.dart';
 import 'package:fake_async/fake_async.dart';
@@ -42,6 +44,42 @@ class _FakeAuthController extends AuthController {
   @override
   Future<String?> accessToken() async => 'tok';
 }
+
+/// An [AuthController] stand-in that resolves to [session] only after the
+/// caller has had a chance to observe "not resolved yet" — the shape
+/// [storeOwnerProvider] exists to survive (`AuthController.build()` can spend
+/// seconds on an offline refresh while a local database opens in
+/// milliseconds).
+class _SlowAuthController extends AuthController {
+  _SlowAuthController(this.session);
+
+  final AuthSession? session;
+
+  @override
+  Future<AuthSession?> build() async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    return session;
+  }
+
+  @override
+  Future<String?> accessToken() async => session?.accessToken;
+}
+
+/// A syntactically valid, unsigned JWT carrying [subject] as its `sub` —
+/// enough for the unverified claim read `oidcSubject` performs.
+String _idTokenFor(String subject) {
+  String segment(String s) =>
+      base64Url.encode(utf8.encode(s)).replaceAll('=', '');
+  return '${segment('{"alg":"none"}')}.'
+      '${segment(jsonEncode({'sub': subject}))}.sig';
+}
+
+AuthSession _sessionWith(String idToken) => AuthSession(
+  accessToken: 'tok',
+  refreshToken: 'refresh',
+  idToken: idToken,
+  expiresAt: DateTime.now().add(const Duration(hours: 1)),
+);
 
 void main() {
   group(
@@ -1069,5 +1107,70 @@ void main() {
         expect(probe.checkCalls, greaterThan(0));
       },
     );
+  });
+
+  // The wiring #664/D-38 turns on: WHO the store is opened for, resolved from
+  // the app's own auth session before `powerSyncProvider` opens anything. The
+  // provider body itself cannot be awaited in a test (see
+  // `debugOpenPowerSyncDatabase`), so its one new input is pinned here.
+  group('storeOwnerProvider (#664, D-38)', () {
+    test('waits for the session to resolve rather than sampling it — a boot '
+        'that sampled would read "signed out" and defer the check for the '
+        'whole session, leaving the previous user\'s rows in place', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => _SlowAuthController(_sessionWith(_idTokenFor('sub-user-b'))),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        container.read(authControllerProvider).isLoading,
+        isTrue,
+        reason: 'sanity check: sampling right now would see no session at all',
+      );
+
+      final owner = await container.read(storeOwnerProvider.future);
+
+      expect(owner, isA<KnownOwner>());
+      expect((owner as KnownOwner).subject, 'sub-user-b');
+    });
+
+    test('a boot that resolves logged-out classifies as SignedOutOwner, which '
+        'defers rather than purging (#664 AC 2)', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(() => _SlowAuthController(null)),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(storeOwnerProvider.future),
+        isA<SignedOutOwner>(),
+      );
+    });
+
+    test('a session whose id token carries no readable subject is unproven, '
+        'and therefore purges', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => _SlowAuthController(_sessionWith('')),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(storeOwnerProvider.future),
+        isA<UnprovenOwner>(),
+        reason:
+            'the offline stale-session placeholder can carry an empty id '
+            'token, and a store we cannot attribute is not handed over',
+      );
+    });
   });
 }

@@ -1081,6 +1081,67 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-38 — On a shared device the local store is purged when the OIDC subject changes
+
+- **Decision (user, 2026-09-08):** the PWA compares the signed-in OIDC **subject** (`sub`) against
+  the one the on-device local store was opened for, and **clears the store before reopening it** when
+  they differ. This is the third purge trigger, alongside explicit logout and membership loss
+  (`D-3`'s tenancy model, `sync.md` §3.5); the gap it closes is the one neither of those covers —
+  **closing the browser without logging out**, after which the next person to sign in inherits a
+  fully populated store.
+- **Why a purge is needed at all, given the org filter.** Every client repository reads with
+  `WHERE organization_id = ? OR organization_id IS NULL`. The `IS NULL` half is deliberate — a row
+  created offline carries no `organization_id` until write-back stamps it server-side (`FR-OF-1`) —
+  and it is precisely the hole: a never-synced row matches for **any** org, so user B reads user A's
+  offline todos, journeys and activities regardless of tenancy (`FR-TEN-1`, `FR-TEN-2`,
+  `NFR-SEC-1`). Offline — the normal field case — PowerSync never reconciles buckets, so nothing
+  self-corrects.
+- **What is gained:** a different user signing in on the same device sees nothing of the previous
+  user's, synced or unsynced, and sees it from the first frame rather than after a reconcile that
+  offline never comes.
+- **What is accepted as lost:** user A's **unsynced offline work is destroyed** when user B signs in
+  on that device. This is a real cost for an offline-first field app (`FR-OF-1`), accepted on the
+  grounds that those rows were never user B's to keep and that the alternative is a tenancy leak.
+  The same discard-not-block policy as the other two purge paths applies — there is no prompt,
+  because the person who would have to answer it is not the person at the device.
+- **What is explicitly preserved:** the **same** subject reopening — a token expiry, a browser
+  restart, a background tab restored days later — does **not** purge. That is the whole reason a
+  subject comparison was chosen over an unconditional wipe at login, and it is `#664`'s second
+  acceptance criterion.
+- **Fails closed, with one deliberate exception.** A missing, empty or corrupt marker, or a
+  signed-in session whose `sub` cannot be read, all purge: keeping a store whose owner is unproven
+  is the one outcome that leaks, while purging one that was in fact ours costs at worst a re-sync of
+  data the server still holds. The exception is a boot that resolves **signed out** (an expired
+  refresh token, a first run): that defers rather than purging, because nobody is being shown
+  anything yet and purging there would destroy the returning user's own field work every time their
+  refresh token lapsed — re-introducing the very loss this decision is shaped to avoid. The next
+  open that carries a subject decides.
+- **One-time migration cost:** a device whose store predates this check has no marker, so the first
+  sign-in after the upgrade purges once. Unavoidable — an unmarked store is indistinguishable from
+  someone else's — and bounded to a single re-sync per device.
+- **Rejected: per-subject partitioning of the local database.** Strictly better on durability —
+  each user gets their own store and nothing is destroyed — but materially more work: per-subject
+  database naming, an OPFS storage budget, and a stale-subject eviction policy, none of which exist
+  today. Revisit if shared devices become a first-class case rather than an edge one.
+- **Rejected: stamping `organization_id` (and the owning subject) at write time** instead of at
+  write-back. It closes the `IS NULL` hole across **organizations**, but not between two members of
+  **one** organization on one device, so it does not literally meet `#664`'s first acceptance
+  criterion. It is also a schema/sync-shape change to every locally-created row rather than a
+  session-boundary check.
+- **Where it is enforced:** `client/lib/core/sync/local_store_owner.dart` (the decision table and
+  the `sub` read), called from `powerSyncProvider` in
+  `client/lib/core/sync/powersync_service.dart` the moment the database is opened and before any
+  repository can read from it; the marker is `bk.local_store_subject` in durable `localStorage`
+  (`client/lib/core/storage/local_prefs.dart`), dropped on logout like every other per-user key.
+  Guarded by `client/test/core/sync/local_store_owner_test.dart` and
+  `client/test/core/sync/shared_device_isolation_test.dart` (the latter with unsynced,
+  `organization_id IS NULL` rows present — the actual hole).
+- **Supersedes:** none. **Touches:** `FR-TEN-1`, `FR-TEN-2`, `FR-OF-1`, `NFR-SEC-1`, `D-3`, `D-7`
+  (the offline-login grace window this bounds on the local-data dimension), `D-10`, `#664`, `#125`
+  (the membership-loss purge this joins), `#658`.
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

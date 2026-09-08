@@ -880,6 +880,26 @@ void main() {
       },
     );
 
+    // #664/D-38: the marker naming whose OIDC subject the local store was
+    // opened for. Logout has already wiped that store, so leaving the marker
+    // behind would only keep a user identifier on a shared device — and
+    // dropping it cannot weaken the guarantee, because a missing marker makes
+    // the next sign-in purge (fail closed) rather than trust.
+    test('clears the local-store owner marker (#664)', () async {
+      final prefs = FakeLocalPrefs();
+      prefs.write(kLocalStoreSubjectKey, 'sub-prior-user');
+      final client = MockClient((req) async => _tokenResponse(req));
+      final (_, _, notifier) = await buildLoggedInContainer(
+        client: client,
+        localStore: FakeLocalStoreEngine(),
+        localPrefs: prefs,
+      );
+
+      await notifier.logout();
+
+      expect(prefs.read(kLocalStoreSubjectKey), isNull);
+    });
+
     test(
       'logging out with no session (already logged out) does not redirect',
       () async {
