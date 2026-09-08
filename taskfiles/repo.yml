@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + redirect URIs + logout invalidation + app-shell precache + service-worker routes + web image hardening + repo map"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + redirect URIs + logout invalidation + authentik branding + app-shell precache + service-worker routes + web image hardening + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -19,6 +19,7 @@ tasks:
       - task: federation-source-posture
       - task: authorization-redirect-posture
       - task: logout-invalidation-posture
+      - task: authentik-brand-posture
       - task: app-shell-precache
       - task: service-worker-routes
       - task: web-image-hardening
@@ -104,6 +105,15 @@ tasks:
       # rounds of review found it passing on blueprints that were not safe. Its
       # negative cases run with it, not on trust.
       - ./scripts/test-logout-invalidation-posture.sh
+
+  authentik-brand-posture:
+    desc: "Verify the Authentik sign-in/enrolment/end pages + confirmation email stay BeekeepingIT-branded on brand tokens (#648, FR-ONB-1, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-authentik-brand-posture.sh
+      # Same reason as the two guards above: this one is the regression control for the
+      # phishing-appearance finding on the one page where a password is typed, and every
+      # way it can silently stop holding is quiet. Its negative cases run with it.
+      - ./scripts/test-authentik-brand-posture.sh
 
   app-shell-precache:
     # The description deliberately avoids naming the build command verbatim:
