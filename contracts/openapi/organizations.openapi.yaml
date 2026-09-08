@@ -357,7 +357,8 @@ paths:
         problem never loses it: the response is `201` either way, and the returned
         `delivery_status` says whether the email actually went out. A `failed` delivery
         is retryable via `POST .../invitations/{invitationId}/resend`. Rate limited per
-        organization -- this endpoint causes mail to be sent to a caller-chosen address.
+        organization -- this endpoint causes mail to be sent to a caller-chosen address --
+        by an hourly budget shared with the resend endpoint (#854).
       tags: [Invitations]
       requestBody:
         required: true
@@ -427,9 +428,12 @@ paths:
         action, not an edit: the request has no body and nothing about the invitation
         itself changes, only `delivery_status`, `delivery_error` and `last_delivery_at`.
         Usable for an already-`sent` invitation too (the "they say it never arrived" case).
-        Rate limited per invitation by a short cooldown and by a total-attempts cap;
-        an invitation that is no longer `pending`, or that has exhausted its attempts,
-        is a `409`.
+        Rate limited per invitation by a short cooldown and by a total-attempts cap, and
+        against the organization's hourly invitation-email budget -- the same budget
+        `POST .../invitations` spends, since what is bounded is mail leaving on behalf of
+        one organization (#854). An invitation that is no longer `pending`, or that has
+        exhausted its attempts, is a `409`; the cooldown and the hourly budget are both
+        `429` with `Retry-After`.
       tags: [Invitations]
       responses:
         '200':
