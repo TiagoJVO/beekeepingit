@@ -47,6 +47,10 @@ class SyncNeedsFixScreen extends ConsumerWidget {
         leading: IconButton(
           key: const Key('needs-fix-back-button'),
           icon: const Icon(Icons.arrow_back),
+          // The a11y label the other back buttons carry and this one was
+          // missing (#639, FR-AX-1): an icon-only control needs an
+          // accessible name.
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
           onPressed: () => context.go('/account'),
         ),
         title: Text(l10n.syncNeedsFixTitle),

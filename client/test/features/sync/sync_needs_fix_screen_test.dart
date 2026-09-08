@@ -20,6 +20,52 @@ import '../../support/bottom_chrome.dart';
 /// watch/delete round-trip (a Dismiss actually removing the row live) is
 /// exercised, not just the initial render.
 void main() {
+  // #639 (FR-UX-2, FR-AX-1): this route is declared OUTSIDE the app shell, so
+  // it carries neither bottom navigation nor the desktop rail — its own app
+  // bar is the only way out. The `leading` was already here; the accessible
+  // name on it was not, so an icon-only control announced nothing to a screen
+  // reader.
+  //
+  // Unlike the organization-details and stock-declaration harnesses (plain
+  // `MaterialApp(home:)`, so they can only pin presence + a11y label),
+  // [_harness] already wires a GoRouter that declares `/account` for the "Fix"
+  // navigation — so the landing is pinned here too. The live-router sweep in
+  // test/routing/pushed_screen_exit_test.dart pins it against the REAL router;
+  // this one pins it against the stub, which is what keeps this file readable
+  // on its own.
+  group('the app bar offers a way back (#639, FR-UX-2)', () {
+    testWidgets('the app bar has a back button', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-back-button')), findsOneWidget);
+    });
+
+    testWidgets('the back button has a tooltip/semantic label', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('needs-fix-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    });
+
+    testWidgets('tapping it leaves for /account', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('needs-fix-back-button')));
+      await tester.pumpAndSettle();
+
+      // The stub `/account` route renders this text and nothing else does, so
+      // finding it means the router actually left `/sync-needs-fix`.
+      expect(find.text('account'), findsOneWidget);
+      expect(find.byKey(const Key('needs-fix-back-button')), findsNothing);
+    });
+  });
+
   testWidgets('empty state when there is nothing to fix', (tester) async {
     await tester.pumpWidget(_harness(_FakeRejectedStore([])));
     await tester.pumpAndSettle();
