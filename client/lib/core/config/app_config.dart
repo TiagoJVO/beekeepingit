@@ -52,6 +52,28 @@ abstract final class AppConfig {
     defaultValue: 'https://auth.beekeepingit.local:8443/if/user/#/settings',
   );
 
+  /// The provider's self-service **account-creation** entry point — where the
+  /// login screen's "Create account" action sends the browser (FR-ONB-1,
+  /// #647), carrying the pending authorize request in its
+  /// `kRegistrationReturnParam` return parameter so enrolment finishes back in
+  /// the app. A **config value** exactly like [oidcAccountUrl], not a derived
+  /// provider path: the flow slug is a deployment detail, so the app keeps no
+  /// provider-specific knowledge beyond the OIDC boundary
+  /// (`docs/architecture/oidc-integration.md` §7, D-7).
+  ///
+  /// Must live on the **same origin as the discovered authorize endpoint** —
+  /// the return parameter is written as an origin-relative path, which is what
+  /// makes it useless as an open-redirect vector.
+  ///
+  /// Empty disables the action: a deployment with no self-service enrolment
+  /// shows no button rather than one that dead-ends. Defaults to the local dev
+  /// deployment's enrolment flow (`auth.md` §8.11).
+  static const String oidcRegistrationUrl = String.fromEnvironment(
+    'OIDC_REGISTRATION_URL',
+    defaultValue:
+        'https://auth.beekeepingit.local:8443/if/flow/beekeepingit-enrollment/',
+  );
+
   /// PowerSync sync-stream endpoint (gateway route `/sync-stream/**` → the
   /// PowerSync service). The **trailing slash is required**: the SDK builds each
   /// request as `Uri.parse(endpoint).resolve('sync/stream')`, and RFC 3986

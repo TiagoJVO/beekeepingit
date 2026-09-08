@@ -112,10 +112,10 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT logo'**
   String get appLogoLabel;
 
-  /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
+  /// Text above the login actions. Deliberately says nothing about creating an account: since #647 the screen carries its own "Create account" action, so the instructional workaround copy that told a new user to tap "Sign in" and find the provider's "Sign up" link is gone
   ///
   /// In en, this message translates to:
-  /// **'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.'**
+  /// **'Sign in to manage your apiaries.'**
   String get loginPrompt;
 
   /// Primary login action — starts the OIDC redirect to the identity provider
@@ -129,6 +129,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue with Google'**
   String get loginWithGoogleButton;
+
+  /// The login screen's second entry point (#647, FR-ONB-1), secondary emphasis next to the primary "Sign in". Starts the same OIDC authorize request and sends the browser to the provider's self-service enrolment entry point (OIDC_REGISTRATION_URL), which returns to that pending request once the account exists
+  ///
+  /// In en, this message translates to:
+  /// **'Create account'**
+  String get loginCreateAccountButton;
 
   /// Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping "Sign in" again retries
   ///

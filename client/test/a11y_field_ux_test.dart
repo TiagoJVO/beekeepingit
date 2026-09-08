@@ -139,6 +139,19 @@ void main() {
       expectMinTapTarget(tester, find.byKey(const Key('login-google-button')));
     });
 
+    // #647 (D-18): the create-account entry point is a second, distinct
+    // action — secondary emphasis, but the same 56px gloves-friendly target
+    // as the two sign-in actions, never a small text link.
+    testWidgets('login screen create-account action', (tester) async {
+      await tester.pumpWidget(_withMaterial(const LoginScreen()));
+      await tester.pumpAndSettle();
+
+      expectMinTapTarget(
+        tester,
+        find.byKey(const Key('login-create-account-button')),
+      );
+    });
+
     testWidgets('apiaries list view-toggle segments', (tester) async {
       final router = GoRouter(
         initialLocation: '/apiaries',
@@ -289,6 +302,18 @@ void main() {
         await tester.pumpAndSettle();
 
         expectHasSemanticsLabel(tester, const Key('login-google-button'));
+      });
+
+      testWidgets('create-account button announces its action (#647)', (
+        tester,
+      ) async {
+        await tester.pumpWidget(_withMaterial(const LoginScreen()));
+        await tester.pumpAndSettle();
+
+        expectHasSemanticsLabel(
+          tester,
+          const Key('login-create-account-button'),
+        );
       });
 
       testWidgets('apiaries view toggle segments announce list/map', (

@@ -22,6 +22,22 @@ const kIdpHintParam = 'beekeepingit_idp';
 /// login screen never spells the slug inline.
 const kIdpHintGoogle = 'google';
 
+/// Parameter carrying the pending authorize request on the provider's
+/// account-creation entry point (#647, FR-ONB-1), so enrolment finishes back
+/// in the app instead of dead-ending on the provider's own user page. Part of
+/// the frozen client contract — docs/architecture/oidc-integration.md §7. See
+/// [AuthController.register].
+const kRegistrationReturnParam = 'next';
+
+/// The provider's self-service **account-creation** entry point (#647) —
+/// [AppConfig.oidcRegistrationUrl], read through a provider so tests (and a
+/// future runtime-configured deployment) can substitute it. Empty means this
+/// deployment has no self-service enrolment, and the login screen then offers
+/// no "Create account" action rather than one that dead-ends.
+final registrationUrlProvider = Provider<String>(
+  (ref) => AppConfig.oidcRegistrationUrl,
+);
+
 const _kVerifier = 'bk.pkce_verifier';
 const _kState = 'bk.oauth_state';
 const _kRefresh = 'bk.refresh_token';
@@ -298,7 +314,34 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// exchange in [_exchangeCallback] — is identical either way, which is why a
   /// federated sign-in yields exactly the same token shape from our own issuer
   /// (D-7; docs/architecture/auth.md §8.13).
-  Future<void> login({String? idpHint}) async {
+  Future<void> login({String? idpHint}) =>
+      _startAuthorize(forRegistration: false, idpHint: idpHint);
+
+  /// Starts **account creation** (#647, FR-ONB-1, FR-UX-1) — the login
+  /// screen's second, distinct entry point, replacing the instructional copy
+  /// that used to tell a new user to press "Sign in" and then hunt for the
+  /// provider's small "Sign up." link.
+  ///
+  /// This is **not** a second, weaker request builder: it runs the very same
+  /// [_startAuthorize] as "Sign in" — same discovery, same PKCE verifier and
+  /// `state` persistence, same scopes, same `redirect_uri`, same
+  /// [_exchangeCallback] on the way back — and only wraps the resulting
+  /// authorize request in the provider's account-creation entry point
+  /// ([registrationUrlProvider]), which carries it in
+  /// [kRegistrationReturnParam] and hands the browser back to it once the
+  /// account exists (the `?next` chain auth.md §8.11/§8.13 already proves
+  /// end-to-end; the app now puts the user on it directly).
+  ///
+  /// No [kIdpHintParam] — creating a local account is not a federated
+  /// sign-in.
+  Future<void> register() => _startAuthorize(forRegistration: true);
+
+  /// The ONE authorize-request builder both entry points share — so "Create
+  /// account" can never drift into a weaker request than "Sign in".
+  Future<void> _startAuthorize({
+    required bool forRegistration,
+    String? idpHint,
+  }) async {
     // Reset any previous failure at the start of every attempt — tapping
     // "Sign in" again is the retry affordance.
     ref.read(loginErrorProvider.notifier).state = null;
@@ -331,20 +374,114 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 
       platform.writeSession(_kVerifier, verifier);
       platform.writeSession(_kState, flow.state);
-      platform.assignLocation(flow.authenticationUri.toString());
+      platform.assignLocation(
+        forRegistration
+            ? _registrationEntryPointFor(flow.authenticationUri)
+            : flow.authenticationUri.toString(),
+      );
     } on Exception catch (e, st) {
       // Most commonly OIDC discovery failing while offline (tapping "Sign
       // in" with no signal) — surface it through state so LoginScreen can
       // show an error/retry affordance instead of this throwing into an
       // unhandled zone error with no user feedback.
       developer.log(
-        'login() failed (network/discovery failure while offline?)',
+        '${forRegistration ? 'register' : 'login'}() failed '
+        '(network/discovery failure while offline?)',
         name: 'auth',
         error: e,
         stackTrace: st,
       );
       ref.read(loginErrorProvider.notifier).state = e;
     }
+  }
+
+  /// Whether [uri] is the shape `Uri.origin` can answer for — an absolute
+  /// http(s) URL with a real host. `.origin` throws a [StateError] on anything
+  /// else, and [StateError] is an [Error]: a bug signal, never a value to
+  /// catch. Callers test first.
+  static bool _isAbsoluteHttpUri(Uri uri) =>
+      (uri.isScheme('https') || uri.isScheme('http')) && uri.host.isNotEmpty;
+
+  /// Wraps [authorize] — the standard authorize request — in the provider's
+  /// account-creation entry point (#647).
+  ///
+  /// The return parameter is written as a **same-origin reference**
+  /// (`/path?query`) — the form the provider's own executor stores (auth.md
+  /// §8.13: `next=<the authorize path, relative>`), and the reason it is not
+  /// an open-redirect vector. Nothing user-supplied reaches it either: both
+  /// inputs are the discovered authorize endpoint and a compile-time config
+  /// value.
+  ///
+  /// **Every branch below falls back to the plain authorize request** rather
+  /// than emitting a wrapper it cannot vouch for. That fall-back is not a
+  /// failure state: it is the pre-#647 route, and the provider's own login
+  /// page still carries its "Sign up" link (auth.md §8.11). A weaker route to
+  /// the same place beats a dead end, and sign-in is unaffected either way.
+  /// The three branches:
+  ///
+  /// 1. **No entry point configured** — this deployment has no self-service
+  ///    enrolment. (The login screen already hides the action, so this is
+  ///    belt-and-braces.)
+  /// 2. **An entry point that is not an absolute http(s) URL on the issuer's
+  ///    own origin.** Checked here rather than asserted in a comment: a
+  ///    reference resolved against a different origin names a path that origin
+  ///    does not serve, so a misconfigured deployment would strand the user
+  ///    exactly where #647 set out to stop stranding them.
+  ///    `task repo:deploy-urls` pins the two hosts together for the released
+  ///    environments; this covers every other build. Shape-testing both URIs
+  ///    before reading `.origin` is deliberate — it throws a [StateError] on
+  ///    anything else, and an `Error` is not something the caller's
+  ///    `on Exception` would turn into the offline retry affordance.
+  /// 3. **An authorize path beginning `//`.** Then the reference is
+  ///    *protocol-relative*, not same-origin, and does resolve to another
+  ///    host — the one case where "relative" would not mean what the rest of
+  ///    this doc says. It takes a malformed `authorization_endpoint` in the
+  ///    trusted discovery document to reach, so this is defence in depth, not
+  ///    a live hole; it is cheap, and it keeps the sentence above true.
+  String _registrationEntryPointFor(Uri authorize) {
+    final entryPoint = ref.read(registrationUrlProvider);
+    if (entryPoint.isEmpty) return authorize.toString();
+
+    void fallBackReason(String why) => developer.log(
+      '"Create account" falls back to the plain authorize request: $why',
+      name: 'auth',
+    );
+
+    final target = Uri.parse(entryPoint);
+    if (!_isAbsoluteHttpUri(target) || !_isAbsoluteHttpUri(authorize)) {
+      fallBackReason(
+        'OIDC_REGISTRATION_URL ("$entryPoint") and the discovered authorize '
+        'endpoint must both be absolute http(s) URLs',
+      );
+      return authorize.toString();
+    }
+    if (target.origin != authorize.origin) {
+      fallBackReason(
+        'OIDC_REGISTRATION_URL origin (${target.origin}) is not the issuer '
+        'origin (${authorize.origin}), so the return reference would not '
+        'resolve there',
+      );
+      return authorize.toString();
+    }
+    if (authorize.path.startsWith('//')) {
+      fallBackReason(
+        'the discovered authorize path ("${authorize.path}") would make the '
+        'return reference protocol-relative, i.e. point at another host',
+      );
+      return authorize.toString();
+    }
+
+    final next = authorize.hasQuery
+        ? '${authorize.path}?${authorize.query}'
+        : authorize.path;
+    return target
+        .replace(
+          queryParameters: {
+            ...target.queryParameters,
+            kRegistrationReturnParam: next,
+          },
+        )
+        .toString();
   }
 
   /// Logs out via **RP-initiated (front-channel) logout**: clears all local

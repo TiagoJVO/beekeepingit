@@ -210,11 +210,17 @@ ProviderContainer _container(
   LocalStoreEngine? localStore,
   LocalPrefs? localPrefs,
   Duration? authNetworkTimeout,
+  String? registrationUrl,
 }) {
   final container = ProviderContainer(
     overrides: [
       // Fake discovery — no `.well-known` network call.
       oidcIssuerProvider.overrideWith((ref) async => fakeIssuer()),
+      // The provider's account-creation entry point (#647) is deployment
+      // config, so tests pin it explicitly instead of inheriting the
+      // local-dev AppConfig default.
+      if (registrationUrl != null)
+        registrationUrlProvider.overrideWithValue(registrationUrl),
       authControllerProvider.overrideWith(
         () => AuthController(
           platform: platform,
@@ -386,6 +392,205 @@ void main() {
       // degrading it to a plain login with no failure anywhere.
       expect(kIdpHintParam, 'beekeepingit_idp');
       expect(kIdpHintGoogle, 'google');
+    });
+  });
+
+  // #647 (FR-ONB-1, FR-UX-1, D-7). "Create account" is a DISTINCT entry point
+  // on the login screen, but not a second, weaker request builder: it starts
+  // the very same Authorization Code + PKCE authorize request as "Sign in"
+  // and only wraps it in the provider's account-creation entry point, which
+  // carries the pending authorize request in its return parameter and hands
+  // the browser back to it once the account exists (auth.md 8.11's e2e-proven
+  // `?next` chain — the app now puts the user on that chain directly instead
+  // of telling them to hunt for the IdP's "Sign up." link).
+  group('register() (#647)', () {
+    const registrationUrl =
+        'https://idp.example/if/flow/beekeepingit-enrollment/';
+
+    test('sends the browser to the configured account-creation entry point '
+        'carrying the SAME authorize request as login()', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = _container(
+        platform,
+        client,
+        registrationUrl: registrationUrl,
+      );
+      await container.read(authControllerProvider.future);
+
+      await container.read(authControllerProvider.notifier).register();
+
+      expect(platform.assignedLocation, isNotNull);
+      final entry = Uri.parse(platform.assignedLocation!);
+      expect('${entry.scheme}://${entry.host}${entry.path}', registrationUrl);
+
+      // The pending authorize request rides in the return parameter, and it is
+      // RELATIVE — the provider's own executor stores `next` that way
+      // (auth.md 8.13: `next=<the authorize path, relative>`), and a relative
+      // target cannot be re-pointed at another origin.
+      final next = entry.queryParameters[kRegistrationReturnParam];
+      expect(next, isNotNull);
+      expect(next, startsWith('/'));
+
+      final authorize = Uri.parse('https://idp.example/').resolve(next!);
+      expect(
+        '${authorize.scheme}://${authorize.host}${authorize.path}',
+        _authorizeUrl,
+      );
+      expect(authorize.queryParameters['response_type'], 'code');
+      expect(authorize.queryParameters['client_id'], 'beekeepingit-pwa');
+      expect(authorize.queryParameters['redirect_uri'], platform.redirectUri);
+      expect(authorize.queryParameters['code_challenge_method'], 'S256');
+      expect(authorize.queryParameters['code_challenge'], isNotEmpty);
+      expect(authorize.queryParameters['state'], isNotEmpty);
+      final requestedScopes = (authorize.queryParameters['scope'] ?? '').split(
+        ' ',
+      );
+      expect(requestedScopes, contains('openid'));
+      expect(requestedScopes, contains('offline_access'));
+      // Creating an account is not a federated sign-in: no upstream hint.
+      expect(authorize.queryParameters.containsKey(kIdpHintParam), isFalse);
+
+      // PKCE/CSRF state is persisted exactly as on the sign-in path, so the
+      // callback completes through the same _exchangeCallback code.
+      expect(platform.readSession('bk.pkce_verifier'), isNotEmpty);
+      expect(
+        platform.readSession('bk.oauth_state'),
+        authorize.queryParameters['state'],
+      );
+    });
+
+    test('a discovery failure surfaces through loginErrorProvider instead of '
+        'throwing (same offline affordance as login())', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = ProviderContainer(
+        overrides: [
+          oidcIssuerProvider.overrideWith(
+            (ref) => Future<Issuer>.error(Exception('offline')),
+          ),
+          registrationUrlProvider.overrideWithValue(registrationUrl),
+          authControllerProvider.overrideWith(
+            () => AuthController(platform: platform, httpClient: client),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authControllerProvider.future);
+
+      await container.read(authControllerProvider.notifier).register();
+
+      expect(container.read(loginErrorProvider), isNotNull);
+      expect(platform.assignedLocation, isNull);
+    });
+
+    test('an entry point on a FOREIGN origin falls back to the plain authorize '
+        'request instead of stranding the user on a path that origin does not '
+        'serve', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = _container(
+        platform,
+        client,
+        // Same shape, wrong host: the return parameter is written
+        // origin-relative, so it only resolves on the issuer's own origin.
+        registrationUrl:
+            'https://elsewhere.example/if/flow/beekeepingit-enrollment/',
+      );
+      await container.read(authControllerProvider.future);
+
+      await container.read(authControllerProvider.notifier).register();
+
+      final target = Uri.parse(platform.assignedLocation!);
+      expect(
+        '${target.scheme}://${target.host}${target.path}',
+        _authorizeUrl,
+        reason:
+            'a misconfigured origin must degrade to the provider login page '
+            '(which carries its own Sign up link), never to a dead end',
+      );
+      expect(
+        target.queryParameters.containsKey(kRegistrationReturnParam),
+        isFalse,
+      );
+      // The sign-in half of the request is untouched by the fall-back.
+      expect(target.queryParameters['code_challenge_method'], 'S256');
+      expect(
+        platform.readSession('bk.oauth_state'),
+        target.queryParameters['state'],
+      );
+    });
+
+    test('a non-absolute entry point degrades the same way rather than '
+        'throwing', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = _container(
+        platform,
+        client,
+        registrationUrl: '/if/flow/beekeepingit-enrollment/',
+      );
+      await container.read(authControllerProvider.future);
+
+      await container.read(authControllerProvider.notifier).register();
+
+      final target = Uri.parse(platform.assignedLocation!);
+      expect('${target.scheme}://${target.host}${target.path}', _authorizeUrl);
+      expect(container.read(loginErrorProvider), isNull);
+    });
+
+    test('a `//`-prefixed authorize path falls back rather than emitting a '
+        'PROTOCOL-relative return reference', () async {
+      // The only shape in which "relative" would not mean "same origin":
+      // `//evil.example/authorize` resolves to another HOST, not to a path
+      // on the provider. It takes a malformed `authorization_endpoint` in
+      // the discovery document to reach, so this is defence in depth — but
+      // it is the one case that would falsify the open-redirect argument.
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = ProviderContainer(
+        overrides: [
+          oidcIssuerProvider.overrideWith(
+            (ref) async => Issuer(
+              OpenIdProviderMetadata.fromJson(const {
+                'issuer': 'https://idp.example/',
+                'authorization_endpoint':
+                    'https://idp.example//evil.example/authorize',
+                'token_endpoint': _tokenUrl,
+                'end_session_endpoint': _endSessionUrl,
+                'scopes_supported': ['openid', 'offline_access'],
+                'response_types_supported': ['code'],
+                'subject_types_supported': ['public'],
+                'id_token_signing_alg_values_supported': ['RS256'],
+              }),
+            ),
+          ),
+          registrationUrlProvider.overrideWithValue(registrationUrl),
+          authControllerProvider.overrideWith(
+            () => AuthController(platform: platform, httpClient: client),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authControllerProvider.future);
+
+      await container.read(authControllerProvider.notifier).register();
+
+      final target = Uri.parse(platform.assignedLocation!);
+      expect(target.host, 'idp.example');
+      expect(
+        target.queryParameters.containsKey(kRegistrationReturnParam),
+        isFalse,
+      );
+    });
+
+    test('the return parameter name is the frozen config contract value', () {
+      // Pinned deliberately: the provider-side entry point this parameter is
+      // sent to is deployment config (`OIDC_REGISTRATION_URL`), and the
+      // parameter name is the other half of that contract — published in
+      // oidc-integration.md 7. Renaming it on one side only would drop the
+      // user at the IdP with no way back into the app.
+      expect(kRegistrationReturnParam, 'next');
     });
   });
 

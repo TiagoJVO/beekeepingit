@@ -116,6 +116,35 @@ class LoginScreen extends ConsumerWidget {
                           .login(idpHint: kIdpHintGoogle);
                     },
                   ),
+                  // The second entry point the prototype specifies ("Criar
+                  // conta") — #647, FR-ONB-1/FR-UX-1. It replaces the copy
+                  // that told a new user to press "Sign in", the button
+                  // labelled the opposite of what they want, and then hunt
+                  // for a small "Sign up." link on the provider's page.
+                  //
+                  // Hierarchy: "Sign in" keeps the screen's ONE honey primary
+                  // action; creating an account is the rarer, one-time
+                  // intent, so it is secondary — same 56px gloves-friendly
+                  // target and semantics wrapper as every other action here
+                  // (D-18, WCAG 2.2 AA), never a small text link. It sits
+                  // after both sign-in actions so the reading (and focus)
+                  // order is "sign in, two ways — or make an account".
+                  //
+                  // Hidden when the deployment configures no account-creation
+                  // entry point: no action beats one that dead-ends.
+                  if (ref.watch(registrationUrlProvider).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SecondaryActionButton(
+                      key: const Key('login-create-account-button'),
+                      label: l10n.loginCreateAccountButton,
+                      icon: Icons.person_add_alt,
+                      onPressed: () async {
+                        await ref
+                            .read(authControllerProvider.notifier)
+                            .register();
+                      },
+                    ),
+                  ],
                   if (loginError != null) ...[
                     const SizedBox(height: 16),
                     Text(
