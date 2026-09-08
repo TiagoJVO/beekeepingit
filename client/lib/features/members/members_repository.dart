@@ -51,6 +51,9 @@ class Invitation {
     required this.role,
     required this.status,
     required this.createdAt,
+    this.deliveryStatus = 'pending',
+    this.deliveryError = '',
+    this.lastDeliveryAt,
   });
 
   factory Invitation.fromJson(Map<String, dynamic> json) => Invitation(
@@ -58,13 +61,37 @@ class Invitation {
     email: json['email'] as String? ?? '',
     role: json['role'] as String? ?? 'user',
     status: json['status'] as String? ?? 'pending',
+    deliveryStatus: json['delivery_status'] as String? ?? 'pending',
+    deliveryError: json['delivery_error'] as String? ?? '',
+    lastDeliveryAt: switch (json['last_delivery_at']) {
+      final String at => DateTime.tryParse(at),
+      _ => null,
+    },
     createdAt: DateTime.parse(json['created_at'] as String),
   );
 
   final String id;
   final String email;
   final String role;
+
+  /// The invitation's LIFECYCLE — what the invitee did with it
+  /// (`pending`/`accepted`/`expired`/`revoked`).
   final String status;
+
+  /// What the invitation EMAIL did (#641): `pending`, `sent` or `failed`.
+  /// Independent of [status] — an invitation can be accepted whether or not
+  /// its email ever arrived, and (before #641) `status` alone said `pending`
+  /// forever for a message that was never sent at all.
+  final String deliveryStatus;
+
+  /// Short, stable failure code for a `failed` delivery (`not_configured`,
+  /// `rejected`, `relay_unavailable`, `render_failed`, `never_sent`) — the
+  /// server never sends a message here, the client localizes the code.
+  final String deliveryError;
+
+  /// When the last send attempt finished, or null if none ever has.
+  final DateTime? lastDeliveryAt;
+
   final DateTime createdAt;
 }
 
@@ -173,6 +200,18 @@ class MembersRepository {
 
   Future<void> revokeInvitation(String orgId, String invitationId) async {
     await _api.deleteJson('/organizations/$orgId/invitations/$invitationId');
+  }
+
+  /// Asks the server to attempt the invitation email again (#641,
+  /// `POST .../invitations/{id}/resend`) and returns the invitation with the
+  /// outcome of that attempt. The request has no body: this is an action, not
+  /// an edit — nothing about the invitation itself changes.
+  Future<Invitation> resendInvitation(String orgId, String invitationId) async {
+    final json = await _api.postJson(
+      '/organizations/$orgId/invitations/$invitationId/resend',
+      const <String, dynamic>{},
+    );
+    return Invitation.fromJson(json);
   }
 
   static MembersPage<T> _page<T>(
@@ -289,12 +328,22 @@ class MembersController extends AsyncNotifier<MembersState> {
   /// Invites [email] and refreshes both lists (first page) with the
   /// server's state. Rethrows on failure (e.g. [ApiException] for a
   /// 422/409) so the screen can surface the error.
-  Future<void> invite({required String email, String role = 'user'}) async {
+  ///
+  /// Returns the created invitation so the screen can report what actually
+  /// happened (#641): the server commits the invitation and then attempts its
+  /// email, so a `201` can still carry `delivery_status: failed`. Announcing
+  /// "Invitation sent." unconditionally would be the same lie this issue is
+  /// about, one screen further along.
+  Future<Invitation> invite({
+    required String email,
+    String role = 'user',
+  }) async {
     final orgId = _requireOrgId();
     final repo = ref.read(membersRepositoryProvider);
-    await repo.invite(orgId, email: email, role: role);
+    final created = await repo.invite(orgId, email: email, role: role);
     ref.invalidateSelf();
     await future;
+    return created;
   }
 
   /// Revokes a pending invitation and refreshes (first page).
@@ -304,6 +353,21 @@ class MembersController extends AsyncNotifier<MembersState> {
     await repo.revokeInvitation(orgId, invitationId);
     ref.invalidateSelf();
     await future;
+  }
+
+  /// Retries the invitation email and refreshes both lists so the row shows
+  /// the new delivery state (#641 AC: a failed send is retryable). Returns the
+  /// attempt's outcome so the screen can tell the admin whether THIS try
+  /// worked, rather than only silently redrawing the list. Rethrows on
+  /// failure (e.g. an [ApiException] for the 429 cooldown) so the screen can
+  /// surface it.
+  Future<Invitation> resendInvitation(String invitationId) async {
+    final orgId = _requireOrgId();
+    final repo = ref.read(membersRepositoryProvider);
+    final updated = await repo.resendInvitation(orgId, invitationId);
+    ref.invalidateSelf();
+    await future;
+    return updated;
   }
 
   /// Fetches the next page of members and appends it to the current list —

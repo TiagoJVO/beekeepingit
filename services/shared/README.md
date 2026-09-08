@@ -16,13 +16,22 @@ not a deployable service — it's a library other `services/*` modules import.
   `dbaccess/tenancy.go`'s `UnscopedTables` is the automated tenancy check (FR-TEN-2, #30): a
   service's own test suite calls it against its migrated schema to assert every owned table
   carries `organization_id`, so a future migration can't silently drop it.
+- **[`mail`](mail/)** — a standard-library-only SMTP sender (`FR-ONB-3`) behind a `Config`.
+  Dev/CI/staging point it at the in-cluster Mailpit sink (no real inbox ever reachable,
+  [ADR-0019](../../docs/adr/0019-outbound-email-and-real-email-verified.md)); a real
+  staging/prod relay is `#417`'s deploy-time job. Every header-bound value (recipient,
+  display names, subject) is validated against header injection and rejected outright, never
+  sanitized — the first caller is the organizations service's invitation email.
 
-Both packages take an explicit `Config` struct (dependency injection) rather than loading
-their own environment/config — that's [`services/servicetemplate`](../servicetemplate/README.md)'s
-job, the shared **Go service template**
-([#20](https://github.com/TiagoJVO/beekeepingit/issues/20),
+`objectstore` and `dbaccess` take an explicit `Config` struct (dependency injection) rather
+than loading their own environment/config — that's
+[`services/servicetemplate`](../servicetemplate/README.md)'s job, the shared **Go service
+template** ([#20](https://github.com/TiagoJVO/beekeepingit/issues/20),
 [ADR-0015](../../docs/adr/0015-shared-go-service-template.md)), which imports `dbaccess` for its
-own data-access AC via the repo-root [`go.work`](../../go.work).
+own data-access AC via the repo-root [`go.work`](../../go.work). `mail` also takes an explicit
+`Config`, but additionally ships its own `LoadConfig()`: unlike a required DB connection, "no
+relay provisioned yet" is a normal state a service must run under (`Unconfigured()`), not a
+startup failure, so `mail` owns that distinction rather than pushing it onto every caller.
 
 ## The seam: switching endpoints is a config change, not a code change
 

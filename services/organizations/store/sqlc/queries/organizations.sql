@@ -2,9 +2,16 @@
 -- Creates the org (FR-ONB-2). Paired with CreateMembership in the same DB
 -- transaction (api/organizations.go) so the creator's admin membership is
 -- never observable without its org, or vice versa (D-3).
-INSERT INTO organizations.organizations (id, name, address, created_by)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, registration_number, created_by, created_at, updated_at;
+-- locale (#641, migration 00008) is seeded from the CREATING admin's own
+-- profile locale, not defaulted: the creator is the organization's first admin
+-- (D-3), so their language is the only signal the system has about the
+-- organization's working language at the moment it comes into existence. It is
+-- the fallback the invitation email uses for an invitee with no known profile
+-- (FR-ONB-3 AC 3, NFR-I18N-1). An unknown/unsupported value is normalized to
+-- the column default in Go before it reaches here (api/organizations.go).
+INSERT INTO organizations.organizations (id, name, address, locale, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, address, registration_number, locale, created_by, created_at, updated_at;
 
 -- name: GetOrganizationForUpdate :one
 -- Row-locking read for the PATCH path (#289): SELECT ... FOR UPDATE so the
@@ -13,7 +20,7 @@ RETURNING id, name, address, registration_number, created_by, created_at, update
 -- commits, then observes the bumped updated_at, so its stale If-Match is
 -- rejected with 409 rather than silently clobbering (optimistic concurrency,
 -- FR-TEN-2). Mirrors apiaries' GetApiaryForUpdate.
-SELECT id, name, address, registration_number, created_by, created_at, updated_at
+SELECT id, name, address, registration_number, locale, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 FOR UPDATE;
@@ -29,7 +36,7 @@ SET name = $2,
     registration_number = $4,
     updated_at = $5
 WHERE id = $1
-RETURNING id, name, address, registration_number, created_by, created_at, updated_at;
+RETURNING id, name, address, registration_number, locale, created_by, created_at, updated_at;
 
 -- name: ListOrganizations :many
 -- Platform-operator-only cross-org list (#467, D-32, FR-TEN-2, NFR-ROL-1):

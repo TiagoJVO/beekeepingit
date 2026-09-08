@@ -39,6 +39,7 @@ GET    /v1/organizations/{orgId}/members          → listMembers         api/in
 GET    /v1/organizations/{orgId}/members/names    → listMemberNames     api/invitations.go (any member, #44)
 GET    /v1/organizations/{orgId}/invitations      → listInvitations     api/invitations.go
 POST   /v1/organizations/{orgId}/invitations      → createInvitation    api/invitations.go (admin)
+POST   /v1/organizations/{orgId}/invitations/{id}/resend → resendInvitation api/invitations.go (admin, #641)
 DELETE /v1/organizations/{orgId}/invitations/{id} → revokeInvitation    api/invitations.go (admin)
 GET    /internal/memberships/active               → getActiveMembership api/memberships.go
 ```
@@ -180,7 +181,7 @@ schema.sql = sqlc's virtual (codegen-only) schema; mirrors cumulative migrations
 ## Shared building blocks
 
 - `servicetemplate/`: `authn` (JWT/authz/resolver), `config`, `health`, `logging`, `otelboot` (OTel), `problem` (RFC 9457), `contracttest`.
-- `shared/`: `dbaccess` (pool, migrate, tenancy), `objectstore` (MinIO), `history` (audit delta), `devseed`.
+- `shared/`: `dbaccess` (pool, migrate, tenancy), `objectstore` (MinIO), `history` (audit delta), `devseed`, `mail` (SMTP sender, header-injection safe, #641).
 
 ## Contracts
 

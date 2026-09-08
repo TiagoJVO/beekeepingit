@@ -361,6 +361,51 @@ class AppLocalizationsEn extends AppLocalizations {
   String get invitationStatusRevoked => 'Revoked';
 
   @override
+  String get invitationDeliverySending => 'Sending';
+
+  @override
+  String get invitationDeliveryFailed => 'Not sent';
+
+  @override
+  String get invitationDeliveryErrorNotConfigured =>
+      'Sending email is not set up in this environment yet.';
+
+  @override
+  String get invitationDeliveryErrorRejected =>
+      'The mail server rejected this address.';
+
+  @override
+  String get invitationDeliveryErrorRelayUnavailable =>
+      'The mail server could not be reached.';
+
+  @override
+  String get invitationDeliveryErrorRenderFailed =>
+      'The invitation email could not be prepared.';
+
+  @override
+  String get invitationDeliveryErrorNeverSent =>
+      'This invitation was created before invitations were emailed. Send it now.';
+
+  @override
+  String get invitationDeliveryErrorUnknown => 'The email could not be sent.';
+
+  @override
+  String get membersResendButton => 'Send the invitation again';
+
+  @override
+  String get membersResendSuccess => 'Invitation email sent.';
+
+  @override
+  String membersResendStillFailing(String reason) {
+    return 'Still could not send it: $reason';
+  }
+
+  @override
+  String membersInviteCreatedNotSent(String reason) {
+    return 'Invitation created, but the email could not be sent: $reason';
+  }
+
+  @override
   String get membersLoadMoreButton => 'Load more';
 
   @override

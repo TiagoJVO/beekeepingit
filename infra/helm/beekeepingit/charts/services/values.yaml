@@ -75,6 +75,11 @@ services:
         schema: organizations,
       }
     seedDevData: true
+    # #641: organizations is the one service that sends email today — the
+    # organization invitation, the moment an admin creates it. The `smtp:` block
+    # below plus global.appOrigin are rendered into its Deployment only because
+    # of this flag.
+    mail: true
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
   apiaries:
@@ -158,12 +163,45 @@ services:
       SYNC_TOKEN_ISSUER: http://sync:8080
       SYNC_TOKEN_AUDIENCE: powersync
 
+# Outbound email for the services that send it (#641, FR-ONB-3 — today only
+# `organizations`, which mails an organization invitation the moment it is
+# created). Rendered into a service's Deployment only when that service's entry
+# above declares `mail: true`.
+#
+# The defaults point at the in-cluster Mailpit sink (charts/mailpit, ADR-0019
+# §4), which is what dev, CI and staging use: the whole send path is exercisable
+# end to end and no dev/CI mail can ever reach a real inbox. Production needs a
+# real relay and a sending domain — that is issue #417, and it is deploy-time
+# configuration, not a code change: until it lands, an environment pointed at a
+# sink that is not there records an honest per-invitation
+# `delivery_status: failed / not_configured` that the admin can see and retry.
+#
+# `existingSecret` (optional) is the ONLY way credentials are supplied: create
+# the Secret out of band with `username`/`password` keys, exactly like
+# charts/authentik's own relay credentials (NFR-SEC-1 — no secrets in git). The
+# Mailpit sink needs no auth, so it is empty here.
+smtp:
+  host: mailpit
+  port: 1025
+  # Envelope + header From. Must be an address the relay is allowed to send as
+  # once a real domain exists (#417); the sink accepts anything.
+  from: no-reply@beekeepingit.local
+  fromName: BeekeepingIT
+  # none | starttls | tls — `none` matches the plaintext in-cluster sink.
+  tls: none
+  existingSecret: ""
+
 # Placeholder for standalone rendering only — the umbrella injects real global.*.
 global:
   namespace: beekeepingit
   # Admin app origin the CORS fallback uses (#449). Empty in standalone rendering
   # so no CORS_ALLOWED_ORIGINS is emitted unless the umbrella provides it.
   adminOrigin: ""
+  # Browser-facing app origin (#641): the base the invitation email's sign-up
+  # link is built from, injected as APP_BASE_URL into mail-enabled services.
+  # Empty in standalone rendering, so no link configuration is emitted and the
+  # service keeps mail disabled rather than emitting a broken link.
+  appOrigin: ""
   resources:
     small:
       requests: { cpu: 25m, memory: 32Mi }

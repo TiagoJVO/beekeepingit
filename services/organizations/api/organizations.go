@@ -79,6 +79,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 	"github.com/TiagoJVO/beekeepingit/services/shared/history"
+	"github.com/TiagoJVO/beekeepingit/services/shared/mail"
 )
 
 const (
@@ -154,6 +155,14 @@ type organizationCreateRequest struct {
 type ResolvedUser struct {
 	UserID string
 	Email  string
+	// Locale is identity.users.locale -- 'en-GB' or 'pt-PT' (identity's own
+	// CHECK constraint), the language the person chose for the app. Purely a
+	// PRESENTATION signal, and used for exactly one thing (#641): picking the
+	// language of the organization-invitation email (FR-ONB-3 AC 3,
+	// NFR-I18N-1). It carries the same "not authoritative" caveat as Email
+	// above and must never gate anything -- an unknown or unexpected value
+	// simply falls back to en-GB rather than failing a send.
+	Locale string
 }
 
 // UserResolver maps a verified OIDC subject to its identity.users row -- the
@@ -240,11 +249,12 @@ func (h *HTTPUserResolver) Resolve(ctx context.Context, bearer, sub string) (Res
 	var out struct {
 		UserID string `json:"user_id"`
 		Email  string `json:"email"`
+		Locale string `json:"locale"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return ResolvedUser{}, fmt.Errorf("resolve user by sub: decode identity response: %w", err)
 	}
-	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
+	return ResolvedUser{UserID: out.UserID, Email: out.Email, Locale: out.Locale}, nil
 }
 
 // ResolveByEmail maps an email address to its identity.users row via
@@ -266,11 +276,12 @@ func (h *HTTPUserResolver) ResolveByEmail(ctx context.Context, bearer, email str
 	var out struct {
 		UserID string `json:"user_id"`
 		Email  string `json:"email"`
+		Locale string `json:"locale"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return ResolvedUser{}, fmt.Errorf("resolve user by email: decode identity response: %w", err)
 	}
-	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
+	return ResolvedUser{UserID: out.UserID, Email: out.Email, Locale: out.Locale}, nil
 }
 
 // ResolveNames maps a batch of app user_ids to display names via identity's
@@ -368,17 +379,50 @@ func identityUnavailable(detail string) problem.Problem {
 // this same "/organizations"-prefixed router so the gateway's existing
 // /v1/organizations path-prefix route (infra/helm/beekeepingit/charts/gateway
 // /values.yaml) reaches them with no infra change.
-func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
+func PublicRouter(pool *pgxpool.Pool, resolver UserResolver, opts ...RouterOption) http.Handler {
 	q := sqlcgen.New(pool)
+	sender := invitationSender{mailer: mail.Unconfigured(), resolver: resolver, q: q}
+	for _, opt := range opts {
+		opt(&sender)
+	}
 	r := chi.NewRouter()
 	r.Get("/organizations", listOrganizations(q))
 	r.Post("/organizations", createOrganization(pool, q, resolver))
 	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
 	r.Patch("/organizations/{orgId}", updateOrganization(pool, q, resolver))
-	registerMemberAndInvitationRoutes(r, pool, q, resolver)
+	registerMemberAndInvitationRoutes(r, pool, q, resolver, sender)
 	registerPlatformRoutes(r, q, resolver)
 	return r
+}
+
+// RouterOption configures the optional, environment-provided collaborators
+// PublicRouter needs but that most of this service does not (#641: outbound
+// email). Variadic and defaulted rather than added to PublicRouter's signature
+// so the wiring stays readable and every existing caller -- including the
+// service's own test fixtures -- keeps compiling and keeps the safe default:
+// mail.Unconfigured(), which records an honest per-invitation "not_configured"
+// failure instead of pretending mail was sent.
+type RouterOption func(*invitationSender)
+
+// WithMailer wires the outbound-email path (#641, FR-ONB-3): the SMTP sender
+// and the browser-facing base URL the invitation's sign-up link is built from.
+// Both are required together -- a mailer with no base URL could only send a
+// message whose one call to action is missing -- so an empty appBaseURL leaves
+// the sender disabled (invitationSender.enabled), which is why main.go
+// validates the URL before calling this.
+func WithMailer(sender mail.Sender, appBaseURL string) RouterOption {
+	return func(s *invitationSender) {
+		s.mailer = sender
+		s.appBaseURL = strings.TrimSpace(appBaseURL)
+	}
+}
+
+// WithClock overrides the clock the delivery path stamps rows with and
+// measures the resend cooldown against. Test seam only -- production wiring
+// leaves it nil, which means time.Now.
+func WithClock(now func() time.Time) RouterOption {
+	return func(s *invitationSender) { s.now = now }
 }
 
 // OrganizationSummaryResponse is the platform-operator-only cross-org list
@@ -734,9 +778,18 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			txq := q.WithTx(tx)
 			var err error
 			org, err = txq.CreateOrganization(r.Context(), sqlcgen.CreateOrganizationParams{
-				ID:        pgtype.UUID{Bytes: orgID, Valid: true},
-				Name:      name,
-				Address:   address,
+				ID:      pgtype.UUID{Bytes: orgID, Valid: true},
+				Name:    name,
+				Address: address,
+				// #641 (FR-ONB-3 AC 3, NFR-I18N-1): seed the organization's
+				// language from its creator's own profile locale. The creator
+				// IS the org's first admin (D-3), so at this instant their
+				// language is the only evidence the system has of the
+				// organization's working language -- and it is the fallback
+				// the invitation email uses for an invitee identity has never
+				// seen. normalizeLocale keeps an unknown/absent value from
+				// reaching the column's CHECK (migration 00008).
+				Locale:    normalizeLocale(resolved.Locale),
 				CreatedBy: actor,
 			})
 			if err != nil {

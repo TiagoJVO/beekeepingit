@@ -23,14 +23,18 @@ type OrganizationsAuditLog struct {
 }
 
 type OrganizationsInvitation struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	Email          string             `json:"email"`
-	Role           string             `json:"role"`
-	Status         string             `json:"status"`
-	InvitedBy      pgtype.UUID        `json:"invited_by"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	Email            string             `json:"email"`
+	Role             string             `json:"role"`
+	Status           string             `json:"status"`
+	DeliveryStatus   string             `json:"delivery_status"`
+	DeliveryError    string             `json:"delivery_error"`
+	DeliveryAttempts int32              `json:"delivery_attempts"`
+	LastDeliveryAt   pgtype.Timestamptz `json:"last_delivery_at"`
+	InvitedBy        pgtype.UUID        `json:"invited_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type OrganizationsMembership struct {
@@ -48,6 +52,7 @@ type OrganizationsOrganization struct {
 	Name               string             `json:"name"`
 	Address            string             `json:"address"`
 	RegistrationNumber string             `json:"registration_number"`
+	Locale             string             `json:"locale"`
 	CreatedBy          pgtype.UUID        `json:"created_by"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
