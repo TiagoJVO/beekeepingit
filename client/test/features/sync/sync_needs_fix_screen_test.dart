@@ -26,9 +26,13 @@ void main() {
   // name on it was not, so an icon-only control announced nothing to a screen
   // reader.
   //
-  // Where it LANDS is pinned by the live-router sweep in
-  // test/routing/pushed_screen_exit_test.dart; this harness has no GoRouter,
-  // so it only pins presence + a11y label.
+  // Unlike the organization-details and stock-declaration harnesses (plain
+  // `MaterialApp(home:)`, so they can only pin presence + a11y label),
+  // [_harness] already wires a GoRouter that declares `/account` for the "Fix"
+  // navigation — so the landing is pinned here too. The live-router sweep in
+  // test/routing/pushed_screen_exit_test.dart pins it against the REAL router;
+  // this one pins it against the stub, which is what keeps this file readable
+  // on its own.
   group('the app bar offers a way back (#639, FR-UX-2)', () {
     testWidgets('the app bar has a back button', (tester) async {
       await tester.pumpWidget(_harness(_FakeRejectedStore([])));
@@ -46,6 +50,19 @@ void main() {
       );
       expect(button.tooltip, isNotNull);
       expect(button.tooltip, isNotEmpty);
+    });
+
+    testWidgets('tapping it leaves for /account', (tester) async {
+      await tester.pumpWidget(_harness(_FakeRejectedStore([])));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('needs-fix-back-button')));
+      await tester.pumpAndSettle();
+
+      // The stub `/account` route renders this text and nothing else does, so
+      // finding it means the router actually left `/sync-needs-fix`.
+      expect(find.text('account'), findsOneWidget);
+      expect(find.byKey(const Key('needs-fix-back-button')), findsNothing);
     });
   });
 

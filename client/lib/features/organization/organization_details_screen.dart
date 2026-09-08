@@ -237,12 +237,21 @@ class _OrganizationDetailsScreenState
   /// could disagree with it. `_save` clears it, so leaving right after a save
   /// does not prompt.
   ///
+  /// Not while [_busy]: a save is already in flight and will complete whatever
+  /// this screen does next, so "discard your changes?" would be asking about
+  /// edits that are on their way to the server — the prompt would state the
+  /// opposite of what happens. Leaving stays available rather than being
+  /// disabled during the save; a control that goes dead mid-request is the
+  /// dead end this issue is about, only briefer.
+  ///
   /// This is the deliberately narrow version of the guard: it covers the
   /// control #639 adds. The OS/browser back gesture still bypasses it, because
   /// that needs the `PopScope` half of the full `UnsavedChangesMixin` wiring
   /// this screen has never had — tracked in #829.
   Future<void> _leave() async {
-    if (_userHasEdited && !await showDiscardChangesDialog(context)) return;
+    if (!_busy && _userHasEdited && !await showDiscardChangesDialog(context)) {
+      return;
+    }
     if (!mounted) return;
     context.go('/account');
   }

@@ -14,6 +14,8 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 /login                     LoginScreen            features/auth
 /profile                   ProfileScreen          features/profile   (onboarding FR-ONB-1)
 /organization/new          OrganizationScreen     features/organization (onboarding FR-ONB-2)
+/organization/waiting      OrganizationWaitingScreen features/organization (onboarding FR-ONB-2 —
+                                                  invited user awaiting approval)
 /organization/members      MembersScreen          features/members   (admin, #27)
 /account                   AccountScreen          features/account   (FR-AU-1)
 /sync-needs-fix            SyncNeedsFixScreen      features/sync      (D-12 dead-letter)
@@ -29,8 +31,10 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
   bottom navigation nor the rail, and the installed PWA (D-10, display: standalone) has no
   browser back button. The five NON-GATE ones (/organization/members, /account,
   /sync-needs-fix, /organization/details, /stock-declarations) therefore each owe their OWN
-  AppBar `leading` back control with a tooltip, landing on the screen that links there
-  (/home for the first two, /account for the rest). The four redirect gates (/login,
+  AppBar `leading` back control with a tooltip. Where it lands is NOT one rule today: the
+  two reached from the shell header go to /home (/organization/members, /account), the
+  three reached from Account go to /account — picking one convention is #820. The four
+  redirect gates (/login,
   /profile, /organization/new, /organization/waiting) are exempt: the redirect above bounces
   the user straight back, so there is no exit to offer. Swept by
   test/routing/pushed_screen_exit_test.dart, which reads the live router's own top-level

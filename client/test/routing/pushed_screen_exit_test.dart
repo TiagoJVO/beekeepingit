@@ -149,11 +149,16 @@ Widget _buildApp() {
 /// One out-of-shell route, the key of the back control its own app bar owes
 /// the user, and where that control must land.
 ///
-/// [destination] is asserted exactly, not merely "somewhere else". Each screen
-/// documents the screen it goes back to (Home for the two Home links, Account
-/// for the three Account leaves), and a comment saying so with only a
-/// "location changed" assertion behind it would let the destination drift
-/// silently — the shape of failure #639 itself is.
+/// [destination] is asserted exactly, not merely "somewhere else": each screen
+/// documents in its own source the screen it goes back to, and a comment
+/// saying so with only a "location changed" assertion behind it would let the
+/// destination drift silently — the shape of failure #639 itself is.
+///
+/// The destinations below record what the app does TODAY; they are not one
+/// rule. The two reached from the shell header (`/account`,
+/// `/organization/members`) go to `/home`; the three reached from Account go
+/// back to `/account`. Settling on a single convention is #820 — until then
+/// this table is the record, not the derivation.
 typedef _PushedScreen = ({
   String route,
   Key backButton,
@@ -355,10 +360,9 @@ void main() {
           screen.destination,
           reason:
               'the back control on ${screen.description} must take the user '
-              'to ${screen.destination} — the screen that links here. A '
-              'control that leaves them on the same route is still a dead '
-              'end, and one that lands somewhere unannounced is a different '
-              'kind of lie.',
+              'to ${screen.destination}. A control that leaves them on the '
+              'same route is still a dead end, and one that lands somewhere '
+              'unannounced is a different kind of lie.',
         );
       });
     });
