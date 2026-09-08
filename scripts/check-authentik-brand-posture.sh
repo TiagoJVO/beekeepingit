@@ -331,6 +331,10 @@ legacy="$(grep -rlnE '^[[:space:]]*from:[[:space:]]*[^[:space:]#]+@' \
 #     in Authentik's own storage: `^[a-zA-Z0-9._/-]+$` (after `%(theme)s` is folded to a word),
 #     no `//`, no `..` component, not absolute, not starting with `.`
 #
+# This guard accepts a NARROWER set than authentik does: `http:`/`https://` is rejected here
+# because these fields render on the credential page, which fetches nothing off-origin
+# (NFR-SEC-1) — see the rule itself for the argument.
+#
 # So a `data:` URI is rejected — the charset alone kills the `:` and `;` — and so is an
 # absolute pod path such as `/templates/email/favicon.png`. Both are the plausible guesses,
 # and both would take the whole blueprint down with them. This check is deliberately silent
@@ -359,9 +363,32 @@ for key in branding_logo branding_favicon branding_default_flow_background; do
         "a file name. That failure takes the whole blueprint down with it." ;;
   esac
 
-  # Shape 1 + 2: the two prefix families the validator short-circuits on.
+  # Shape 2, NARROWED. `http:`/`https://` is a shape authentik accepts and this deployment
+  # does not (security review, #859). These three fields render into `base/skeleton.html` as
+  # `<link rel="icon" href="…">` etc. on the SIGN-IN page, and `auth.<env>` is a different
+  # origin from `app.<env>`: an off-origin subresource there is a request logged by whoever
+  # serves it on every single sign-in — client IP, UA, timestamp — and, because the two hosts
+  # are same-SITE, `SameSite=Lax` cookies ride along with it, correlating "this browser" with
+  # "is on the credential page now". It is the same invariant the blueprint's typography
+  # comment already states for a Google Fonts `<link>`, and the reason the brand mark is
+  # inlined as a data URI. That posture lived only in prose while this guard waved an
+  # `https://` value straight through. (Note also that the validator's prefix test is
+  # literally `http:`, so a PLAINTEXT URL passes it server-side and is stopped only by the
+  # browser's mixed-content block.)
   case "${value}" in
-    /static* | http:* | https://* | fa://*) continue ;;
+    http:* | https://*) fail "\`${key}: ${value}\` points the sign-in page at another origin." \
+        "Authentik accepts it; this deployment does not. The sign-in page is the one page in" \
+        "the product where a password is typed, and it must fetch NOTHING off-origin" \
+        "(NFR-SEC-1) — an off-origin favicon is a per-sign-in request logged by whoever serves" \
+        "it, carried with same-site cookies, and it makes the credential page depend on that" \
+        "host being up. Use a \`/static…\` path or a relative media name served by the" \
+        "Authentik pod itself. See #859 and docs/architecture/auth.md §8.19." ;;
+  esac
+
+  # Shape 1 (+ `fa://`, which the web UI resolves to a bundled Font Awesome class and fetches
+  # nothing for): accepted as-is.
+  case "${value}" in
+    /static* | fa://*) continue ;;
   esac
 
   # Shape 3: a relative upload name. `%(theme)s` is folded to a plain word first, exactly as
@@ -375,8 +402,8 @@ for key in branding_logo branding_favicon branding_default_flow_background; do
   esac
   case "${probe}" in
     /*) bad="an absolute path is rejected — the pod's own filesystem is NOT reachable this way" ;;
+    .. | ../* | */.. | */../*) bad="a '..' component is rejected" ;;
     .*) bad="a name starting with '.' is rejected" ;;
-    ..|../*|*/..|*/../*) bad="a '..' component is rejected" ;;
   esac
   [ -z "${bad}" ] || fail \
     "\`${key}: ${value}\` is not a value Authentik's serializer accepts — ${bad}." \

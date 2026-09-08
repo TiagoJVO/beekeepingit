@@ -369,15 +369,28 @@ template that `lookup`s them (e.g.
 [`charts/authentik/templates/config-secret.yaml`](helm/beekeepingit/charts/authentik/templates/config-secret.yaml)),
 not free-form.
 
-**Branded email templates need a mount in the external HelmRelease (#648).** The same
+**Branded email templates are mounted by the external HelmRelease (#648, #858).** The same
 chart-renders-it / external-release-consumes-it split as the blueprint ConfigMap: this chart renders
-`beekeepingit-authentik-email-templates` (the BeekeepingIT-branded
-`account_confirmation.html`) and sets `AUTHENTIK_EMAIL__TEMPLATE_DIR`, but the `beekeepingit-gitops`
-HelmRelease has to mount that ConfigMap at that directory on **both** the server and the worker, with
-each key landing at `email/<name>.html` (a ConfigMap key cannot contain `/`, so use `items:` +
-`path:`). Until it does, Authentik's own template renders: unbranded mail, never no mail — which is
-why this is safe to ship ahead of the mount, and also why it will not announce itself if the mount is
-wrong. See [`docs/architecture/auth.md` §8.19](../docs/architecture/auth.md).
+`beekeepingit-authentik-email-templates` (the BeekeepingIT-branded `account_confirmation.html`) and
+sets `AUTHENTIK_EMAIL__TEMPLATE_DIR=/templates`, and `beekeepingit-gitops`'s
+`apps/<env>/authentik-helmrelease.yaml` mounts that ConfigMap under the upstream chart's
+`global.volumes` / `global.volumeMounts`, which reach **both** the server and the worker (the worker
+sends, the server previews).
+
+The `mountPath` is **`/templates/email`**, one directory below `templateDir`: a ConfigMap key cannot
+contain `/`, and Django resolves the template by the name the email stage asks for,
+`email/account_confirmation.html`. Mounting the whole ConfigMap a level deeper puts every flat key at
+`email/<key>` with no `items:`/`path:` list to keep in sync across the two repos — a second template
+ships by dropping a file in `charts/authentik/files/email/`. Two things not to change without reading
+[`docs/architecture/auth.md` §8.19](../docs/architecture/auth.md): `templateDir` is a cross-repo
+contract (pinned by `scripts/check-authentik-brand-posture.sh`), and the mount must not become
+`subPath:` (a subPath mount never receives ConfigMap updates) or move up to `/templates` (that
+directory is Django's search path for _every_ template, not just email).
+
+The failure direction is deliberate: with nothing mounted, Authentik's own template renders —
+unbranded mail, never no mail. That is why the branding was safe to ship ahead of the mount, and also
+why a wrong mount does not announce itself. Verify with a captured mail in the Mailpit sink, not with
+a running pod.
 
 **On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
 `workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick

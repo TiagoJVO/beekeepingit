@@ -57,8 +57,16 @@ email:
   # `email/account_confirmation.html` in files/email/ take effect (#648). The directory is
   # populated by mounting the `beekeepingit-authentik-email-templates` ConfigMap this chart
   # renders — a change to the EXTERNAL Authentik HelmRelease (beekeepingit-gitops), not to
-  # this chart. Until that mount exists the directory is simply empty and Authentik's own
+  # this chart. Without that mount the directory is simply empty and Authentik's own
   # templates render: unbranded mail, never no mail.
+  #
+  # Since #858 that mount exists, at `mountPath: /templates/email` — one directory below this
+  # value, because Django asks for the template by the name the email stage uses
+  # (`email/account_confirmation.html`) and a ConfigMap key cannot contain `/`. That makes
+  # this value half of a CROSS-REPO contract: change it here alone and the mount lands
+  # somewhere Django never searches, with no error in either repo. It is pinned by
+  # scripts/check-authentik-brand-posture.sh for that reason; moving it needs a paired PR
+  # against beekeepingit-gitops.
   templateDir: /templates
 
 # Dev/CI federation stand-in (#363, NFR-TST-1) — a generic `openidconnect`

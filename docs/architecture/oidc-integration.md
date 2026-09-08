@@ -320,10 +320,12 @@ optional.
   `Secret beekeepingit-authentik-config` (`secret_key`, bootstrap creds, `AUTHENTIK_POSTGRESQL__*`),
   `Secret beekeepingit-authentik-postgresql` (`password`), `ConfigMap beekeepingit-authentik-blueprint`
   (delivered via `blueprints.configMaps` → worker file-discovery), and — since #648 —
-  `ConfigMap beekeepingit-authentik-email-templates` (the BeekeepingIT-branded flow email;
-  must be mounted at `AUTHENTIK_EMAIL__TEMPLATE_DIR` on server **and** worker, with each key
-  at `email/<name>.html` — the mount is [#858](https://github.com/TiagoJVO/beekeepingit/issues/858),
-  and until it lands Authentik's own template renders: unbranded mail, never no mail). Set
+  `ConfigMap beekeepingit-authentik-email-templates` (the BeekeepingIT-branded flow email; mounted
+  by the external HelmRelease at `/templates/email` — one directory below
+  `AUTHENTIK_EMAIL__TEMPLATE_DIR`, so each flat key lands at `email/<name>.html` — on server **and**
+  worker via the chart's `global.volumes`/`global.volumeMounts`,
+  [#858](https://github.com/TiagoJVO/beekeepingit/issues/858); with nothing mounted Authentik's own
+  template renders: unbranded mail, never no mail). Set
   `authentik.existingSecret.secretName: beekeepingit-authentik-config`.
 - **Gateway** — `auth.` host → `authentik-server:80`; `app.` host routes unchanged bar the rename.
 - **Blueprint** — provider + application + `platform-operator` group + seed users (validated to apply

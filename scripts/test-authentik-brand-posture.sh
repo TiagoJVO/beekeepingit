@@ -184,6 +184,13 @@ expect_reject "branding_default_flow_background emptied" \
   'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_default_flow_background: \"\"\n      branding_title: BeekeepingIT|" "$BP"'
 expect_reject "branding_favicon with a parent-directory escape" \
   'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: ../etc/passwd\n      branding_title: BeekeepingIT|" "$BP"'
+# Authentik ACCEPTS these two; this deployment must not. An off-origin subresource on the
+# credential page is a per-sign-in request logged by whoever serves it (NFR-SEC-1) — the same
+# invariant that keeps the mark inlined and a Google Fonts <link> out of the CSS.
+expect_reject "branding_favicon on another origin (off-origin fetch on the password page)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: https://app.beekeepingit.local:8443/favicon.png\n      branding_title: BeekeepingIT|" "$BP"'
+expect_reject "branding_logo over plaintext http (the validator's prefix test is literally http:)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_logo: http://example.test/logo.svg\n      branding_title: BeekeepingIT|" "$BP"'
 
 # ...and the three shapes the serializer DOES accept must not be rejected — a guard that says
 # no to everything would just move #859's blocker from the cluster to the lint gate.
@@ -191,8 +198,8 @@ expect_accept "branding_favicon as a /static path (StaticBackend)" \
   'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: /static/dist/assets/icons/icon.png\n      branding_title: BeekeepingIT|" "$BP"'
 expect_accept "branding_favicon as a relative media name (FileBackend)" \
   'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: beekeepingit-favicon.png\n      branding_title: BeekeepingIT|" "$BP"'
-expect_accept "branding_logo as an https URL (PassthroughBackend)" \
-  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_logo: https://example.test/logo.svg\n      branding_title: BeekeepingIT|" "$BP"'
+expect_accept "branding_logo as an fa:// icon (bundled Font Awesome, no fetch)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_logo: fa://fa-hive\n      branding_title: BeekeepingIT|" "$BP"'
 expect_accept "branding_favicon as a themed media name (%(theme)s is folded before the charset check)" \
   'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: icons/favicon-%(theme)s.png\n      branding_title: BeekeepingIT|" "$BP"'
 
