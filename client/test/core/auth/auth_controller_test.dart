@@ -852,36 +852,33 @@ void main() {
     // walking-skeleton e2e caught it as a confirmed "Sign out" click followed
     // by 60s of zero network activity. Every such step is now bounded, so the
     // redirect always happens.
-    test(
-      'a local-store wipe that HANGS still reaches the end-session redirect (#237)',
-      () async {
-        final localStore = HangingLocalStoreEngine();
-        final (_, platform, notifier) = await buildLoggedInContainer(
-          client: MockClient((req) async => _tokenResponse(req)),
-          localStore: localStore,
-          authNetworkTimeout: const Duration(milliseconds: 20),
-        );
+    test('a local-store wipe that HANGS still reaches the end-session redirect (#237)', () async {
+      final localStore = HangingLocalStoreEngine();
+      final (_, platform, notifier) = await buildLoggedInContainer(
+        client: MockClient((req) async => _tokenResponse(req)),
+        localStore: localStore,
+        authNetworkTimeout: const Duration(milliseconds: 20),
+      );
 
-        // Must not hang: bounded by the injected timeout, not by the wipe.
-        await notifier.logout().timeout(const Duration(seconds: 5));
+      // Must not hang: bounded by the injected timeout, not by the wipe.
+      await notifier.logout().timeout(const Duration(seconds: 5));
 
-        expect(
-          localStore.clearCalls,
-          1,
-          reason: 'the wipe is still attempted first, it just cannot block',
-        );
-        expect(
-          platform.assignedLocation,
-          isNotNull,
-          reason:
-              'the front-channel end-session redirect must still be issued — '
-              'that is the only thing that ends the provider SSO session',
-        );
-        expect(platform.assignedLocation, contains(_endSessionUrl));
-        expect(notifier.state.value, isNull);
-        expect(platform.hasAnySession, isFalse);
-      },
-    );
+      expect(
+        localStore.clearCalls,
+        1,
+        reason: 'the wipe is still attempted first, it just cannot block',
+      );
+      expect(
+        platform.assignedLocation,
+        isNotNull,
+        reason:
+            'the front-channel end-session redirect must still be issued — '
+            'that is the only thing that ends the provider SSO session',
+      );
+      expect(platform.assignedLocation, contains(_endSessionUrl));
+      expect(notifier.state.value, isNull);
+      expect(platform.hasAnySession, isFalse);
+    });
 
     // #390: onboarding gate cache clearing — a second user on the same
     // shared browser must never see a prior user's cached profile/org.
