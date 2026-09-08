@@ -48,7 +48,9 @@
 #      redirect while still looking like a list. `http://localhost:.*` is
 #      rejected by name: matching is `fullmatch`, and that pattern also accepts
 #      `http://localhost:@evil.example`, which a browser resolves to
-#      evil.example.
+#      evil.example. The dev entry is spelled `\d+` and NOT the equivalent
+#      `[0-9]+`, because NO redirect URI on these providers may contain `[` or
+#      `]` at all — see (3).
 #
 #      The URL is only half of an entry — `matching_mode` is asserted too, and
 #      the "bare-origin regex" above is exactly why. Under `fullmatch` a
@@ -63,7 +65,21 @@
 #      a re-indented item used to end the walk and silently drop every entry
 #      below it — counters above it kept the guard green (review findings).
 #
-#   3. NO OWNED `designation: invalidation` FLOW. (1) is spelled as a binding
+#   3. NO `[` OR `]` IN ANY REDIRECT URI on these providers — logout,
+#      authorization, `matching_mode: regex`, all of them. This one is not a
+#      posture nicety, it is an outage: authentik derives its CORS allow-list
+#      from `redirect_uris` and `urlparse()`s EVERY entry
+#      (`providers/oauth2/utils.py::cors_allow`), and the image's Python raises
+#      `ValueError: Invalid IPv6 URL` on a netloc with data before a `[`
+#      (`_check_bracketed_netloc`). One bracketed entry therefore 500s every
+#      request that carries an `Origin` header — the discovery document
+#      included — so every browser sign-in dies with "Failed to fetch" while
+#      in-cluster health probes, which send no Origin, stay green. That is
+#      exactly what `http://localhost:[0-9]+` did on this change's first CI run
+#      (15 of 25 e2e tests down, ~30 minutes to find out). `\d+` is the same
+#      character class without the brackets.
+#
+#   4. NO OWNED `designation: invalidation` FLOW. (1) is spelled as a binding
 #      onto upstream's flow rather than a flow of our own precisely because
 #      owning one re-arms the trap the blueprint's #599 pin block documents:
 #      with `brand.flow_invalidation` unpinned, `ToDefaultFlow.get_flow` scans
@@ -126,9 +142,9 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   function required_mode(u) {
     if (u == "{{ .Values.global.appOrigin }}") return "strict"
     if (u == "{{ .Values.global.adminOrigin }}") return "strict"
-    # The one dev exception: a localhost ORIGIN with a numeric port. `[0-9]+`
-    # and nothing looser — see the header.
-    if (u == "http://localhost:[0-9]+") return "regex"
+    # The one dev exception: a localhost ORIGIN with a numeric port. `\d+` and
+    # nothing looser — see the header, including why NOT `[0-9]+`.
+    if (u == "http://localhost:\\d+") return "regex"
     return ""
   }
 
@@ -264,6 +280,25 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
       n_logout = 0; saw_app = 0; saw_admin = 0
       for (i = 1; i <= n_items; i++) {
         it = items[i]
+
+        # (6) NO SQUARE BRACKET IN ANY redirect URI on this provider — logout,
+        # authorization, regex-mode, all of them. authentik derives its CORS
+        # allow-list from `redirect_uris` and `urlparse()`s every entry
+        # (`providers/oauth2/utils.py::cors_allow`); the images Python rejects a
+        # netloc with data before a `[` (`_check_bracketed_netloc` ->
+        # `ValueError: Invalid IPv6 URL`), so ONE bracketed entry 500s every
+        # browser request that carries an `Origin` header — the discovery
+        # document included. In-cluster probes send no Origin and stay green, so
+        # the only symptom is every browser sign-in failing with "Failed to
+        # fetch". `http://localhost:[0-9]+` did exactly that on this PRs first
+        # CI run (15/25 e2e tests down); `\\d+` is the same class, bracket-free.
+        if (it ~ /[][]/)
+          fail("provider `" entry_id "` has a redirect URI containing `[` or `]`: " it \
+               ". authentik `urlparse()`s EVERY redirect_uris entry to build its CORS allow-list, " \
+               "and a netloc with data before a `[` raises `Invalid IPv6 URL` — which 500s the " \
+               "discovery document for any request with an `Origin` header and breaks every " \
+               "browser sign-in, while in-cluster health probes stay green. Use `\\d`, not `[0-9]`.")
+
         is_logout = (it ~ /redirect_uri_type[[:space:]]*:[[:space:]]*logout([^A-Za-z0-9_-]|$)/)
         if (!is_logout) continue
         n_logout++
@@ -290,7 +325,7 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
         if (want == "") {
           fail("provider `" entry_id "` allow-lists logout redirect `" url "`, which is neither " \
                "`{{ .Values.global.appOrigin }}`/`{{ .Values.global.adminOrigin }}` nor the " \
-               "tightened `http://localhost:[0-9]+` dev regex. A logout allow-list entry IS the " \
+               "tightened `http://localhost:\\d+` dev regex. A logout allow-list entry IS the " \
                "open-redirect boundary — keep every target rendered from this charts values.")
           continue
         }

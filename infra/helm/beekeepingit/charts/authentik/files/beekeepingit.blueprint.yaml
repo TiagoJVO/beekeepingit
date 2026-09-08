@@ -341,11 +341,26 @@ entries:
         #     `EndSessionView.validate` decodes the hint against.
         #   * localhost — a `flutter run` / `vite dev` origin, the logout
         #     counterpart of the localhost authorization entry above. Written
-        #     `[0-9]+` rather than reusing that entry's `.*`: matching is
+        #     `\d+` rather than reusing that entry's `.*`: matching is
         #     `fullmatch`, and `http://localhost:.*` also accepts
         #     `http://localhost:@evil.example`, which a browser resolves to
         #     evil.example with `localhost:` as userinfo. Tightening the
         #     AUTHORIZATION entry the same way is #822 (pre-existing).
+        #
+        #     `\d+` and NOT `[0-9]+`, which is the same character class and
+        #     broke the whole deployment: NO `redirect_uris` entry may contain
+        #     `[` or `]`, regex-mode included. authentik derives its CORS
+        #     allow-list from this list and `urlparse()`s EVERY entry
+        #     (`providers/oauth2/utils.py::cors_allow`); on the image's Python,
+        #     `_check_bracketed_netloc` rejects a netloc with data before a
+        #     `[` — so `http://localhost:[0-9]+` makes every browser request
+        #     carrying an `Origin` header 500, including the discovery
+        #     document. In-cluster health probes send no Origin and stayed
+        #     green, so the only symptom was every browser sign-in failing with
+        #     "Failed to fetch" (caught by the walking-skeleton e2e, 15/25
+        #     failing). Asserted by scripts/check-logout-invalidation-posture.sh
+        #     over EVERY redirect URI on these providers, not just the logout
+        #     ones.
         - matching_mode: strict
           url: "{{ .Values.global.appOrigin }}"
           redirect_uri_type: logout
@@ -353,7 +368,7 @@ entries:
           url: "{{ .Values.global.adminOrigin }}"
           redirect_uri_type: logout
         - matching_mode: regex
-          url: "http://localhost:[0-9]+"
+          url: 'http://localhost:\d+'
           redirect_uri_type: logout
       property_mappings:
         - !Find [
@@ -553,7 +568,7 @@ entries:
           url: "{{ .Values.global.adminOrigin }}"
           redirect_uri_type: logout
         - matching_mode: regex
-          url: "http://localhost:[0-9]+"
+          url: 'http://localhost:\d+'
           redirect_uri_type: logout
       property_mappings:
         - !Find [

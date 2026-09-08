@@ -1802,12 +1802,24 @@ by authentik itself: a `post_logout_redirect_uri` matching none of the entries i
 `invalid_request`**, never a redirect; an `id_token_hint` becomes **required** alongside it; and
 `FORBIDDEN_URI_SCHEMES` is rejected outright. Nothing in the list is user-supplied — the two origins
 are this chart's own `global.appOrigin` / `global.adminOrigin`, so every environment overlay
-allow-lists exactly its own hosts, and the one dev exception is written `http://localhost:[0-9]+`
+allow-lists exactly its own hosts, and the one dev exception is written `http://localhost:\d+`
 rather than reusing the authorization entry's `http://localhost:.*`, because matching is `fullmatch`
 and that looser pattern also accepts `http://localhost:@evil.example` — which a browser resolves to
 `evil.example`. (Tightening the **authorization** entry the same way is
 [#822](https://github.com/TiagoJVO/beekeepingit/issues/822), pre-existing and deliberately not
 bundled into a logout change.)
+
+**`\d+`, never `[0-9]+` — no redirect URI may contain `[` or `]`.** The two are the same character
+class, and the bracketed spelling took the whole deployment down on this change's first CI run.
+Authentik derives its **CORS allow-list from `redirect_uris`** and `urlparse()`s **every** entry,
+regex-mode included (`providers/oauth2/utils.py::cors_allow`); the image's Python raises
+`ValueError: Invalid IPv6 URL` on a netloc with data before a `[` (`_check_bracketed_netloc`). One
+bracketed entry therefore **500s every request carrying an `Origin` header** — the discovery
+document included — so every browser sign-in failed with "Failed to fetch" while the in-cluster
+readiness probe, which sends no `Origin`, reported the discovery endpoint healthy. The only symptom
+was 15 of 25 e2e tests timing out. `scripts/check-logout-invalidation-posture.sh` now rejects `[` or
+`]` in **any** redirect URI on either provider, logout and authorization alike, so #822's fix must
+also use `\d+`.
 
 **Why the admin origin is on the PWA provider.** The admin app signs out through **this**
 application's `end_session_endpoint`, not its own: it is pointed at the beekeepingit **issuer**
@@ -1848,9 +1860,10 @@ inert), no duplicate `target:`/`stage:`/`url:`/`matching_mode:` keys (PyYAML is 
 `invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
 off a flow nothing plans). The list is walked by indentation, because a blank line or a re-indented
 item used to end the walk and silently drop every entry below it. All of it is mutation-checked
-against sixteen deliberately broken copies of the blueprint — binding removed, allow-list removed, an
-`https://.*` target, an owned invalidation flow, stage removed, `logout` flipped back to
-`authorization`, plus each evasion above — and **all sixteen fail it**. Live, the logout e2e in
+against eighteen deliberately broken copies of the blueprint — binding removed, allow-list removed,
+an `https://.*` target, an owned invalidation flow, stage removed, `logout` flipped back to
+`authorization`, a bracketed logout regex, a bracketed authorization regex, plus each evasion above
+— and **all eighteen fail it**. Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
