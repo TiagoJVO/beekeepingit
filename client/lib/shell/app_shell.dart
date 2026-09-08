@@ -583,6 +583,10 @@ class AppShell extends ConsumerWidget {
       'todoNew' => l10n.newTodoTitle,
       'todoDetail' => l10n.todoDetailTitle,
       'todoEdit' => l10n.editTodoTitle,
+      // #638: the not-found screen is pushed inside the home branch, so
+      // without this the header would title it "Home" — a small lie on the
+      // one screen whose whole job is to stop lying about where the user is.
+      'notFound' => l10n.notFoundTitle,
       _ => activeTab.label(l10n),
     };
   }

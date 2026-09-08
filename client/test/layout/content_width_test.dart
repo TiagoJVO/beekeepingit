@@ -196,6 +196,7 @@ void main() {
     ('Members', '/organization/members'),
     ('Stock declarations', '/stock-declarations'),
     ('Sync needs-fix', '/sync-needs-fix'),
+    ('Not found', '/home/not-found'),
   ];
 
   for (final locale in const ['en', 'pt']) {

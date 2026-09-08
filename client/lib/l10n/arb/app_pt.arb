@@ -828,5 +828,17 @@
   "toastDetailsCloseAction": "Fechar",
   "@toastDetailsCloseAction": {
     "description": "Dismisses the dialog showing a toast's full message (#790)"
+  },
+  "notFoundTitle": "Não encontrado",
+  "@notFoundTitle": {
+    "description": "The shell header's title on the not-found screen (#638). A short noun phrase like every other entry in app_shell's `_titleFor`, not a sentence: the body message carries the explanation. Replaces go_router's untranslated 'Page Not Found' fallback"
+  },
+  "notFoundMessage": "A ligação que seguiu não leva a lado nenhum na aplicação.\n\nPode estar desatualizada ou aquilo para onde apontava pode ter sido eliminado. O resto não mudou — continue a partir do Início ou de qualquer outra área.",
+  "@notFoundMessage": {
+    "description": "Body of the not-found screen (#638), rendered as the screen's EmptyState message: says what happened in the user's own terms and points at the shell's navigation, which this screen keeps. Deliberately does not name the attempted location — that is diagnostics, not something the user can act on"
+  },
+  "notFoundHomeAction": "Ir para o Início",
+  "@notFoundHomeAction": {
+    "description": "Primary action on the not-found screen (#638) — the in-body exit, beside the shell's own back control"
   }
 }

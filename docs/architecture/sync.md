@@ -149,7 +149,7 @@ coexist: **long-lived access token stays org-free; org is resolved from the DB a
 in the ephemeral sync token.** A member removed from an org stops getting a fresh sync token
 within one TTL.
 
-### 3.5 Local-data lifecycle — purge on logout & membership loss (#125)
+### 3.5 Local-data lifecycle — purge on logout, membership loss & subject change (#125, #664)
 
 §3.4 above covers _stopping_ replication when access ends. It does not cover the data **already
 on the device** — a full replica of the active org's slice sits in local SQLite (OPFS/IndexedDB on
@@ -157,10 +157,10 @@ web) until something explicitly clears it. This is the offline mirror of the ten
 (FR-TEN-1, FR-TEN-2, NFR-SEC-1): local cached data must not outlive the right to see it, on a
 shared, lost, or re-assigned field device.
 
-**Mechanism.** Both paths below go through the same seam:
+**Mechanism.** All three paths below go through the same seam:
 [`LocalStoreEngine.clear()`](../../client/lib/core/sync/local_store.dart) (#55), implemented by
 `PowerSyncLocalStore.clear()` → `PowerSyncDatabase.disconnectAndClear()` — wipes every
-locally-replicated row **and** the upload queue in one call. Neither caller reaches into
+locally-replicated row **and** the upload queue in one call. No caller reaches into
 PowerSync types directly.
 
 - **Logout** — `AuthController.logout()` (`client/lib/core/auth/auth_controller.dart`) calls
@@ -181,8 +181,35 @@ PowerSync types directly.
   itself means this runs both **at next app start** (the router's onboarding gate reads that
   provider immediately on every authenticated load) and **at next connectivity** (any later
   re-fetch), matching the AC.
+- **Subject change on a shared device (D-38, #664)** —
+  `client/lib/core/sync/local_store_owner.dart`'s `ensureLocalStoreBelongsTo`, called by
+  `powerSyncProvider` the moment the database is opened and **before** the connector/gate wiring,
+  so no repository can read a row in between. The two triggers above never fire when a user simply
+  **closes the browser without logging out**, and the on-disk filename is a constant
+  (`beekeepingit.db`) — so the next person to sign in inherits a fully populated store. This is
+  where the client's org filter stops helping: repositories read with
+  `WHERE organization_id = ? OR organization_id IS NULL`, and the `IS NULL` half (a row created
+  offline, not yet stamped by write-back) matches for **any** org, so the previous user's unsynced
+  rows are visible to the next user in any organization. The check compares the signed-in OIDC
+  `sub` against a marker persisted alongside the store (`bk.local_store_subject`, durable
+  `localStorage` — the store it guards is durable too) and clears on a mismatch. It clears **both
+  storage layers**: the PowerSync database and the per-user `localStorage` keys
+  (`kPerUserPrefsKeys` — the same list logout uses). The second half matters because
+  `bk.profile`/`bk.organization` are read as last-known-good whenever a post-login fetch fails or
+  the device is offline (#390), so a store-only purge would still hand the next user the previous
+  user's identity and org id. The **same**
+  subject returning (token expiry, browser restart) never purges, which is what keeps unsynced
+  offline work alive for the person who wrote it (FR-OF-1). Unproven ownership — no marker, a
+  corrupt one, or a signed-in session whose `sub` cannot be read — **fails closed** and purges; a
+  boot that resolves **signed out** is the one deliberate exception and defers instead, because
+  nobody is being shown anything yet and purging there would destroy the returning user's own field
+  work every time their refresh token lapsed. The `sub` is read out of the id token **without
+  verifying its signature**, which is correct here: it is not an authorization boundary (the server
+  re-verifies every token, and the sync token is minted server-side and org-scoped, §3.4) but a
+  question of whose rows are on this disk — a forged value can only cause a purge of the forger's
+  own device.
 
-**Pending writes at purge time: discarded, not blocked-and-warned**, in both paths.
+**Pending writes at purge time: discarded, not blocked-and-warned**, in all three paths.
 `disconnectAndClear` drops the upload queue along with the replicated rows. This is a deliberate
 trade-off, not an oversight:
 
@@ -196,6 +223,10 @@ trade-off, not an oversight:
   push regardless (auth.md §6.4, "gains nothing server-side"). The server-side conflict log (§4.2)
   remains the safety net for an LWW loss in general; it does not cover discarded-at-purge writes,
   which is why the discard-not-block choice is documented here explicitly rather than assumed.
+- **Subject-change purge** is not a user action either, and the person whose work is discarded is
+  not the person at the device — so there is nobody to prompt, and prompting the arriving user
+  about the departing user's rows would itself disclose that they exist. D-38 accepts the loss
+  explicitly for that reason.
 
 **Interaction with offline login (D-7).** The offline grace window (auth.md §6) is a **local UX
 affordance, not server authorization** — a removed member can keep _local_ access to already-open

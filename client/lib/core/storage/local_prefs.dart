@@ -64,3 +64,70 @@ const kNotificationPreferencesKey = 'bk.notification_prefs';
 /// policy) — see `features/notifications/notification_dedup_store.dart`.
 /// Purged on logout for the same reason as [kNotificationPreferencesKey].
 const kNotificationDedupStateKey = 'bk.notification_state';
+
+/// Marker key recording the **OIDC subject the on-device local store was
+/// opened for** (#664, D-38) — read and written by
+/// `core/sync/local_store_owner.dart`'s `ensureLocalStoreBelongsTo`, which
+/// `powerSyncProvider` calls the moment the database is opened. A different
+/// `sub` than the one recorded here means the store belongs to a previous user
+/// of this shared device, and it is purged before anyone reads it
+/// (FR-TEN-1, FR-TEN-2, NFR-SEC-1).
+///
+/// Durable (`localStorage`) rather than per-tab session storage, deliberately:
+/// the store it guards is itself durable (SQLite over OPFS/IndexedDB), so a
+/// marker that vanished on a browser restart would purge every returning
+/// user's unsynced offline work — the exact loss D-38 exists to avoid
+/// (FR-OF-1).
+///
+/// Purged on logout (`auth_controller.dart`'s `_clearLocalSession`) like every
+/// other key here, so no user identifier outlives a session on a shared
+/// device. That can never weaken the guarantee: a missing marker fails
+/// **closed** (purge), so the next sign-in re-decides from scratch — including
+/// in the case where logout's own best-effort store wipe failed.
+const kLocalStoreSubjectKey = 'bk.local_store_subject';
+
+/// Every key above that belongs to **one signed-in user** rather than to the
+/// device, in one list so the two places that must forget a user cannot drift
+/// apart: `AuthController._clearLocalSession()` (logout) and the shared-device
+/// subject-change purge (#664, D-38).
+///
+/// The subject-change purge is why this list exists rather than each call site
+/// keeping its own. Wiping only the PowerSync store there would leave user A's
+/// [kProfileCacheKey] and [kOrganizationCacheKey] snapshots on the device — and
+/// those are read as last-known-good whenever the first post-login
+/// `GET /profile` or `GET /organizations/me` fails, or the device is simply
+/// offline (`features/profile/profile_repository.dart`,
+/// `features/organization/organization_repository.dart`, #390). User B would
+/// then see A's name, email and organization, and `organizationProvider` would
+/// resolve to **A's org id** — the value every repository read is scoped by.
+/// That is the same cross-tenant disclosure #664 is about, one storage layer
+/// over (FR-TEN-1, FR-TEN-2, NFR-SEC-1).
+///
+/// [kLocalStoreSubjectKey] is included deliberately: the purge re-stamps it
+/// afterwards, and every other caller wants it gone.
+const kPerUserPrefsKeys = <String>[
+  kProfileCacheKey,
+  kOrganizationCacheKey,
+  kAutoSyncEnabledKey,
+  kNotificationsEnabledKey,
+  kNotificationPreferencesKey,
+  kNotificationDedupStateKey,
+  kLocalStoreSubjectKey,
+];
+
+/// Removes every [kPerUserPrefsKeys] entry, best-effort per key: one key whose
+/// removal is refused by the storage backend (blocked site data, a partitioned
+/// third-party context) must not stop the rest from being cleared, because a
+/// partial forget is strictly better than none.
+void clearPerUserPrefs(LocalPrefs prefs) {
+  for (final key in kPerUserPrefsKeys) {
+    try {
+      prefs.remove(key);
+    } on Object catch (e) {
+      // `Error` still escapes: a NoSuchMethodError/TypeError here is a bug in a
+      // LocalPrefs implementation, not a storage condition
+      // (dart-conventions.md — never swallow an Error).
+      if (e is Error) rethrow;
+    }
+  }
+}

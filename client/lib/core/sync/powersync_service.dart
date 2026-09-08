@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -7,9 +8,11 @@ import 'package:powersync/powersync.dart';
 import '../../features/organization/organization_repository.dart';
 import '../../features/settings/sync_settings_repository.dart';
 import '../auth/auth_controller.dart';
+import '../storage/local_prefs.dart';
 import 'connectivity_probe.dart';
 import 'connectivity_signal.dart';
 import 'local_store.dart';
+import 'local_store_owner.dart';
 import 'powersync_connector.dart';
 import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
@@ -62,6 +65,43 @@ Future<PowerSyncDatabase> _openDatabase() async {
   return db;
 }
 
+/// The durable key-value seam (`localStorage` on web, a silent no-op on the
+/// VM) [powerSyncProvider] reads the store-owner marker through (#664, D-38 —
+/// `local_store_owner.dart`). A provider rather than a bare
+/// `createLocalPrefs()` call so a test can substitute the marker's storage
+/// without a browser, matching how `local_data_purge.dart` exposes its own
+/// `AuthPlatform` seam. Feature repositories that only ever cache their own
+/// snapshots keep constructing theirs directly.
+final localPrefsProvider = Provider<LocalPrefs>((ref) => createLocalPrefs());
+
+/// Who the local store belongs to this session — the input to #664/D-38's
+/// ownership check, read by [powerSyncProvider] before it opens anything.
+///
+/// **Awaits the session (`.future`), never samples it (`.value`), and that
+/// distinction is the whole point.** [powerSyncProvider] is NOT only built
+/// after login: `app.dart` watches `notificationCheckProvider` on the first
+/// frame, which keeps `todosStreamProvider` alive, which awaits
+/// `todosRepositoryProvider` → [powerSyncProvider] with no auth or org gate in
+/// between. So this runs on every cold start, concurrently with
+/// `AuthController.build()` — which on an offline boot spends up to 5s
+/// attempting a refresh before falling back to its stale-session placeholder,
+/// while opening a local SQLite/OPFS database takes milliseconds. Sampling
+/// there would read "signed out" on a plain browser restart and defer the
+/// check for the whole session, leaving the previous user's rows in place for
+/// the person who just signed in.
+///
+/// `ref.read`, not `ref.watch`: a re-classification must never rebuild
+/// [powerSyncProvider], which would tear down and reopen the database on
+/// every token refresh. A *login* arrives as a fresh page load (the OIDC
+/// redirect), so the provider is built from scratch with the new subject.
+final storeOwnerProvider = FutureProvider<StoreOwner>((ref) async {
+  final session = await ref.read(authControllerProvider.future);
+  return storeOwnerFromSession(
+    signedIn: session != null,
+    idToken: session?.idToken,
+  );
+});
+
 /// Serializes a sequence of async teardowns against the *next* caller's
 /// startup — the general pattern behind [powerSyncProvider]'s dispose-race
 /// fix (HIGH finding: Riverpod's `ref.onDispose` is `void Function()`, so it
@@ -112,12 +152,86 @@ class TeardownGuard {
 /// `ref` to hang shared state off of.
 final _teardownGuard = TeardownGuard();
 
+/// #664/D-38's ownership check as [powerSyncProvider] actually performs it:
+/// run [ensureLocalStoreBelongsTo], and if it throws, make sure the database
+/// handle that was already opened still gets closed before the failure
+/// propagates.
+///
+/// A failure **must** propagate — `powerSyncProvider` erroring is the correct
+/// outcome for "could not prove this store is yours", never handing it out
+/// anyway. But at the call site `ref.onDispose` has not adopted the database
+/// yet, so nothing else in the app would ever close that handle, and the
+/// provider's retry would then open a SECOND instance against the same file
+/// (PowerSync's own docs: "unexpected results"). Handing it to the same
+/// [TeardownGuard] the live session uses makes the next build wait for the
+/// close instead of racing it.
+///
+/// [closeDb] is wrapped because a rejected future left on the guard would
+/// rethrow out of every later `waitForPrior()`, wedging the tab's sync layer
+/// until a full reload — so a close that also fails is logged, not surfaced.
+/// The *original* error still wins, which is the one worth reporting.
+///
+/// `@visibleForTesting` and parameterised over the guard and the close, in
+/// the same style as [applySyncPreconditions] and [sessionTeardown] below,
+/// because the suite's `debugOpenPowerSyncDatabase` stub never completes —
+/// so this ordering is unreachable through `powerSyncProvider` itself.
+@visibleForTesting
+Future<void> ensureStoreOwnershipOrTeardown({
+  required StoreOwner owner,
+  required LocalPrefs prefs,
+  required Future<void> Function() purge,
+  required TeardownGuard guard,
+  required Future<void> Function() closeDb,
+}) async {
+  try {
+    final purged = await ensureLocalStoreBelongsTo(
+      owner: owner,
+      prefs: prefs,
+      purge: purge,
+    );
+    if (purged) {
+      // The only place in the client that destroys unsynced work with no user
+      // action, and a security-relevant event on a shared device (NFR-SEC-1),
+      // so it is recorded — the way both other purge sites already log. The
+      // subject itself is deliberately NOT logged.
+      developer.log(
+        'local store purged on open: the signed-in subject differs from the '
+        'one it was opened for, or could not be proven (D-38, #664)',
+        name: 'sync',
+      );
+    }
+  } on Object {
+    guard.registerTeardown(() async {
+      try {
+        await closeDb();
+      } on Object catch (e, st) {
+        developer.log(
+          'closing the store after a failed ownership check also failed',
+          name: 'sync',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    });
+    rethrow;
+  }
+}
+
 /// Opens the on-device PowerSync database (local SQLite over OPFS/IndexedDB on
 /// web) and connects it to the backend via [BeekeepingitConnector] — gated by
 /// [SyncGate] (FR-OF-3, sync.md §7.1): the first `connect()` call, and every
 /// reconnect after the link drops, waits for a passing connectivity-quality
-/// probe rather than firing on the mere presence of "online". Read after
-/// login, so `fetchCredentials` has a valid access token to mint a sync token.
+/// probe rather than firing on the mere presence of "online".
+///
+/// **Not necessarily built after login.** This doc used to say so, and that
+/// was wrong: `app.dart` watches `notificationCheckProvider` unconditionally
+/// on the first frame, which `ref.listen`s `todosStreamProvider`, which awaits
+/// `todosRepositoryProvider` — and that awaits *this* provider ahead of any
+/// auth or org gate. So this body runs on every cold start, racing
+/// `AuthController.build()`. Nothing downstream broke on that (the connector
+/// simply gets no credentials yet), but #664's ownership check does depend on
+/// knowing who is signing in, which is why it awaits [storeOwnerProvider]
+/// rather than sampling the auth state.
 ///
 /// Exposes the live [BeekeepingitConnector] and [SyncGate] too (not just the
 /// db): #58's manual "sync now" needs to bypass the gate and
@@ -132,7 +246,45 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // one's `db.close()` is still in flight.
   await _teardownGuard.waitForPrior();
 
+  // WHO is opening this store — resolved BEFORE anything is opened (#664,
+  // D-38). [storeOwnerProvider] awaits the session rather than sampling it;
+  // see its doc for why that ordering is the fix and not a detail.
+  final owner = await ref.read(storeOwnerProvider.future);
+  final prefs = ref.read(localPrefsProvider);
+
   final db = await _openDatabase();
+
+  // The store just opened may belong to a PREVIOUS user of this shared device
+  // (#664, D-38, FR-TEN-1/FR-TEN-2/NFR-SEC-1). `_dbFilename` is a constant, so
+  // every account on this browser profile opens the same on-disk database, and
+  // closing the browser without logging out leaves it fully populated — the
+  // two existing purge triggers (logout, membership loss) never fire on that
+  // path. This is the third: compare the signed-in OIDC subject against the
+  // one the store was opened for and wipe before anyone reads it. The SAME
+  // subject returning (token expiry, browser restart) keeps their unsynced
+  // offline work (FR-OF-1, #664 AC 2).
+  //
+  // Deliberately here — after the open, before the connector/gate wiring below
+  // and before any repository can hold a `LocalStoreEngine` over this database
+  // — so no read of another user's rows is even briefly possible.
+  await ensureStoreOwnershipOrTeardown(
+    owner: owner,
+    prefs: prefs,
+    purge: () async {
+      // The wipe goes through [PowerSyncLocalStore] rather than
+      // `db.disconnectAndClear()` directly, so it uses the same NFR-ARC-2 seam
+      // (#55) the other two purge sites do.
+      await PowerSyncLocalStore(db).clear();
+      // ...and the sibling `localStorage` caches, which are just as much the
+      // previous user's: `bk.profile`/`bk.organization` are read as
+      // last-known-good whenever a post-login fetch fails or the device is
+      // offline, so leaving them would hand user B user A's identity and org
+      // id one storage layer over (see `kPerUserPrefsKeys`).
+      clearPerUserPrefs(prefs);
+    },
+    guard: _teardownGuard,
+    closeDb: db.close,
+  );
 
   // Read into a local rather than handing the connector a `ref` to re-read
   // (#622): [BeekeepingitConnector] outlives this provider — PowerSync can
