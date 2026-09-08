@@ -564,6 +564,16 @@ class AppShell extends ConsumerWidget {
     return switch (routeName) {
       'apiaryNew' => l10n.newApiaryTitle,
       'apiaryDetail' => l10n.apiaryDetailTitle,
+      // #666: the Home branch's own copies of the three records its summary
+      // previews render the SAME screens as the routes they mirror, so they
+      // carry the same titles — without these the header would say "Home"
+      // over an apiary, which is the same class of lie #638 fixed for the
+      // not-found screen below.
+      'homeApiaryDetail' => l10n.apiaryDetailTitle,
+      'homeActivityDetail' => l10n.activityDetailTitle,
+      'homeJourneyActivityDetail' => l10n.activityDetailTitle,
+      'homeJourneyDetail' => l10n.journeyDetailTitle,
+      'homeTodoDetail' => l10n.todoDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
       'activityNew' => l10n.newActivityTitle,
       // #634's two-step flow in the activities branch: both steps are "New

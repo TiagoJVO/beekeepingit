@@ -110,6 +110,26 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
   │                        allClear, needsAttention. Rows tap to the record; "view all" taps
   │                        to the filtered list. Reads NO clock: every badge rides on the
   │                        summary's single `now`. No FAB, no own Scaffold)
+  │   ├ todos/:id          TodoDetailScreen       features/todos      ◄ #666, FR-UX-1/FR-UX-2
+  │   ├ journeys/:id       JourneyDetailScreen    features/journeys   ◄ #666
+  │   │   └ activities/:activityId   ActivityDetailScreen (#666; a journey previews its own
+  │   │                              activities, and a preview row is reading, not doing)
+  │   ├ apiaries/:id       ApiaryDetailScreen     features/apiaries   ◄ #666
+  │   │   └ activities/:activityId   ActivityDetailScreen (#666; likewise for the apiary page's
+  │   │                              own embedded activity preview, #42)
+  │   │                    (Home's OWN copies of the three records its summary previews — the
+  │   │                    same screens the owning branches render, reached from Home's rows so
+  │   │                    the tab never switches under the user and Back pops to /home. Before
+  │   │                    #666 a row went straight to /todos/<id> etc., which switched branch:
+  │   │                    the shell's Back then popped inside THAT branch and left the user on
+  │   │                    its list, from the app's landing screen. Read-only landings and
+  │   │                    deliberately leaves — one hop; an action taken on one (edit, "view
+  │   │                    all", history) hands off to the entity's owning tab, and the nav
+  │   │                    follows, while READING deeper (a journey's or apiary's own activity
+  │   │                    preview rows, above) stays in this branch. THE rule, incl.
+  │   │                    journeyActivityDetail below, lives in
+  │   │                    lib/routing/branch_local_navigation.dart, which every call site asks
+  │   │                    for a destination — there is no per-caller override any more)
   │   └ not-found          NotFoundScreen         routing/            ◄ #638, FR-UX-2/NFR-I18N-1
   │                        (where the router's `onException` sends EVERY unmatched location.
   │                        Nested under /home, inside the shell, on purpose: go_router's own
@@ -133,8 +153,21 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
   │       │                JourneyStatsSection, features/journeys/journey_stats_section.dart —
   │       │                #49's apiaries visited/hives harvested/honey collected/média
   │       │                alças/colmeia; edit reachable via its own FAB)
-  │       └ edit                        JourneyFormScreen features/journeys (#45; edit/close/
-  │                                     delete, isEdit)
+  │       ├ edit                        JourneyFormScreen features/journeys (#45; edit/close/
+  │       │                              delete, isEdit)
+  │       ├ history                     HistoryScreen     features/history (#315, FR-HIS-1;
+  │       │                              full per-journey change timeline)
+  │       ├ stats                       JourneyStatsDetailScreen features/journeys (#391; the
+  │       │                              #49 stats section's "More stats" per-apiary breakdown)
+  │       └ activities/:activityId      ActivityDetailScreen features/activities (#384; the
+  │                                     SAME screen the apiaries-branch route renders, reached
+  │                                     from a journey's own embedded activity rows so the tab
+  │                                     does not switch and Back returns to the journey;
+  │                                     apiaryId rides as ?apiaryId=. Edit/delete/history stay
+  │                                     on the apiaries-branch route. Same one rule as Home's
+  │                                     copies above — #666 moved it into
+  │                                     lib/routing/branch_local_navigation.dart and deleted
+  │                                     ActivityListView's per-caller detailLocationBuilder)
   └ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
       │                    todo list — status/priority/due-date filters (combinable), sortable
       │                    by due date/priority/status, distinguishes open/overdue/done; own
@@ -175,11 +208,12 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 every surface rather than re-derived per screen (#658 lifted the first out of a private
 notification-engine helper for exactly this reason):
 
-| Rule                        | Lives in                                                                                                      | Consumers                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| overdue                     | `features/todos/todo_filters.dart` `isOverdue`                                                                | todos list, notification engine, home |
-| due soon (per-priority)     | `features/todos/todo_due.dart` `todoDueBucket` / `dueSoonWindowDays`                                          | notification engine, home             |
-| apiary not visited recently | `features/apiaries/apiary_visit_recency.dart` `apiariesNotVisitedSince` (`apiaryVisitRecencyDays` = 30, D-35) | home                                  |
+| Rule                           | Lives in                                                                                                      | Consumers                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| overdue                        | `features/todos/todo_filters.dart` `isOverdue`                                                                | todos list, notification engine, home         |
+| due soon (per-priority)        | `features/todos/todo_due.dart` `todoDueBucket` / `dueSoonWindowDays`                                          | notification engine, home                     |
+| apiary not visited recently    | `features/apiaries/apiary_visit_recency.dart` `apiariesNotVisitedSince` (`apiaryVisitRecencyDays` = 30, D-35) | home                                          |
+| which branch a record opens in | `routing/branch_local_navigation.dart` (#666/#384)                                                            | home rows, activity rows, detail null-bounces |
 
 `HomeSummary` carries the decided bucket/day-count on each preview item, so a widget never
 re-reads the clock — a second `DateTime.now()` can straddle midnight and badge a row differently
