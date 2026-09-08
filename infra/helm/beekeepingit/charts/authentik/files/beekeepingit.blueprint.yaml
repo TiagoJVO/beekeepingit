@@ -766,17 +766,38 @@ entries:
       # under the user mid-journey.
       #
       # WHY CSS AND NOT THE IMAGE FIELDS. `branding_logo`, `branding_favicon` and
-      # `branding_default_flow_background` are Django `FileField`s (brands/models.py) whose
-      # value has to name something the AUTHENTIK pod can serve; this repo cannot put a file
-      # in that pod — the Authentik workload is an external Flux HelmRelease in the
-      # beekeepingit-gitops repo (ADR-0012/ADR-0016), and this chart only ships ConfigMaps
-      # and Secrets. Pointing them at another origin, or at a `data:` URI, is a change whose
-      # failure mode is not local: a value the serializer rejects fails the WHOLE blueprint
-      # (Importer.apply is atomic — no provider, no application, no login), and this branch
-      # has no cluster to prove it on. So the branding that lands here is confined to
-      # `branding_custom_css` (a plain TextField, already proven to apply on this
-      # deployment) and the fields stay at their defaults. The browser-tab favicon is the
-      # one surface CSS cannot reach — tracked separately.
+      # `branding_default_flow_background` are `authentik.admin.files.fields.FileField`
+      # (brands/models.py) — a plain `TextField` carrying
+      # `default_validators = [validate_file_name]`. Their value has to NAME something the
+      # AUTHENTIK pod can serve, and this chart puts no file in that pod: the Authentik
+      # workload is an external Flux HelmRelease in the beekeepingit-gitops repo
+      # (ADR-0012/ADR-0016), and this chart ships only ConfigMaps and Secrets. A value the
+      # serializer rejects is not a local failure — it fails the WHOLE blueprint
+      # (Importer.apply is atomic: no provider, no application, no login). So the branding
+      # that lands here is confined to `branding_custom_css` (a plain TextField, already
+      # proven to apply on this deployment) and the three fields stay at their defaults. The
+      # browser-tab favicon is the one surface CSS cannot reach — #859.
+      #
+      # WHAT THOSE FIELDS ACTUALLY ACCEPT (read at the pinned 2026.5.4 for #859, replacing
+      # this comment's earlier untested claim). `validate_file_name`
+      # (authentik/admin/files/validation.py) short-circuits to ACCEPT when the value is
+      # supported by one of two backends, and otherwise applies the upload-name rules:
+      #
+      #   /static…                   -> StaticBackend: served from the pod's own web/dist
+      #   http:… https://… fa://…    -> PassthroughBackend: handed to the browser verbatim
+      #   anything else              -> a RELATIVE media file name — `^[a-zA-Z0-9._/-]+$`
+      #                                 (after `%(theme)s` is folded), no `//`, no `..`, not
+      #                                 absolute, not leading `.` — resolved by the media
+      #                                 file backend and served from Authentik's own storage
+      #
+      # So a `data:` URI IS rejected, as this comment always said — the charset rule alone
+      # kills the `:` and `;` — and so is an absolute pod path like `/templates/favicon.png`.
+      # The two shapes that survive are a `/static…` path and a relative media name; an
+      # `http(s)://` URL survives the serializer but is refused HERE, because it would make
+      # the password-entry page fetch from another origin (see TYPOGRAPHY below — the same
+      # argument that keeps Google Fonts out and the mark inlined). All four rules are now
+      # pinned offline by scripts/check-authentik-brand-posture.sh, so the day one of these
+      # fields IS set, the lint gate judges it instead of a live cluster.
       #
       # WHERE THE VALUES COME FROM. Every hex is a token from
       # client/lib/theming/brand_tokens.dart, not a hand-picked approximation (the values

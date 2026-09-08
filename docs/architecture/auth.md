@@ -925,9 +925,10 @@ makes the claim mean something and revives that gate.
   re-run inside the container and `pt-PT` **does** reach the `pt_PT` catalogue — `pt-PT` narrows to
   `pt`, and Python's gettext expands a bare `pt` to `pt_PT`. #412 was closed as invalid; the English
   mail observed in the 2026-09-03 audit was sent to a browser advertising `en-GB`.
-  **~~Limitation (deliberate):~~ closed by #648** — the mail is BeekeepingIT-branded now
-  (§8.19): the chart ships the template as a ConfigMap and Authentik picks it up through
-  `AUTHENTIK_EMAIL__TEMPLATE_DIR`, which needs the external HelmRelease to mount it.
+  **~~Limitation (deliberate):~~ closed by #648, live since #858** — the mail is
+  BeekeepingIT-branded now (§8.19): the chart ships the template as a ConfigMap, the external
+  HelmRelease mounts it at `/templates/email`, and Django finds it through
+  `AUTHENTIK_EMAIL__TEMPLATE_DIR`.
 - **Seed users.** `test.beekeeper@…` is seeded **verified** (a dev/CI-provisioned trusted account;
   the walking-skeleton e2e login stays linear) — also the documented escape hatch for
   ops-provisioned, out-of-band-verified accounts. A second seed user `unverified.beekeeper@…`
@@ -2071,19 +2072,18 @@ pages are two different renderers, so both grounds are painted or the theme chan
 mid-journey.
 
 **Why the branding is CSS and not the image fields.** `branding_logo`, `branding_favicon` and
-`branding_default_flow_background` are Django `FileField`s whose value must name something the
-**Authentik pod** can serve. This repo cannot put a file in that pod: the Authentik workload is an
-external Flux `HelmRelease` in the `beekeepingit-gitops` repo (ADR-0012/ADR-0016) and this chart
-ships only ConfigMaps and Secrets. Pointing those fields at another origin or at a `data:` URI is a
-change whose failure mode is not local — a value the serializer rejects fails the **whole** blueprint
+`branding_default_flow_background` are `authentik.admin.files.fields.FileField` — a plain `TextField`
+carrying `default_validators = [validate_file_name]` — whose value must **name** something the
+**Authentik pod** can serve. This chart puts no file in that pod: the Authentik workload is an
+external Flux `HelmRelease` in the `beekeepingit-gitops` repo (ADR-0012/ADR-0016) and this chart ships
+only ConfigMaps and Secrets. A value the serializer rejects fails the **whole** blueprint
 (`Importer.apply` is atomic: no provider, no application, no login), and there is no cluster on a
 feature branch to prove it on. So the branding lives entirely in `branding_custom_css`, a plain
 `TextField` already proven to apply on this deployment, and the mark is inlined as a `data:` URI
 through Helm's `.Files.Get` — inline because the password-entry page must fetch **nothing** from a
 third party or from another origin, and because a remote logo would make the login page depend on the
 app's static hosting being up. **The browser-tab favicon is the one surface CSS cannot reach** and is
-still Authentik's; changing it needs the `branding_favicon` FileField and therefore a live cluster to
-prove the entry applies — tracked separately.
+still Authentik's — see §8.20.
 
 **What this branding is, and is not.** `branding_custom_css` is served **unauthenticated** by the
 brand API — it is public, and trivially copyable by anyone building a lookalike. So this is a
@@ -2164,10 +2164,76 @@ primary control filled with honey, every hex present as a token in `brand_tokens
 inlined through `.Files.Get` and byte-identical to `client/web/icons/Icon-192.png` (Helm's
 `.Files.Get` returns the **empty string** for a missing path and raises nothing, so a renamed file
 ships an empty data URI and a green render), the email override wired and still on Authentik's
-msgids, and the sender still split. Its 25 negative cases run with it
+msgids, and the sender still split. Since #858 it also pins `email.templateDir` **by value** (§8.20)
+and checks the three brand image fields against Authentik's own `validate_file_name` whenever they
+are set. Its negative cases run with it
 ([`scripts/test-authentik-brand-posture.sh`](../../scripts/test-authentik-brand-posture.sh)), for the
 same reason the logout and redirect guards carry theirs: a textual guard can stop looking without
-saying so.
+saying so — and since #858 it also carries an `expect_accept` half, because a guard tested only on
+rejections drifts into rejecting everything, which here would make the guard itself the blocker for
+#859.
+
+## 8.20 As built (#858) — the branded mail actually renders, and what the favicon needs
+
+**The mount.** #648's branded `account_confirmation.html` was inert for as long as nothing mounted
+it. The chart renders `ConfigMap beekeepingit-authentik-email-templates` and sets
+`AUTHENTIK_EMAIL__TEMPLATE_DIR=/templates`, but only the external HelmRelease
+(`beekeepingit-gitops`, ADR-0012/ADR-0016) owns a pod. It now declares the ConfigMap under the
+upstream chart's `global.volumes` / `global.volumeMounts`, which chart `2026.5.4` concatenates into
+**both** the server and the worker deployment — the worker sends the mail, the server renders the
+admin-UI preview, and one entry keeps the two from drifting apart.
+
+**Why the mount is one directory deep.** `mountPath` is `/templates/email`, not `/templates`, and the
+depth carries two arguments. Django resolves the template by the name the email stage asks for,
+`email/account_confirmation.html`, and a ConfigMap key cannot contain `/`; mounting the whole
+ConfigMap a level deeper lands every flat key at `email/<key>` with no `items:`/`path:` list to keep
+in sync across two repos, so a second template ships by dropping a file in
+`charts/authentik/files/email/`. And `email.template_dir` becomes `TEMPLATES[0]["DIRS"]` — Django's
+search path for **every** render, searched ahead of the per-app loader — so at `/templates` every key
+of this ConfigMap would sit in front of every top-level-named Authentik template, while at
+`/templates/email` the shadowable namespace is confined to `email/*`. `subPath:` was rejected: a
+subPath mount is a one-time copy that never receives ConfigMap updates. The ConfigMap is mounted
+`optional: true`, so a missing one leaves the directory empty and Authentik's bundled template
+renders — unbranded mail, never no mail, and never a pod stuck in `ContainerCreating`.
+
+**`/templates` is now a cross-repo contract** and `check-authentik-brand-posture.sh` pins the value,
+not just the key: moving it in this repo alone lands the mount where Django never searches, and
+nothing in either repo says so. Two other things do not announce themselves either — a ConfigMap
+whose keys stop being flat base names, and a first render before the file arrives (with `DEBUG` off,
+Django's `cached.Loader` caches a resolved template per name for the life of the process, and kubelet
+projecting a ConfigMap into a running pod does not restart it, so the chart tag carrying the ConfigMap
+must reach a cluster before the mount does). The verification is a captured mail in the Mailpit sink,
+never a pod that came up.
+
+**The favicon (#859) — what `branding_favicon` actually accepts.** Read at the pinned `2026.5.4`,
+replacing the untested claim #648's blueprint comment carried. The three image fields are
+`authentik.admin.files.fields.FileField`, a `TextField` whose `default_validators` are
+`[validate_file_name]` (`authentik/admin/files/validation.py`). That validator short-circuits to
+accept a value supported by one of two backends and otherwise applies the upload-name rules:
+
+| Value shape                    | Backend              | Served as                                              |
+| ------------------------------ | -------------------- | ------------------------------------------------------ |
+| `/static…`                     | `StaticBackend`      | `{web.path}{name}` out of the pod's `web/dist`         |
+| `http:…` `https://…` `fa://…`  | `PassthroughBackend` | returned to the browser verbatim                       |
+| `^[a-zA-Z0-9._/-]+$`, relative | media `FileBackend`  | `/files/{usage}/{schema}/{name}?token=…` (signed, 15m) |
+
+Rejected: no `//`, no `..` component, not absolute, not leading `.`, not empty. So the **`data:` URI
+is rejected** — the charset rule alone kills the `:` and `;` — and so is an absolute pod path such as
+`/templates/email/favicon.png`, which rules out riding the mount above directly. `branding_favicon`
+renders server-side into `base/skeleton.html` as `<link rel="icon" href="{{ brand.branding_favicon_url }}">`,
+so a value that works covers the flow executor and the Django-rendered static pages alike.
+
+**Why nothing shipped.** Two shapes survive, and neither is provable offline. An `https://` URL to
+the app origin is refused on principle: `auth.<env>` and `app.<env>` are different origins, so it
+would make the **password-entry page** fetch a subresource logged by whoever serves it on every
+sign-in — the same argument that keeps a Google Fonts `<link>` out of the brand CSS and the mark
+inlined (NFR-SEC-1) — and it would tie the credential page to the PWA's static hosting. That leaves a
+`/static…` path or a relative media name, both of which need a file **inside the Authentik pod**, at a
+path this repo cannot confirm without a live cluster: the media root is
+`storage.file.path` (default `./data`, CWD-relative) plus `/{usage}/{schema}/`, and the static root is
+the image's `web/dist`. A guess that is merely _unresolvable_ costs a 404 icon; the guard now makes a
+guess that is _invalid_ — the class that takes the whole blueprint down with it — a lint failure
+instead of an outage. #859 carries the full mechanism and the one live check it needs.
 
 ## 9. Acceptance-criteria traceability (#109)
 
