@@ -396,18 +396,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           // slot the Assistant placeholder used to hold — see
           // home_screen.dart's own doc for what its summary sections show.
           //
-          // KNOWN, DELIBERATE DIVERGENCE (#666): Home's rows route straight
-          // into the OWNING branch (`/todos/<id>`, `/journeys/<id>`,
-          // `/apiaries/<id>`) rather than into Home's own stack, so the tab
-          // switches under the user and the shell's Back then lands on that
-          // tab's list instead of returning to Home — exactly the trap the
-          // `journeyActivityDetail` route below documents and avoids by
-          // owning a journey-scoped copy of the activity detail screen. Home
-          // is NOT given the same treatment here: it would mean a Home-scoped
-          // duplicate of every detail route in the app, and the entity's own
-          // tab is a defensible place to land from a summary card. Weighed
-          // and filed as #666 rather than overlooked; whichever way that goes,
-          // it changes routes, not this branch's shape.
+          // #666: Home's three summary rows open the record they preview in
+          // THIS branch (`todos/:id`, `journeys/:id`, `apiaries/:id` below),
+          // not in the entity's own tab. Routing them into the owning branch
+          // switched the selected tab under the user and took Home out of the
+          // stack the shell's Back pops — from the app's LANDING screen
+          // (D-35), for every row it renders. That rule, its boundary (one
+          // hop: the record, not what lies past it) and the
+          // `journeyActivityDetail` route below as its other instance are
+          // documented once in routing/branch_local_navigation.dart, which is
+          // also what every call site asks for a destination.
           StatefulShellBranch(
             navigatorKey: _homeBranchKey,
             routes: [
@@ -442,6 +440,45 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'not-found',
                     name: 'notFound',
                     builder: (context, state) => const NotFoundScreen(),
+                  ),
+                  // Home's own copies of the three records its summary
+                  // previews (#666, FR-UX-1/FR-UX-2, D-35). The SAME screens
+                  // the owning branches render — a copy of the route, never
+                  // of the screen — reached from Home's rows so the tab never
+                  // switches under the user and Back pops to Home, the same
+                  // reason `not-found` above is nested here rather than
+                  // declared beside `/home`.
+                  //
+                  // Read-only landings, and deliberately leaves: an action
+                  // taken ON one of them (edit, "view all", history) routes
+                  // into the entity's owning branch, where those surfaces
+                  // live and where the user has now gone to work — see
+                  // branch_local_navigation.dart's one-hop boundary. Home
+                  // therefore owns three routes, not a shadow copy of every
+                  // detail route in the app.
+                  //
+                  // Path segments mirror the owning branches (`todos/:id`,
+                  // not `todo/:id`) so a Home-branch location reads as the
+                  // owning location with `/home` in front of it.
+                  GoRoute(
+                    path: 'todos/:id',
+                    name: 'homeTodoDetail',
+                    builder: (context, state) =>
+                        TodoDetailScreen(todoId: state.pathParameters['id']!),
+                  ),
+                  GoRoute(
+                    path: 'journeys/:id',
+                    name: 'homeJourneyDetail',
+                    builder: (context, state) => JourneyDetailScreen(
+                      journeyId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'apiaries/:id',
+                    name: 'homeApiaryDetail',
+                    builder: (context, state) => ApiaryDetailScreen(
+                      apiaryId: state.pathParameters['id']!,
+                    ),
                   ),
                 ],
               ),
@@ -522,6 +559,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                       // reachable only via the apiaries-branch route (its own
                       // doc comment) — this route exists purely so Back has
                       // somewhere correct to return to.
+                      //
+                      // #666 folded this into ONE rule with the home branch's
+                      // three copies above rather than leaving it a
+                      // one-off: routing/branch_local_navigation.dart states
+                      // it, and `ActivityListView`'s rows now ask that file
+                      // where to go instead of taking a per-caller override
+                      // from journey_detail_screen.dart.
                       GoRoute(
                         path: 'activities/:activityId',
                         name: 'journeyActivityDetail',

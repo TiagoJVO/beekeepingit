@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
@@ -56,8 +57,14 @@ class JourneyDetailScreen extends ConsumerWidget {
             // to render; bounce back to the list rather than show a blank
             // detail page, mirroring apiary_detail_screen.dart's own
             // handling of the same case.
+            // Where it bounces to follows branch_local_navigation.dart
+            // (#666): a journey opened from Home returns to Home.
+            final gone = recordGoneLocation(
+              from: branchLocationOf(context),
+              ownerList: '/journeys',
+            );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/journeys');
+              if (context.mounted) context.go(gone);
             });
             return const SizedBox.shrink();
           }
@@ -481,13 +488,11 @@ class _ApiaryCard extends StatelessWidget {
               // state.
               emptyText: '',
               shrinkWrap: true,
-              // #384: keep a tap on this journey's own activity inside the
-              // Journeys branch (see ActivityListView's own doc comment) —
-              // apiaryId travels as a query parameter for
-              // journeyActivityDetail's own route (app_router.dart).
-              detailLocationBuilder: (activity) =>
-                  '/journeys/$journeyId/activities/${activity.id}'
-                  '?apiaryId=${activity.apiaryId}',
+              // #384's "keep a tap on this journey's own activity inside the
+              // Journeys branch" is no longer this caller's to ask for: #666
+              // moved the rule into routing/branch_local_navigation.dart, and
+              // the row now resolves it from where the tap happened — which
+              // is this journey's stack.
             ),
           ] else ...[
             const SizedBox(height: 4),

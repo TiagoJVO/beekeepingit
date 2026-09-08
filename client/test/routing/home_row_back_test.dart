@@ -79,7 +79,7 @@ final _todo = Todo(
   organizationId: 'test-org',
 );
 
-final _journey = Journey(
+const _journey = Journey(
   id: 'j1',
   name: 'Spring round',
   mainActivityType: 'inspection',
