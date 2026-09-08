@@ -755,17 +755,76 @@ entries:
       # writing a null — the whole point of #594.
       flow_authentication: !KeyOf flow-default-authentication
       branding_title: BeekeepingIT
-      # branding_logo only accepts a file path (not a data URI), so the authentik wordmark is
-      # hidden and replaced by a text header in CSS; the "Powered by authentik" footer is
-      # removed and the app's dark/amber theme applied.
+      # --- The whole user-visible skin of the IdP (#648, FR-ONB-1, FR-UX-1, NFR-SEC-1,
+      # D-18). ONE brand row skins EVERY page authentik renders under this domain, which
+      # is why four surfaces are branded by one entry: the sign-in flow
+      # (default-authentication-flow), the enrolment flow (beekeepingit-enrollment), the
+      # flow executor's post-submit end pages ("Check your inbox", "Continue"), and the
+      # Django-rendered static pages (`.ak-static-page` — the session-end/post-logout
+      # interstitial and the flow error pages). The flow executor and the static pages are
+      # two different renderers, so both grounds are painted below or the theme changes
+      # under the user mid-journey.
+      #
+      # WHY CSS AND NOT THE IMAGE FIELDS. `branding_logo`, `branding_favicon` and
+      # `branding_default_flow_background` are Django `FileField`s (brands/models.py) whose
+      # value has to name something the AUTHENTIK pod can serve; this repo cannot put a file
+      # in that pod — the Authentik workload is an external Flux HelmRelease in the
+      # beekeepingit-gitops repo (ADR-0012/ADR-0016), and this chart only ships ConfigMaps
+      # and Secrets. Pointing them at another origin, or at a `data:` URI, is a change whose
+      # failure mode is not local: a value the serializer rejects fails the WHOLE blueprint
+      # (Importer.apply is atomic — no provider, no application, no login), and this branch
+      # has no cluster to prove it on. So the branding that lands here is confined to
+      # `branding_custom_css` (a plain TextField, already proven to apply on this
+      # deployment) and the fields stay at their defaults. The browser-tab favicon is the
+      # one surface CSS cannot reach — tracked separately.
+      #
+      # WHERE THE VALUES COME FROM. Every hex is a token from
+      # client/lib/theming/brand_tokens.dart, not a hand-picked approximation (the values
+      # this replaces — #E8B979 on #1a120b — matched no token in the app):
+      #   #F0A81F BrandTokens.honey     — "the primary action + highlights (one accent)"
+      #   #F7B637 BrandTokens.honeyHover— hover/pressed state of honey
+      #   #3A2E14 BrandTokens.onHoney   — the ink that sits on honey at 6.5:1
+      #   #221D31 BrandTokens.plum950   — the app frame / darkest ground
+      #   #F6F3EC BrandTokens.cream     — body text on the plum ground
+      # That makes the primary control on the password page the SAME honey fill as the
+      # app's PrimaryActionButton, which is the "one honey primary action" rule the blue
+      # Bootstrap default was breaking. Contrast is AA-or-better in the pairs used here:
+      # onHoney on honey 6.5:1 (measured in the client's own contrast test), cream on
+      # plum950 13.6:1, honey on plum950 8.02:1 (both recorded in brand_tokens.dart).
+      #
+      # TYPOGRAPHY. The app bundles Archivo (body) and Playfair Display (display/brand) —
+      # see client/lib/theming/app_theme.dart. Those font files are in the PWA bundle, not
+      # in the Authentik pod, and this page deliberately fetches NOTHING from a third party
+      # (a Google Fonts <link> on the password-entry page would leak every sign-in to a
+      # third party — NFR-SEC-1, and the consent path in Q-AICLOUD's spirit). So the family
+      # NAMES lead each stack and degrade to a system face when the OS does not have them:
+      # the shape is right where the fonts exist, and nothing is fetched where they do not.
+      #
+      # i18n (#412, D-34). Nothing here introduces a translatable string: the only literal
+      # text is the product name "BeekeepingIT", a proper noun in both en-GB and pt-PT.
+      # Authentik renders the surrounding flow copy from its own catalogs per the request's
+      # negotiated language (pt-PT -> pt -> the pt_PT catalog — verified in the container on
+      # #412), so branding these pages does not take a locale away from them.
+      #
+      # ACCESSIBILITY (D-18). The stock PatternFly controls are ~36px high and the flow
+      # footer links have no hit box at all, so the min-height/inline-flex rules below are
+      # the 44x44 target floor applied to the pages this issue brands. `:focus-visible`
+      # keeps a 3px honeyHover ring (8.9:1 on the plum ground) instead of letting the
+      # `!important` fills above swallow the default focus outline.
       branding_custom_css: |
         .pf-c-brand img{display:none!important}
-        .pf-c-brand::after{content:'BeekeepingIT';color:#E8B979;font-size:30px;font-weight:700;font-family:'Segoe UI',Roboto,sans-serif}
+        .pf-c-brand{display:flex!important;align-items:center;justify-content:center;gap:12px}
+        .pf-c-brand::before{content:'';flex:0 0 48px;width:48px;height:48px;border-radius:10px;background:url("data:image/png;base64,{{ .Files.Get "files/beekeepingit-mark.png" | b64enc }}") center/contain no-repeat}
+        .pf-c-brand::after{content:'BeekeepingIT';color:#F0A81F;font-size:30px;font-weight:700;font-family:'Playfair Display',Georgia,'Times New Roman',serif}
         .pf-c-login__footer{display:none!important}
         :root{--ak-global--background-image:none!important}
-        .pf-c-background-image,.pf-c-background-image::before{background:#1a120b!important;background-image:none!important}
-        .ak-static-page,body{background:#1a120b!important}
-        .pf-c-button.pf-m-primary{background:#E8B979!important;border-color:#E8B979!important;color:#1a120b!important}
+        .pf-c-background-image,.pf-c-background-image::before{background:#221D31!important;background-image:none!important}
+        .ak-static-page,body{background:#221D31!important;color:#F6F3EC;font-family:'Archivo','Segoe UI',system-ui,-apple-system,sans-serif}
+        .pf-c-button.pf-m-primary{background:#F0A81F!important;border-color:#F0A81F!important;color:#3A2E14!important;font-weight:600;min-height:44px}
+        .pf-c-button.pf-m-primary:hover,.pf-c-button.pf-m-primary:active{background:#F7B637!important;border-color:#F7B637!important;color:#3A2E14!important}
+        .pf-c-button,.pf-c-form-control{min-height:44px}
+        .pf-c-login__main-footer-links-item>a,.pf-c-login__main-footer-band a,.ak-static-page a{display:inline-flex;align-items:center;min-height:44px}
+        .pf-c-button:focus-visible,.pf-c-form-control:focus-visible,a:focus-visible{outline:3px solid #F7B637!important;outline-offset:2px!important}
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
   # Built when accounts were exclusively invite/admin-provisioned (registration
   # disabled), so verification couldn't ride an enrollment flow — it's injected
