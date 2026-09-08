@@ -1858,12 +1858,15 @@ inert), no duplicate `target:`/`stage:`/`url:`/`matching_mode:` keys (PyYAML is 
 `matching_mode: strict` on the two rendered origins (under `fullmatch` a rendered origin read as a
 `regex` turns every unescaped `.` into a wildcard and admits a neighbouring registrable domain), and
 `invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
-off a flow nothing plans). The list is walked by indentation, because a blank line or a re-indented
-item used to end the walk and silently drop every entry below it. All of it is mutation-checked
-against eighteen deliberately broken copies of the blueprint — binding removed, allow-list removed,
-an `https://.*` target, an owned invalidation flow, stage removed, `logout` flipped back to
-`authorization`, a bracketed logout regex, a bracketed authorization regex, plus each evasion above
-— and **all eighteen fail it**. Live, the logout e2e in
+off a flow nothing plans). Every key and value is read with **quotes tolerated on either side** —
+`redirect_uri_type: "logout"` is the same entry to PyYAML, but a bare `: logout` pattern missed it,
+so an `https://evil.example/.*` entry written that way was never recognised as a logout target and
+never reached the allow-list assertion at all. And the list is walked by indentation, because a
+blank line or a re-indented item used to end the walk and silently drop every entry below it. All of
+it is mutation-checked against twenty-four deliberately broken copies of the blueprint — binding
+removed, allow-list removed, an `https://.*` target, an owned invalidation flow, stage removed,
+`logout` flipped back to `authorization`, a bracketed logout regex, a bracketed authorization regex,
+plus each evasion above in both its bare and its quoted spelling — and **all twenty-four fail it**. Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.

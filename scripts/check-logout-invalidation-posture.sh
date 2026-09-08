@@ -60,10 +60,15 @@
 #      can buy. So the two rendered origins must be `strict` and only the
 #      localhost entry may be `regex` — a port cannot be spelled literally.
 #      Duplicate `url:`/`matching_mode:`/`redirect_uri_type:` keys inside one
-#      entry are rejected for the same last-wins reason as (1), and the list is
-#      walked by INDENTATION rather than fixed columns, because a blank line or
-#      a re-indented item used to end the walk and silently drop every entry
-#      below it — counters above it kept the guard green (review findings).
+#      entry are rejected for the same last-wins reason as (1), every key and
+#      value is read with QUOTES TOLERATED on either side (`redirect_uri_type:
+#      "logout"` is the same entry to PyYAML, but a bare `: logout` pattern
+#      missed it entirely — so an `https://evil.example/.*` written that way was
+#      never recognised as a logout target and no allow-list assertion reached
+#      it), and the list is walked by INDENTATION rather than fixed columns,
+#      because a blank line or a re-indented item used to end the walk and
+#      silently drop every entry below it — counters above it kept the guard
+#      green (review findings).
 #
 #   3. NO `[` OR `]` IN ANY REDIRECT URI on these providers — logout,
 #      authorization, `matching_mode: regex`, all of them. This one is not a
@@ -150,16 +155,46 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
 
   function fail(msg) { printf "✗ [logout-invalidation] %s\n", msg > "/dev/stderr"; bad = 1 }
 
+  # A YAML key AS IT MAY ACTUALLY BE WRITTEN. Two things every read below has to
+  # tolerate, because PyYAML does and a pattern that does not is a hole:
+  #   * the key may be QUOTED (`"redirect_uri_type": logout`), and
+  #   * the value may be QUOTED (`redirect_uri_type: "logout"`).
+  # The second one was a live open redirect: `redirect_uri_type: "logout"` is
+  # the same logout entry to authentik, but a bare `:[[:space:]]*logout` pattern
+  # never matched it, so the entry was not recognised as a logout target at all
+  # and NO allow-list assertion ever reached its URL. An
+  # `https://evil.example/.*` entry written that way passed cleanly (review
+  # finding). The left boundary stays mandatory so a longer key ending in this
+  # one — `jwt_url:` reading as `url:` — still does not satisfy it.
+  function keypat(field) {
+    return "(^|[^A-Za-z0-9_-])[\"'"'"']?" field "[\"'"'"']?[[:space:]]*:"
+  }
+
+  # `key:`s scalar value, with surrounding quotes of either kind stripped.
+  # Returns "" when the key is absent.
+  function scalar(text, field,   v, q, p) {
+    if (!match(text, keypat(field) "[[:space:]]*")) return ""
+    v = substr(text, RSTART + RLENGTH)
+    if (v ~ /^["'"'"']/) {
+      q = substr(v, 1, 1)
+      v = substr(v, 2)
+      p = index(v, q)
+      if (p > 0) v = substr(v, 1, p - 1)
+      return v
+    }
+    sub(/[^A-Za-z0-9_-].*$/, "", v)
+    return v
+  }
+
   # How many times a chunk of YAML DECLARES a key. Presence is not enough on its
   # own: PyYAML (authentiks `BlueprintLoader`) takes LAST-WINS on a duplicate
   # mapping key and raises nothing, so a second `target:` / `url:` would satisfy
   # a presence test while shipping the value it hides (review finding — the
   # sibling check-federation-source-posture.sh:194 hardened the same class).
   # `&` as the replacement leaves the text untouched; only the count is used.
-  function key_count(text, field,   pattern, tmp) {
-    pattern = "(^|[^A-Za-z0-9_-])" field "[[:space:]]*:"
+  function key_count(text, field,   tmp) {
     tmp = text
-    return gsub(pattern, "&", tmp)
+    return gsub(keypat(field), "&", tmp)
   }
 
   # `state:` and `conditions:` on an entry this guard asserts EXISTS. Both make
@@ -259,7 +294,7 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
 
     # (3) nothing in this file may OWN an invalidation-designation flow.
     if (entry_model ~ /authentik_flows\.flow$/ &&
-        body ~ /designation[[:space:]]*:[[:space:]]*invalidation([^A-Za-z0-9_-]|$)/)
+        body ~ (keypat("designation") "[[:space:]]*[\"'"'"']?invalidation([^A-Za-z0-9_-]|$)"))
       fail("entry `" entry_id "` OWNS a `designation: invalidation` flow. That re-arms the " \
            "slug-ordering trap the blueprints #599 pin block documents: pin " \
            "`brand.flow_invalidation` in the same change, then relax this assertion.")
@@ -292,34 +327,45 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
         # the only symptom is every browser sign-in failing with "Failed to
         # fetch". `http://localhost:[0-9]+` did exactly that on this PRs first
         # CI run (15/25 e2e tests down); `\\d+` is the same class, bracket-free.
-        if (it ~ /[][]/)
+        if (index(it, "[") > 0 || index(it, "]") > 0)
           fail("provider `" entry_id "` has a redirect URI containing `[` or `]`: " it \
                ". authentik `urlparse()`s EVERY redirect_uris entry to build its CORS allow-list, " \
                "and a netloc with data before a `[` raises `Invalid IPv6 URL` — which 500s the " \
                "discovery document for any request with an `Origin` header and breaks every " \
                "browser sign-in, while in-cluster health probes stay green. Use `\\d`, not `[0-9]`.")
 
-        is_logout = (it ~ /redirect_uri_type[[:space:]]*:[[:space:]]*logout([^A-Za-z0-9_-]|$)/)
+        # `redirect_uri_type` is what decides whether this entry is inspected at
+        # all, so its duplicate check runs on EVERY entry and BEFORE that
+        # decision. Otherwise `redirect_uri_type: authorization` followed by
+        # `redirect_uri_type: logout` reads as authorization here, is skipped,
+        # and ships as a logout target under PyYAMLs last-wins.
+        if (key_count(it, "redirect_uri_type") > 1) {
+          fail("provider `" entry_id "` has a redirect entry declaring `redirect_uri_type:` more " \
+               "than once. PyYAML takes last-wins silently, so the type this guard read is not " \
+               "the type authentik applies: " it)
+          continue
+        }
+
+        is_logout = (scalar(it, "redirect_uri_type") == "logout")
         if (!is_logout) continue
         n_logout++
-        # One `url:`, one `matching_mode:`, one `redirect_uri_type:` per entry —
-        # a duplicate is last-wins in PyYAML, so a second `url:` would ship a
-        # target this guard never reads.
-        if (key_count(it, "url") != 1 || key_count(it, "matching_mode") != 1 ||
-            key_count(it, "redirect_uri_type") != 1) {
-          fail("provider `" entry_id "` has a logout redirect entry that declares `url:`, " \
-               "`matching_mode:` or `redirect_uri_type:` more than once (or not at all). " \
+        # One `url:` and one `matching_mode:` per entry — a duplicate is
+        # last-wins in PyYAML, so a second `url:` would ship a target this guard
+        # never reads.
+        if (key_count(it, "url") != 1 || key_count(it, "matching_mode") != 1) {
+          fail("provider `" entry_id "` has a logout redirect entry that declares `url:` or " \
+               "`matching_mode:` more than once (or not at all). " \
                "PyYAML takes last-wins silently: " it)
           continue
         }
-        url = it
-        if (!match(url, /url[[:space:]]*:[[:space:]]*["'"'"']/)) {
+        # The value must be QUOTED — this guard and every reviewer read it, and
+        # a bare `{{ ... }}` is not even valid YAML. The KEY may be quoted too.
+        if (!match(it, keypat("url") "[[:space:]]*[\"'"'"']")) {
           fail("provider `" entry_id "` has a logout redirect URI with no QUOTED `url:` — " \
                "this guard (and review) reads that value; quote it.")
           continue
         }
-        url = substr(url, RSTART + RLENGTH)
-        sub(/["'"'"'].*$/, "", url)
+        url = scalar(it, "url")
 
         want = required_mode(url)
         if (want == "") {
@@ -330,10 +376,7 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
           continue
         }
 
-        mode = it
-        match(mode, /matching_mode[[:space:]]*:[[:space:]]*/)
-        mode = substr(mode, RSTART + RLENGTH)
-        sub(/[^A-Za-z0-9_].*$/, "", mode)
+        mode = scalar(it, "matching_mode")
         if (mode != want)
           fail("provider `" entry_id "` allow-lists logout redirect `" url "` with " \
                "`matching_mode: " mode "`, but it must be `" want "`. authentik matches a regex " \
