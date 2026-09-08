@@ -162,12 +162,12 @@ if [ "$#" -eq 0 ]; then
   blueprint_basename="$(basename "${blueprint}")"
   if ! grep -qE "^blueprintFile:[[:space:]]*[\"']?${blueprint_basename}[\"']?[[:space:]]*\$" \
     "${chart_values}"; then
-    printf '✗ [logout-invalidation] %s no longer sets `blueprintFile: %s`, so this guard is\n' \
+    printf '✗ [logout-invalidation] %s no longer sets blueprintFile: %s, so this\n' \
       "${chart_values}" "${blueprint_basename}" >&2
-    printf '  asserting over a file the chart does not ship. `.Files.Get` returns "" for a path\n' >&2
-    printf '  that is not in the chart and raises nothing, so a repointed value deploys an EMPTY\n' >&2
-    printf '  blueprint with every check green. Repoint this guard in the same change, or\n' >&2
-    printf '  restore the value.\n' >&2
+    printf '  guard is asserting over a file the chart does not ship. Helm .Files.Get\n' >&2
+    printf '  returns the empty string for a path that is not in the chart, and raises\n' >&2
+    printf '  nothing -- so a repointed value deploys an EMPTY blueprint with every check\n' >&2
+    printf '  still green. Repoint this guard in the same change, or restore the value.\n' >&2
     exit 1
   fi
 fi
@@ -187,8 +187,9 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   # entry with `re.fullmatch`, so `https://beekeepingit-rc.melargil.pt` read as
   # a pattern also matches `https://beekeepingit-rcamelargil.pt` — a DIFFERENT
   # registrable domain an attacker can buy. A rendered origin is a literal URL
-  # and must therefore be `strict`; only the localhost dev entry is a pattern,
-  # and only because a port cannot be spelled literally (review finding).
+  # and must therefore be `strict` — and since #822 so must the localhost dev
+  # entries, which are literals per real dev port rather than a pattern, so every
+  # target on this list is `strict` (review finding).
   function required_mode(u) {
     if (u == "{{ .Values.global.appOrigin }}") return "strict"
     if (u == "{{ .Values.global.adminOrigin }}") return "strict"
