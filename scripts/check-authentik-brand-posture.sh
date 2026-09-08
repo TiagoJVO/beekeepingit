@@ -75,7 +75,8 @@
 # scripts/check-logout-invalidation-posture.sh.
 #
 # Run by `task repo:authentik-brand-posture` -> `task repo:lint` -> `task ci`.
-# Written up in docs/architecture/auth.md §8.19.
+# Written up in docs/architecture/auth.md §8.19 (rules 1-6) and §8.20 (rule 7 + the
+# `templateDir` cross-repo contract).
 #
 # Exit codes: 0 = branding intact, 1 = drift.
 set -euo pipefail
@@ -382,7 +383,7 @@ for key in branding_logo branding_favicon branding_default_flow_background; do
         "(NFR-SEC-1) — an off-origin favicon is a per-sign-in request logged by whoever serves" \
         "it, carried with same-site cookies, and it makes the credential page depend on that" \
         "host being up. Use a \`/static…\` path or a relative media name served by the" \
-        "Authentik pod itself. See #859 and docs/architecture/auth.md §8.19." ;;
+        "Authentik pod itself. See #859 and docs/architecture/auth.md §8.20." ;;
   esac
 
   # Shape 1 (+ `fa://`, which the web UI resolves to a bundled Font Awesome class and fetches
@@ -412,7 +413,7 @@ for key in branding_logo branding_favicon branding_default_flow_background; do
     "(^[a-zA-Z0-9._/-]+\$, no //, no .., not absolute, not leading '.'). A \`data:\` URI and an" \
     "absolute pod path are both rejected. And a rejected value does not merely lose the icon:" \
     "Importer.apply is atomic, so the WHOLE blueprint rolls back — no OAuth2 provider, no" \
-    "application, no login. See #859 and docs/architecture/auth.md §8.19."
+    "application, no login. See #859 and docs/architecture/auth.md §8.20."
 done
 
 printf '✓ [authentik-brand] flow pages + confirmation email carry BeekeepingIT branding, every hex is a brand token, sender stays split for #417\n'
