@@ -484,14 +484,17 @@ void main() {
 
       // Regression coverage for the *default* (non-journey) tap path — that
       // the shared _ActivityTile still lands on the apiaries-branch route
-      // when `detailLocationBuilder` is unset — already exists end-to-end at
-      // activity_detail_screen_test.dart:167 ("tapping a row in the main
-      // all-apiaries Activities tab opens the detail"): it taps an activity
-      // tile reached via the Activities tab (the same shared tile, unmodified
-      // default `detailLocationBuilder`), asserts the detail renders, and
-      // asserts the shell back button returns to the *apiary* detail (proof
-      // of the apiaries-branch route, not just a URL string). No separate
-      // test added here to avoid duplicating that coverage.
+      // when the tap is NOT inside a journey's own stack (#666 replaced the
+      // per-caller `detailLocationBuilder` override this used to describe
+      // with branch_local_navigation.dart's `activityDetailLocation`, which
+      // resolves the destination from where the tap happened) — already
+      // exists end-to-end at activity_detail_screen_test.dart:167 ("tapping
+      // a row in the main all-apiaries Activities tab opens the detail"): it
+      // taps an activity tile reached via the Activities tab (the same
+      // shared tile), asserts the detail renders, and asserts the shell back
+      // button returns to the *apiary* detail (proof of the apiaries-branch
+      // route, not just a URL string). No separate test added here to avoid
+      // duplicating that coverage.
     });
 
     group(

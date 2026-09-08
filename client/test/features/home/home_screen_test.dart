@@ -337,7 +337,10 @@ void main() {
       await tester.tap(find.byKey(const Key('home-todo-t1')));
       await _pumpBounded(tester);
 
-      expect(_location(tester), '/todos/t1');
+      // Home's OWN copy of the todo detail route (#666): a summary row must
+      // not switch the tab under the user. test/routing/home_row_back_test
+      // .dart pins the Back half of that contract for all three row types.
+      expect(_location(tester), '/home/todos/t1');
     });
 
     testWidgets('the section is absent when nothing is overdue or due soon', (
@@ -405,7 +408,7 @@ void main() {
       await tester.tap(find.byKey(const Key('home-journey-j1')));
       await _pumpBounded(tester);
 
-      expect(_location(tester), '/journeys/j1');
+      expect(_location(tester), '/home/journeys/j1');
     });
 
     testWidgets('the section is absent when no journey is open', (
@@ -479,7 +482,7 @@ void main() {
         await tester.tap(find.byKey(const Key('home-apiary-a1')));
         await _pumpBounded(tester);
 
-        expect(_location(tester), '/apiaries/a1');
+        expect(_location(tester), '/home/apiaries/a1');
       });
 
       testWidgets('offers no "view all" link — rows tap to the record (D-35)', (

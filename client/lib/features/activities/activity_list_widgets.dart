@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
@@ -191,7 +192,6 @@ class ActivityListView extends ConsumerWidget {
     bool? reserveBottomChrome,
     this.maxItems,
     this.onViewAll,
-    this.detailLocationBuilder,
     super.key,
   }) : reserveBottomChrome = reserveBottomChrome ?? !shrinkWrap;
 
@@ -216,15 +216,6 @@ class ActivityListView extends ConsumerWidget {
 
   final int? maxItems;
   final VoidCallback? onViewAll;
-
-  /// Overrides where a row navigates on tap (#384) — defaults to the
-  /// apiaries-branch activity detail route (`_ActivityTile`'s own doc
-  /// comment) when omitted. A caller embedding this list in a DIFFERENT
-  /// navigation branch (journey_detail_screen.dart's own activity rows)
-  /// passes a location under ITS OWN branch instead, so the tab that opens
-  /// stays the one the user was already on, and Back returns there —
-  /// rather than silently crossing into the apiaries tab.
-  final String Function(Activity activity)? detailLocationBuilder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -307,7 +298,6 @@ class ActivityListView extends ConsumerWidget {
                 apiaryName: showApiary
                     ? apiaryNameOf?.call(activity.apiaryId)
                     : null,
-                detailLocationBuilder: detailLocationBuilder,
               );
             },
           ),
@@ -380,14 +370,12 @@ class _ActivityTile extends StatelessWidget {
     required this.currentUserId,
     required this.memberNames,
     this.apiaryName,
-    this.detailLocationBuilder,
   });
 
   final Activity activity;
   final String? currentUserId;
   final Map<String, String> memberNames;
   final String? apiaryName;
-  final String Function(Activity activity)? detailLocationBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -435,20 +423,24 @@ class _ActivityTile extends StatelessWidget {
           // the leading tile aligns to the top of them rather than floating in
           // the middle of a tall row.
           isThreeLine: compact,
-          // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both
-          // the per-apiary section (apiary detail) and the main all-apiaries
-          // tab use this shared tile, so this single onTap wires both list
-          // surfaces. The detail route lives under the apiaries branch
-          // (app_router.dart) — where every activity view/edit/delete surface
-          // lives — so a tap from the Activities tab crosses into that
-          // branch's stack (Back returns to the apiary context), consistent
-          // with where edit/delete already live. [detailLocationBuilder]
-          // (#384) overrides this for a caller embedding this tile in a
-          // different branch's own stack (journey_detail_screen.dart) — see
-          // ActivityListView's own doc comment.
+          // Tapping a row opens the activity detail (#310, FR-AC-3/5/6).
+          // Every list surface — the Activities tab, an apiary's embedded
+          // section, a journey's own per-apiary rows — uses this shared tile,
+          // so this single onTap wires them all, and where it lands is
+          // branch_local_navigation.dart's one rule rather than the caller's
+          // choice: the detail opens in the branch the tap happened in.
+          // Inside a journey that is the journeys-branch copy (#384, which
+          // used to reach here through a `detailLocationBuilder` override
+          // this caller had to remember to pass); anywhere else it is the
+          // apiaries-branch route, where edit/delete/history also live.
+          // Resolved at TAP time, not in `build`, so a list pumped without a
+          // router (activity_row_density_test.dart) still renders.
           onTap: () => context.go(
-            detailLocationBuilder?.call(activity) ??
-                '/apiaries/${activity.apiaryId}/activities/${activity.id}',
+            activityDetailLocation(
+              from: branchLocationOf(context),
+              apiaryId: activity.apiaryId,
+              activityId: activity.id,
+            ),
           ),
           leading: LeadingIconTile(
             icon: activityTypeIcon(activity.type),
