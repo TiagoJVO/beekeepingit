@@ -25,11 +25,15 @@ Invitation _invitation({
   String email = 'invitee@example.com',
   String role = 'user',
   String status = 'pending',
+  String deliveryStatus = 'sent',
+  String deliveryError = '',
 }) => Invitation(
   id: id,
   email: email,
   role: role,
   status: status,
+  deliveryStatus: deliveryStatus,
+  deliveryError: deliveryError,
   createdAt: DateTime.utc(2026, 1, 1),
 );
 
@@ -41,6 +45,7 @@ class _FakeMembersController extends MembersController {
     this._initial, {
     this.onInvite,
     this.onRevoke,
+    this.onResend,
     this.onLoadMoreMembers,
     this.onLoadMoreInvitations,
   });
@@ -48,6 +53,11 @@ class _FakeMembersController extends MembersController {
   final MembersState _initial;
   final Future<void> Function({required String email, String role})? onInvite;
   final Future<void> Function(String invitationId)? onRevoke;
+
+  /// #641: the resend seam, same rationale as [onRevoke]. Returns the
+  /// invitation the attempt produced, so a test can drive both the
+  /// "it worked this time" and the "still failing" snackbar.
+  final Future<Invitation> Function(String invitationId)? onResend;
 
   /// Test-only seams for the "load more" pagination actions — the real
   /// implementations need `organizationProvider`/a real repository, neither
@@ -63,20 +73,37 @@ class _FakeMembersController extends MembersController {
   Future<MembersState> build() async => _initial;
 
   @override
-  Future<void> invite({required String email, String role = 'user'}) async {
+  Future<Invitation> invite({
+    required String email,
+    String role = 'user',
+  }) async {
     if (onInvite != null) {
       await onInvite!(email: email, role: role);
-      return;
+      return _invitation(email: email);
     }
+    final created = _invitation(email: email);
     state = AsyncData(
       MembersState(
         members: _initial.members,
-        invitations: [
-          ..._initial.invitations,
-          _invitation(email: email),
-        ],
+        invitations: [..._initial.invitations, created],
       ),
     );
+    return created;
+  }
+
+  @override
+  Future<Invitation> resendInvitation(String invitationId) async {
+    if (onResend != null) return onResend!(invitationId);
+    final resent = _invitation(id: invitationId, deliveryStatus: 'sent');
+    state = AsyncData(
+      MembersState(
+        members: _initial.members,
+        invitations: _initial.invitations
+            .map((i) => i.id == invitationId ? resent : i)
+            .toList(),
+      ),
+    );
+    return resent;
   }
 
   @override
@@ -956,5 +983,129 @@ void main() {
         },
       );
     }
+  });
+
+  // #641 (FR-ONB-3): the honesty half. The invitation list used to show
+  // "Pending" from the moment of creation, forever, for an email that was
+  // never sent — which everywhere else in this product means *sent, awaiting
+  // response*.
+  group('invitation delivery is reported honestly (#641)', () {
+    Future<void> pumpWith(WidgetTester tester, List<Invitation> invitations,
+        {Future<Invitation> Function(String)? onResend}) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeMembersController(
+            MembersState(
+              members: [_member(userId: 'admin-1', role: 'admin')],
+              invitations: invitations,
+            ),
+            onResend: onResend,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a delivered invitation reads as Pending — it really is', (
+      tester,
+    ) async {
+      await pumpWith(tester, [_invitation(deliveryStatus: 'sent')]);
+
+      expect(find.textContaining('Pending'), findsOneWidget);
+      expect(find.textContaining('Not sent'), findsNothing);
+    });
+
+    testWidgets('an in-flight send reads as Sending, never as Pending', (
+      tester,
+    ) async {
+      await pumpWith(tester, [_invitation(deliveryStatus: 'pending')]);
+
+      expect(find.textContaining('Sending'), findsOneWidget);
+      expect(find.textContaining('Pending'), findsNothing);
+    });
+
+    testWidgets('a failed send says so, and says why', (tester) async {
+      await pumpWith(tester, [
+        _invitation(
+          deliveryStatus: 'failed',
+          deliveryError: 'relay_unavailable',
+        ),
+      ]);
+
+      expect(find.textContaining('Not sent'), findsOneWidget);
+      expect(
+        find.byKey(const Key('invitation-delivery-error-inv-1')),
+        findsOneWidget,
+        reason: 'a failure with no reason is exactly the dead end #641 is about',
+      );
+      expect(
+        find.text('The mail server could not be reached.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a resolved invitation shows its lifecycle, not its delivery', (
+      tester,
+    ) async {
+      await pumpWith(tester, [
+        _invitation(
+          status: 'accepted',
+          deliveryStatus: 'failed',
+          deliveryError: 'relay_unavailable',
+        ),
+      ]);
+
+      expect(find.textContaining('Accepted'), findsOneWidget);
+      expect(find.textContaining('Not sent'), findsNothing);
+    });
+
+    testWidgets('a pending invitation offers a retry that reports its outcome', (
+      tester,
+    ) async {
+      var resends = 0;
+      await pumpWith(
+        tester,
+        [_invitation(deliveryStatus: 'failed', deliveryError: 'not_configured')],
+        onResend: (id) async {
+          resends++;
+          return _invitation(id: id, deliveryStatus: 'sent');
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
+      await tester.pumpAndSettle();
+
+      expect(resends, 1);
+      expect(find.text('Invitation email sent.'), findsOneWidget);
+    });
+
+    testWidgets('a retry that fails again says so rather than claiming success', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        [_invitation(deliveryStatus: 'failed', deliveryError: 'not_configured')],
+        onResend: (id) async => _invitation(
+          id: id,
+          deliveryStatus: 'failed',
+          deliveryError: 'relay_unavailable',
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Still could not send it'), findsOneWidget);
+      expect(find.text('Invitation email sent.'), findsNothing);
+    });
+
+    testWidgets('a resolved invitation offers neither retry nor revoke', (
+      tester,
+    ) async {
+      await pumpWith(tester, [_invitation(status: 'accepted')]);
+
+      expect(find.byKey(const Key('resend-invitation-inv-1')), findsNothing);
+      expect(find.byKey(const Key('revoke-invitation-inv-1')), findsNothing);
+    });
   });
 }

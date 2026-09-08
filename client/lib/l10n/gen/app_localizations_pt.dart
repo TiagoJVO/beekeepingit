@@ -362,6 +362,52 @@ class AppLocalizationsPt extends AppLocalizations {
   String get invitationStatusRevoked => 'Revogado';
 
   @override
+  String get invitationDeliverySending => 'A enviar';
+
+  @override
+  String get invitationDeliveryFailed => 'Não enviado';
+
+  @override
+  String get invitationDeliveryErrorNotConfigured =>
+      'O envio de email ainda não está configurado neste ambiente.';
+
+  @override
+  String get invitationDeliveryErrorRejected =>
+      'O servidor de email rejeitou este endereço.';
+
+  @override
+  String get invitationDeliveryErrorRelayUnavailable =>
+      'Não foi possível contactar o servidor de email.';
+
+  @override
+  String get invitationDeliveryErrorRenderFailed =>
+      'Não foi possível preparar o email do convite.';
+
+  @override
+  String get invitationDeliveryErrorNeverSent =>
+      'Este convite foi criado antes de os convites serem enviados por email. Envie-o agora.';
+
+  @override
+  String get invitationDeliveryErrorUnknown =>
+      'Não foi possível enviar o email.';
+
+  @override
+  String get membersResendButton => 'Enviar convite novamente';
+
+  @override
+  String get membersResendSuccess => 'Email do convite enviado.';
+
+  @override
+  String membersResendStillFailing(String reason) {
+    return 'Continua a não ser possível enviar: $reason';
+  }
+
+  @override
+  String membersInviteCreatedNotSent(String reason) {
+    return 'Convite criado, mas não foi possível enviar o email: $reason';
+  }
+
+  @override
   String get membersLoadMoreButton => 'Carregar mais';
 
   @override

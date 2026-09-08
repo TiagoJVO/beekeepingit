@@ -9,7 +9,10 @@ ORDER BY created_at
 LIMIT 1;
 
 -- name: GetOrganization :one
-SELECT id, name, address, registration_number, created_by, created_at, updated_at
+-- locale (#641, migration 00008) is read here because this is the read the
+-- invitation-email path already makes for the org name -- the email needs
+-- both, and adding a second query for one column would be worse.
+SELECT id, name, address, registration_number, locale, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1;
 

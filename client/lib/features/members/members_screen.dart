@@ -38,6 +38,11 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
   /// `_inviting`'s equivalent guard on the invite button).
   final Set<String> _revokingIds = {};
 
+  /// Ids of invitations currently mid-resend (#641) — same double-tap guard
+  /// as [_revokingIds], and it matters more here: every accepted tap is
+  /// another email to a real person's inbox.
+  final Set<String> _resendingIds = {};
+
   bool _loadingMoreMembers = false;
   bool _loadingMoreInvitations = false;
 
@@ -54,12 +59,23 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       _emailError = null;
     });
     try {
-      await ref
+      final created = await ref
           .read(membersProvider.notifier)
           .invite(email: _emailController.text.trim());
       if (!mounted) return;
       _emailController.clear();
-      showAppToast(ScaffoldMessenger.of(context), l10n.membersInviteSuccess);
+      // #641: the invitation is created either way, but only say "sent" when
+      // it actually was. A failed email is not an error here — the invitation
+      // exists and is retryable from its row. Raised through showAppToast
+      // (#640) like every other confirmation on this screen.
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        created.deliveryStatus == 'sent'
+            ? l10n.membersInviteSuccess
+            : l10n.membersInviteCreatedNotSent(
+                _deliveryErrorLabel(l10n, created.deliveryError),
+              ),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       final fieldErrors = {
@@ -99,6 +115,43 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       );
     } finally {
       if (mounted) setState(() => _revokingIds.remove(invitationId));
+    }
+  }
+
+  /// Retries the invitation email (#641 AC 5) and tells the admin what THIS
+  /// attempt did — a snackbar saying "sent" or "still failing", never a
+  /// silent redraw. The list refresh happens inside the controller, so the
+  /// row's own state label updates too.
+  Future<void> _resend(String invitationId, AppLocalizations l10n) async {
+    if (_resendingIds.contains(invitationId)) return;
+    setState(() => _resendingIds.add(invitationId));
+    try {
+      final updated = await ref
+          .read(membersProvider.notifier)
+          .resendInvitation(invitationId);
+      if (!mounted) return;
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        updated.deliveryStatus == 'sent'
+            ? l10n.membersResendSuccess
+            : l10n.membersResendStillFailing(
+                _deliveryErrorLabel(l10n, updated.deliveryError),
+              ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError(e.detail),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
+    } finally {
+      if (mounted) setState(() => _resendingIds.remove(invitationId));
     }
   }
 
@@ -296,7 +349,9 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                     (inv) => _InvitationTile(
                       invitation: inv,
                       revoking: _revokingIds.contains(inv.id),
+                      resending: _resendingIds.contains(inv.id),
                       onRevoke: () => _revoke(inv.id, l10n),
+                      onResend: () => _resend(inv.id, l10n),
                     ),
                   ),
                 if (data.invitationsNextCursor != null) ...[
@@ -338,16 +393,49 @@ String _memberStatusLabel(AppLocalizations l10n, String status) =>
       _ => status,
     };
 
-/// Maps a raw invitation `status` value (organizations migration 00002:
-/// `status IN ('pending', 'accepted', 'expired', 'revoked')`) to its
-/// localized label.
-String _invitationStatusLabel(AppLocalizations l10n, String status) =>
-    switch (status) {
-      'pending' => l10n.invitationStatusPending,
+/// The one honest label for an invitation's state (#641).
+///
+/// An invitation has TWO independent states — its lifecycle (`status`: what
+/// the invitee did) and its email delivery (`delivery_status`: what the system
+/// did) — and the admin needs whichever one is currently the truth about this
+/// row. A resolved lifecycle wins (an accepted invitation is accepted
+/// regardless of how its email went); while it is still `pending`, what the
+/// admin actually needs to know is whether the email left.
+///
+/// This replaces a bare "Pending" that used to be shown from the moment of
+/// creation, forever, for a message that had never been sent — the defect
+/// #641 exists to fix. "Pending" now only ever means what it means everywhere
+/// else in the product: sent, awaiting a response.
+String _invitationStateLabel(AppLocalizations l10n, Invitation invitation) {
+  if (invitation.status != 'pending') {
+    return switch (invitation.status) {
       'accepted' => l10n.invitationStatusAccepted,
       'expired' => l10n.invitationStatusExpired,
       'revoked' => l10n.invitationStatusRevoked,
-      _ => status,
+      _ => invitation.status,
+    };
+  }
+  return switch (invitation.deliveryStatus) {
+    'sent' => l10n.invitationStatusPending,
+    'failed' => l10n.invitationDeliveryFailed,
+    // 'pending' — an attempt is in flight, or its outcome could not be
+    // recorded. Never shown as "Pending" (which claims delivery): "Sending"
+    // says exactly as much as is known.
+    _ => l10n.invitationDeliverySending,
+  };
+}
+
+/// Maps a server delivery failure CODE to a localized explanation (#641).
+/// Codes, not messages, cross the wire, so the admin reads this in their own
+/// language and the server never has to guess one.
+String _deliveryErrorLabel(AppLocalizations l10n, String code) =>
+    switch (code) {
+      'not_configured' => l10n.invitationDeliveryErrorNotConfigured,
+      'rejected' => l10n.invitationDeliveryErrorRejected,
+      'relay_unavailable' => l10n.invitationDeliveryErrorRelayUnavailable,
+      'render_failed' => l10n.invitationDeliveryErrorRenderFailed,
+      'never_sent' => l10n.invitationDeliveryErrorNeverSent,
+      _ => l10n.invitationDeliveryErrorUnknown,
     };
 
 /// A single row in the members list — its own widget class (rather than an
@@ -402,7 +490,9 @@ class _InvitationTile extends StatelessWidget {
   const _InvitationTile({
     required this.invitation,
     required this.revoking,
+    required this.resending,
     required this.onRevoke,
+    required this.onResend,
   });
 
   final Invitation invitation;
@@ -410,14 +500,31 @@ class _InvitationTile extends StatelessWidget {
   /// Whether a revoke request for this invitation is currently in flight.
   final bool revoking;
 
+  /// Whether a resend request for this invitation is currently in flight
+  /// (#641) — same double-tap guard rationale as [revoking].
+  final bool resending;
+
   final VoidCallback onRevoke;
+  final VoidCallback onResend;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final failed =
+        invitation.status == 'pending' && invitation.deliveryStatus == 'failed';
+
+    // The failure reason is a second subtitle line rather than a tooltip or an
+    // icon: "it failed" without "why" is the kind of dead end this milestone
+    // is about, and a tooltip is reachable by neither touch nor screen reader.
+    final reason = failed
+        ? _deliveryErrorLabel(l10n, invitation.deliveryError)
+        : null;
+
     return ListTile(
       key: Key('invitation-${invitation.id}'),
       contentPadding: EdgeInsets.zero,
+      isThreeLine: reason != null,
       // The invited address stays the row's title (#582): an invitation has
       // no user account yet, so there is no name to resolve and no id worth
       // showing — the email IS the invitee's identity, and it reads as a
@@ -430,22 +537,58 @@ class _InvitationTile extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        '${_roleLabel(l10n, invitation.role)} · '
-        '${_invitationStatusLabel(l10n, invitation.status)}',
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${_roleLabel(l10n, invitation.role)} · '
+            '${_invitationStateLabel(l10n, invitation)}',
+            style: failed
+                ? theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.error,
+                  )
+                : null,
+          ),
+          if (reason != null)
+            Text(
+              reason,
+              key: Key('invitation-delivery-error-${invitation.id}'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+        ],
       ),
       trailing: invitation.status == 'pending'
-          ? IconButton(
-              key: Key('revoke-invitation-${invitation.id}'),
-              icon: revoking
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.close),
-              tooltip: l10n.membersRevokeButton,
-              onPressed: revoking ? null : onRevoke,
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  key: Key('resend-invitation-${invitation.id}'),
+                  icon: resending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  tooltip: l10n.membersResendButton,
+                  onPressed: resending ? null : onResend,
+                ),
+                IconButton(
+                  key: Key('revoke-invitation-${invitation.id}'),
+                  icon: revoking
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.close),
+                  tooltip: l10n.membersRevokeButton,
+                  onPressed: revoking ? null : onRevoke,
+                ),
+              ],
             )
           : null,
     );

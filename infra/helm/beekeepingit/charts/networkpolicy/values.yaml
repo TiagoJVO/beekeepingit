@@ -353,6 +353,17 @@ edges:
     to: { app.kubernetes.io/name: mailpit }
     port: 8025
     ingressOnly: true
+  # #641: the organizations service now sends the organization-invitation email
+  # itself (docs/architecture/auth.md §8.7) rather than routing it through
+  # Authentik, so it needs its own SMTP edge to the sink. Unlike the authentik
+  # edges above this one is NOT `ingressOnly`: the organizations pod IS under
+  # default-deny (it is one of ours, not an excluded upstream chart's), so it
+  # needs the egress half as well — the plain edge form renders both.
+  - name: organizations-to-mailpit-smtp
+    from: { app.kubernetes.io/name: organizations }
+    to: { app.kubernetes.io/name: mailpit }
+    port: 1025
+
   # `helm test` hook (charts/mailpit/templates/tests/ready-test.yaml) — probes
   # Mailpit's /readyz. Both hook pod and sink pod carry the same
   # name=mailpit label, so this one edge covers the hook's egress AND the

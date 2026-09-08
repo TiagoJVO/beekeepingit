@@ -15,7 +15,8 @@ const acceptInvitation = `-- name: AcceptInvitation :one
 UPDATE organizations.invitations
 SET status = 'accepted', updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
+RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
+          delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 `
 
 // Marks the invitation accepted. Called in the same transaction as the
@@ -31,6 +32,10 @@ func (q *Queries) AcceptInvitation(ctx context.Context, id pgtype.UUID) (Organiz
 		&i.Email,
 		&i.Role,
 		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -38,10 +43,39 @@ func (q *Queries) AcceptInvitation(ctx context.Context, id pgtype.UUID) (Organiz
 	return i, err
 }
 
+const countInvitationsCreatedSince = `-- name: CountInvitationsCreatedSince :one
+SELECT count(*)
+FROM organizations.invitations
+WHERE organization_id = $1 AND created_at >= $2
+`
+
+type CountInvitationsCreatedSinceParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Since          pgtype.Timestamptz `json:"since"`
+}
+
+// Rate-limit counter for POST .../invitations (#641 security review): how many
+// invitations has this organization created since `since`? An org admin can
+// otherwise point the service's relay at an unbounded list of arbitrary
+// addresses — a spam/abuse amplifier wearing a legitimate admin's credentials,
+// and a reputation risk for the sending domain (#417).
+//
+// Counts EVERY invitation in the window regardless of status or delivery
+// outcome: revoking or failing to deliver must not reset the budget, or the
+// limit is trivially bypassed by revoking each invite after creating it.
+// Served by invitations_organization_id_created_at_idx (migration 00008).
+func (q *Queries) CountInvitationsCreatedSince(ctx context.Context, arg CountInvitationsCreatedSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInvitationsCreatedSince, arg.OrganizationID, arg.Since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createInvitation = `-- name: CreateInvitation :one
 INSERT INTO organizations.invitations (id, organization_id, email, role, invited_by)
 VALUES ($1, $2, lower($5), $3, $4)
-RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
+RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
+          delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 `
 
 type CreateInvitationParams struct {
@@ -56,6 +90,11 @@ type CreateInvitationParams struct {
 // The partial unique index (organization_id, lower(email)) WHERE status =
 // 'pending' rejects a second pending invite to the same address with a
 // unique_violation, which api/invitations.go maps to 409.
+//
+// delivery_status starts at its 'pending' DEFAULT and is NOT set here: the row
+// must commit before the email is attempted (#641), so "created but not yet
+// sent" is a real, observable state for the duration of one send. The handler
+// follows up with MarkInvitationDelivery.
 func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (OrganizationsInvitation, error) {
 	row := q.db.QueryRow(ctx, createInvitation,
 		arg.ID,
@@ -71,6 +110,10 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 		&i.Email,
 		&i.Role,
 		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -79,7 +122,8 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 }
 
 const getInvitation = `-- name: GetInvitation :one
-SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
+SELECT id, organization_id, email, role, status, delivery_status, delivery_error,
+       delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 FROM organizations.invitations
 WHERE id = $1 AND organization_id = $2
 `
@@ -98,6 +142,10 @@ func (q *Queries) GetInvitation(ctx context.Context, arg GetInvitationParams) (O
 		&i.Email,
 		&i.Role,
 		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -106,7 +154,8 @@ func (q *Queries) GetInvitation(ctx context.Context, arg GetInvitationParams) (O
 }
 
 const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
-SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
+SELECT id, organization_id, email, role, status, delivery_status, delivery_error,
+       delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 FROM organizations.invitations
 WHERE lower(email) = lower($1) AND status = 'pending'
 ORDER BY created_at
@@ -117,6 +166,12 @@ LIMIT 1
 // email have a pending invitation anywhere? v1 is single-org-per-user (C-1),
 // so the first (oldest) pending invite wins if more than one org somehow
 // invited the same address.
+//
+// Deliberately NOT filtered on delivery_status (#641): an invitation whose
+// email failed to send is still a real invitation the admin made, and if the
+// invitee learns of it another way (the admin phones them) they must still be
+// able to join. Delivery state drives what the ADMIN sees, never who may
+// accept.
 func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, email string) (OrganizationsInvitation, error) {
 	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, email)
 	var i OrganizationsInvitation
@@ -126,6 +181,10 @@ func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, email string)
 		&i.Email,
 		&i.Role,
 		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -134,7 +193,8 @@ func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, email string)
 }
 
 const listInvitations = `-- name: ListInvitations :many
-SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
+SELECT id, organization_id, email, role, status, delivery_status, delivery_error,
+       delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 FROM organizations.invitations
 WHERE organization_id = $1
   AND ($3::uuid IS NULL OR id < $3::uuid)
@@ -166,6 +226,10 @@ func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams
 			&i.Email,
 			&i.Role,
 			&i.Status,
+			&i.DeliveryStatus,
+			&i.DeliveryError,
+			&i.DeliveryAttempts,
+			&i.LastDeliveryAt,
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -180,11 +244,71 @@ func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams
 	return items, nil
 }
 
+const markInvitationDelivery = `-- name: MarkInvitationDelivery :one
+UPDATE organizations.invitations
+SET delivery_status   = $3,
+    delivery_error    = $4,
+    delivery_attempts = delivery_attempts + 1,
+    last_delivery_at  = $5
+WHERE id = $1 AND organization_id = $2
+RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
+          delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
+`
+
+type MarkInvitationDeliveryParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	DeliveryStatus string             `json:"delivery_status"`
+	DeliveryError  string             `json:"delivery_error"`
+	LastDeliveryAt pgtype.Timestamptz `json:"last_delivery_at"`
+}
+
+// Records the outcome of ONE outbound-email attempt (#641, FR-ONB-3): the
+// initial send after CreateInvitation, or an admin-triggered resend.
+// delivery_attempts is incremented here rather than passed in, so two
+// concurrent attempts can never both write the same count.
+//
+// `updated_at` is deliberately NOT touched: it is the invitation's LWW/ETag
+// version stamp for the domain row (data-model.md §4.3), and a delivery
+// retry is not a change to the invitation itself. last_delivery_at is the
+// delivery axis's own clock.
+//
+// Scoped by (id, organization_id) like every other write in this file
+// (ADR-0002) — the handler has already asserted the caller is an admin of
+// exactly this org, and the scope here makes that structural rather than
+// merely conventional.
+func (q *Queries) MarkInvitationDelivery(ctx context.Context, arg MarkInvitationDeliveryParams) (OrganizationsInvitation, error) {
+	row := q.db.QueryRow(ctx, markInvitationDelivery,
+		arg.ID,
+		arg.OrganizationID,
+		arg.DeliveryStatus,
+		arg.DeliveryError,
+		arg.LastDeliveryAt,
+	)
+	var i OrganizationsInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const revokeInvitation = `-- name: RevokeInvitation :one
 UPDATE organizations.invitations
 SET status = 'revoked', updated_at = now()
 WHERE id = $1 AND organization_id = $2 AND status = 'pending'
-RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
+RETURNING id, organization_id, email, role, status, delivery_status, delivery_error,
+          delivery_attempts, last_delivery_at, invited_by, created_at, updated_at
 `
 
 type RevokeInvitationParams struct {
@@ -204,6 +328,10 @@ func (q *Queries) RevokeInvitation(ctx context.Context, arg RevokeInvitationPara
 		&i.Email,
 		&i.Role,
 		&i.Status,
+		&i.DeliveryStatus,
+		&i.DeliveryError,
+		&i.DeliveryAttempts,
+		&i.LastDeliveryAt,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

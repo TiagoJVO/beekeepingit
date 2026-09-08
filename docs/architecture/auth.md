@@ -671,6 +671,72 @@ admin-only routes and one accept-on-login step:
 - History recording (FR-HIS-1) for invite/accept/revoke landed with #165 (closed) — audit
   rows are written for these events; the deferral this bullet originally recorded is done.
 
+### 8.7.1 Updated by #641 — the invitation is actually **emailed**
+
+Everything above still holds; one thing it described was incomplete in a way that mattered.
+#27 built the invitation **record** and the accept-on-login **claim**, and nothing in between:
+**no email was ever sent**. The invited person was never told anything — the admin had to
+reach them by some other channel and tell them to register with exactly that address — while
+the admin's own screen showed `Pendente`, which everywhere else in the product means _sent,
+awaiting response_ (FR-ONB-3 says the admin "can invite members by email"; #641).
+
+- **The send lives in `organizations`, not in Authentik.** The IdP already sends mail
+  (§8.10, ADR-0019) and it was still the wrong home: an invitation names an organization and
+  an inviter that Authentik has never heard of, it fires on an app API call rather than
+  inside a flow, and its per-invitation outcome has to land in a column this service reads
+  back to the admin. Routing it through Authentik would have meant custom template volume
+  mounts on the external gitops HelmRelease (a cost ADR-0019 §5 already records) plus a way
+  to report the result back across the boundary. **The relay is shared infrastructure; the
+  message is ours** — `services/shared/mail` (SMTP transport, header-injection rejection,
+  RFC 2047 headers, multipart/alternative) plus
+  `services/organizations/api/invitation_email.go` (the EN/PT catalogs).
+- **Two independent states, not one.** `invitations.status` stays the **lifecycle** the
+  invitee drives (`pending`/`accepted`/`expired`/`revoked`); migration 00008 adds
+  `delivery_status` (`pending`/`sent`/`failed`), `delivery_error`, `delivery_attempts` and
+  `last_delivery_at` — what the **system's own send** did. Collapsing them would have made
+  "accepted" and "the email bounced" mutually exclusive, which they are not. The client shows
+  the lifecycle once it has resolved and the delivery state while it has not, so `Pendente`
+  now only ever means what it means everywhere else. The migration also **backfills every
+  pre-existing pending invitation to `failed` / `never_sent`**, because that is the truth
+  about them.
+- **Create commits first, then sends.** The row is committed, the email is attempted
+  synchronously with a bounded timeout, and the outcome is written back. A failed send is
+  therefore a **201 with `delivery_status: failed`**, never a 5xx — the invitation exists,
+  and reporting the create as failed would leave a real row behind an error message. Delivery
+  never gates acceptance either: `GetPendingInvitationByEmail` deliberately ignores
+  `delivery_status`, so an invitee told by phone can still be joined (the claim is still the
+  verified `email` claim, unchanged from above).
+- **Retry.** `POST /v1/organizations/{orgId}/invitations/{invitationId}/resend` — admin-only
+  and org-scoped like every other invitation write, `pending`-only, guarded by a
+  per-invitation cooldown and a total-attempts cap. No `audit_log` row: a delivery attempt
+  changes none of the invitation's own fields (history.md §3), and the attempt is recorded on
+  the row's delivery columns instead.
+- **Language (FR-ONB-3 AC 3, NFR-I18N-1).** The recipient's `identity.users.locale` when
+  identity knows the address, otherwise `organizations.organizations.locale` — a new column
+  seeded at org-creation time from the creating admin's own locale (D-3: the creator is the
+  first admin). Both narrow to `en-GB`/`pt-PT`; anything else degrades to English rather than
+  failing a send. Unlike §8.10's Authentik-rendered mail, this message is **genuinely
+  bilingual today** — it is our template, not a Django catalog, so the `pt-PT` negotiation
+  limitation recorded there does not apply.
+- **Security posture.** The invited address, the organization name and the inviter name are
+  all user-typed. Names are scrubbed of control characters and length-capped before reaching
+  the Subject, `html/template` escapes them in the HTML part, and `services/shared/mail`
+  **rejects** (never sanitizes) any CR/LF that still reaches a header. The sign-up link is
+  `APP_BASE_URL` + a constant `/login` path — no request input, so no open-redirect surface,
+  and deliberately **no token**: acceptance is still accept-on-login, so a forwarded or
+  logged link grants nothing. The message wording is byte-identical whether or not the
+  address already has an account, so it is not an account-existence oracle. `POST
+.../invitations` is rate limited per organization (an admin session must not be an open
+  relay) and the delivery reason stored and shown is a short code, never relay text.
+- **Environments.** Dev/CI/staging point at the in-cluster Mailpit sink (ADR-0019 §4), so the
+  whole path is exercisable end to end and no test mail can reach a real inbox
+  (`client/e2e/tests/invitation-email.spec.ts` proves it against the deployed stack).
+  **Real email still does not leave staging or prod**: that needs a relay and a sending
+  domain, which is [#417](https://github.com/TiagoJVO/beekeepingit/issues/417) — now purely
+  **deploy-time enablement**, not a code dependency. Until it lands, such an environment
+  records `delivery_status: failed` / `not_configured` per invitation, which the admin can
+  see and retry. The service never refuses to start over it.
+
 ## 8.8 As built (#28)
 
 Roles & permissions + the shared org-scoped authorization middleware (NFR-ROL-1, FR-TEN) landed

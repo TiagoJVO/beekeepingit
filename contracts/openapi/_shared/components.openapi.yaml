@@ -136,6 +136,13 @@ components:
                 type: string
                 description: Human-readable, localizable (EN/PT) message.
             required: [field, message]
+        retry_after:
+          type: integer
+          description: >-
+            Whole seconds to wait before retrying, on a `429` (#641). Mirrors the
+            standard `Retry-After` response header, repeated in the body so a
+            JSON-only client need not read headers. Absent when the server has no
+            advice to give.
       required: [title, status]
 
     Page:
@@ -222,7 +229,17 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     TooManyRequests:
-      description: Rate limit exceeded (mechanism stubbed in v1 — D-4 / NFR-RL-1).
+      description: >-
+        Rate limit exceeded. Enforced today on the invitation-send paths only (#641:
+        an organization's hourly invitation budget and the per-invitation resend
+        cooldown); elsewhere the mechanism is still stubbed (D-4 / NFR-RL-1). Carries
+        a `Retry-After` header and a `retry_after` body field where the server can
+        say when to try again.
+      headers:
+        Retry-After:
+          description: Whole seconds to wait before retrying.
+          schema:
+            type: integer
       content:
         application/problem+json:
           schema:
