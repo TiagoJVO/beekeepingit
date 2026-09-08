@@ -205,9 +205,11 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   function assert_live(what,   ok) {
     ok = 1
     if (key_count(body, "state") > 0) {
-      fail(what " `" entry_id "` carries a `state:` key. `absent` DELETES it on apply while this " \
-           "guard still sees the entry — which restores #237 verbatim. An entry the posture " \
-           "depends on must be unconditionally present.")
+      fail(what " `" entry_id "` carries a `state:` key. Every value of it breaks this posture " \
+           "silently while the text stays in the file: `absent` DELETES the object on apply, and " \
+           "`created`/`must_created` SKIP the update on an environment where it already exists — " \
+           "so the object keeps whatever it had before #237. An entry the posture depends on must " \
+           "be applied unconditionally.")
       ok = 0
     }
     if (key_count(body, "conditions") > 0) {
@@ -244,8 +246,18 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   # `https://evil.example` appended below one passed assertion (4) untouched
   # while the counters above it stayed satisfied (review finding; the sibling
   # check-federation-source-posture.sh:538 already skips blank lines).
+  #
+  # A SECOND `redirect_uris:` block starts the collection over, because that is
+  # what PyYAML does — last key wins. Accumulating both would make this guard
+  # assert over the UNION of two lists while authentik applies only the last,
+  # so a second block that drops the app/admin logout entries would pass here
+  # and 400 every real sign-out in production (review finding). The union is
+  # also why `n_items`/`items` must be cleared here and not only in flush().
+  # The duplicate itself is still failed, in the provider branch below.
   /^[[:space:]]*redirect_uris:[[:space:]]*$/ {
-    in_uris = 1; uris_indent = match($0, /[^ ]/) - 1; next
+    in_uris = 1; uris_indent = match($0, /[^ ]/) - 1
+    item = ""; n_items = 0; delete items
+    next
   }
   in_uris && /^[[:space:]]*$/ { next }
   in_uris {
@@ -303,6 +315,29 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
     # the binding above is attached to is the one each provider invalidates
     # through.
     if (entry_model ~ /authentik_providers_oauth2\.oauth2provider/) {
+      # The providers CARRY the whole allow-list, so they need the same
+      # is-this-entry-actually-applied check as the stage and the binding. On
+      # an environment where the provider already exists, `state: created` (or
+      # `must_created`), or a falsy `conditions:`, means the blueprints
+      # `redirect_uris` is never written to it: the provider silently keeps its
+      # pre-#237 list, `post_logout_redirect_uris` stays empty, and Sign out
+      # dead-ends on the interstitial again — with Flux green, the blueprint
+      # `status: successful`, and this guard green (review finding).
+      assert_live("provider")
+
+      # Exactly ONE `redirect_uris:` block. PyYAML is last-wins, so a second
+      # block silently replaces the list this guard just walked; the shape that
+      # matters keeps every authorization entry (so sign-IN and the e2e stay
+      # green) while dropping the app/admin logout entries, which leaves
+      # validation strict and 400s every real sign-out. prettier accepts
+      # duplicate YAML keys without a warning, and nothing else reads this file
+      # offline (review finding).
+      if (key_count(body, "redirect_uris") != 1)
+        fail("provider `" entry_id "` declares `redirect_uris:` " key_count(body, "redirect_uris") \
+             " times. PyYAML takes LAST-WINS silently, so the list authentik applies is not the " \
+             "one reviewed here — and a second block that drops the logout entries turns every " \
+             "sign-out into a 400. Declare it exactly once.")
+
       # (5) Without this, repointing BOTH providers at another flow leaves the
       # binding correct, attached, and unreachable — the stage never runs and
       # #237s session half returns with the guard still green.

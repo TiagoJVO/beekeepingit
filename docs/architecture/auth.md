@@ -1866,8 +1866,13 @@ back, that **every** logout-typed URL is one of the rendered origins or the tigh
 regex, and that no entry in the file owns an invalidation-designation flow. Review of the first
 version showed those assertions were **structurally evadable** — the guard is only worth what it
 rejects — so it now also pins the things that make an entry _mean_ what it reads as: exactly one
-stage and one binding entry, no `state:`/`conditions:` on either (both make an entry present and
-inert), no duplicate `target:`/`stage:`/`url:`/`matching_mode:` keys (PyYAML is silently last-wins),
+stage entry, one binding entry and one `redirect_uris:` block per provider, no
+`state:`/`conditions:` on the stage, the binding **or either provider** (all three make an entry
+present and inert — `absent` deletes, `created` skips the update on an environment where the object
+already exists, a falsy `conditions:` skips the plan), no duplicate
+`target:`/`stage:`/`url:`/`matching_mode:`/`redirect_uri_type:` keys (PyYAML is silently last-wins,
+and a second `redirect_uris:` block that keeps the authorization entries while dropping the logout
+ones leaves sign-in green and 400s every sign-out),
 `matching_mode: strict` on the two rendered origins (under `fullmatch` a rendered origin read as a
 `regex` turns every unescaped `.` into a wildcard and admits a neighbouring registrable domain), and
 `invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
@@ -1876,10 +1881,10 @@ off a flow nothing plans). Every key and value is read with **quotes tolerated o
 so an `https://evil.example/.*` entry written that way was never recognised as a logout target and
 never reached the allow-list assertion at all. And the list is walked by indentation, because a
 blank line or a re-indented item used to end the walk and silently drop every entry below it. All of
-it is mutation-checked against twenty-four deliberately broken copies of the blueprint — binding
+it is mutation-checked against twenty-eight deliberately broken copies of the blueprint — binding
 removed, allow-list removed, an `https://.*` target, an owned invalidation flow, stage removed,
 `logout` flipped back to `authorization`, a bracketed logout regex, a bracketed authorization regex,
-plus each evasion above in both its bare and its quoted spelling — and **all twenty-four fail it**. Live, the logout e2e in
+plus each evasion above in both its bare and its quoted spelling — and **all twenty-eight fail it**. Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
