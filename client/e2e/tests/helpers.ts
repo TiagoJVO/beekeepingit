@@ -1,4 +1,11 @@
-import { APIRequestContext, Browser, BrowserContext, expect, Page } from "@playwright/test";
+import {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  expect,
+  Locator,
+  Page,
+} from "@playwright/test";
 
 /**
  * Shared e2e plumbing, extracted from slice.spec.ts (#361) so the
@@ -49,6 +56,60 @@ export async function enableSemantics(page: Page) {
       timeout: 15_000,
     })
     .catch(() => {});
+}
+
+/**
+ * Brings a control inside a Flutter scroll view into the viewport, by driving
+ * the scrollable with the **wheel** the way a user does.
+ *
+ * **Never click a Flutter control without this unless you know it is above the
+ * fold.** A Flutter-web semantics click does NOT scroll the Flutter scrollable
+ * to reach an off-screen target: the DOM node Playwright clicks is an
+ * absolutely-positioned *mirror* of the widget, so Playwright judges it
+ * actionable, clicks it, and Flutter ignores it because the real widget is
+ * below the fold. `scrollIntoViewIfNeeded` does not help — it moves the page,
+ * not the Flutter scrollable.
+ *
+ * **The symptom is a silent no-op.** No timeout, no error, no failed
+ * assertion at the click: the step simply does nothing, and whatever the click
+ * was supposed to cause never happens. Every failure it produces surfaces far
+ * away from its cause. #836 is the worked example — four of five sign-out
+ * attempts in one CI run never reached `AuthController.logout()` at all
+ * (proved with in-app instrumentation), and the resulting 60s `waitForURL`
+ * timeout was read for weeks as a wedged browser main thread, a stalled
+ * PowerSync wipe, and a Riverpod teardown race in turn. It was none of those.
+ * The app had simply never been asked to sign out.
+ *
+ * Extracted from slice.spec.ts's `scrollFormTo` (added for #629, when taller
+ * form rows pushed "Use current location" off the bottom) when the Account
+ * screen's own Sign out — the last child of its `SingleChildScrollView` — hit
+ * the identical wall.
+ *
+ * @param wheelAt where to point the wheel. Defaults to the viewport centre.
+ *   Pass an explicit point when the centre sits over a widget with its own
+ *   gesture handling that would swallow the wheel (`flutter_map`'s picker is
+ *   why this parameter exists).
+ */
+export async function scrollFlutterViewTo(
+  page: Page,
+  target: Locator,
+  wheelAt?: { x: number; y: number },
+): Promise<void> {
+  const viewport = page.viewportSize();
+  if (!viewport) return;
+  const point = wheelAt ?? { x: viewport.width / 2, y: viewport.height / 2 };
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // `boundingBox()` AUTO-WAITS for the element. Left unbounded it inherits
+    // the whole test timeout, so a target that is not yet attached hangs here
+    // rather than falling through to a scroll — which is exactly how the first
+    // version of this helper failed. Bound it: a null box is a normal answer
+    // meaning "not measurable yet, scroll and retry".
+    const box = await target.boundingBox({ timeout: 500 }).catch(() => null);
+    if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, box && box.y < 0 ? -240 : 240);
+    await page.waitForTimeout(150);
+  }
 }
 
 // Navigate to the app root, tolerating a cold stack. On a freshly-booted k3d
@@ -436,6 +497,38 @@ export async function countMessagesTo(
 // the failure then surfaces later as a confusing id_token-read timeout
 // (exactly the #366 registration e2e's squatter symptom).
 export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
+
+/**
+ * `page.waitForURL`, but settled on **commit** rather than on `load` (#836).
+ *
+ * Playwright's default `waitUntil: "load"` waits for the `load` event of the
+ * document the matching navigation commits — i.e. for every subresource of the
+ * Flutter bundle. That is a stricter condition than "the browser is now on this
+ * URL", and this app has already been observed not to meet it: one attempt of
+ * the #237 logout e2e failed `waitForURL(/\/login/)` with `waiting for
+ * navigation until "load"` while its own failure screenshot showed the app
+ * **already on its login screen**, with a freshly bootstrapped Flutter view.
+ * The wait, not the app, was what failed there.
+ *
+ * `gotoAppRoot` above already avoids `load` for the same reason (it navigates
+ * with `waitUntil: "domcontentloaded"`); this is that convention applied to the
+ * waits. `commit` is the weakest useful condition — the response arrived and
+ * the document began loading — so it asserts exactly the thing the caller
+ * cares about and nothing else. Callers still assert what must be *rendered*
+ * afterwards (`enableSemantics` + a visible-element expectation), which is the
+ * check that actually has meaning for a Flutter canvas app.
+ *
+ * Use this for any wait that follows a **full page load** — the OIDC callback,
+ * the post-logout return. In-app route changes (`pushState`) need no lifecycle
+ * wait at all, so plain `waitForURL` is fine there.
+ */
+export async function waitForUrlCommitted(
+  page: Page,
+  url: RegExp,
+  timeout = 60_000,
+): Promise<void> {
+  await page.waitForURL(url, { waitUntil: "commit", timeout });
+}
 
 // A login that completed lands the user back on the app origin — the
 // onboarding gate then routes by profile/org state (/profile for a fresh
