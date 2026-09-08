@@ -7,6 +7,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todo_filters.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/routing/app_router.dart';
@@ -786,6 +787,32 @@ void main() {
       expect(find.byKey(const Key('todo-dn')), findsNothing);
       expect(find.byKey(const Key('todo-far')), findsNothing);
       _expectStatusChipSelected(tester, 'needsAttention');
+    });
+
+    // Review of #661: this branch stays mounted in the shell's IndexedStack,
+    // so a priority the user picked by hand outlives the visit and would
+    // silently AND with the seeded status — Home's "View all 2 tasks" would
+    // land on one row, or on "No todos match your filters". A route that
+    // names any filter therefore defines the WHOLE set.
+    testWidgets('a filter the route does not name is reset, so a leftover '
+        'priority cannot narrow what the link promised', (tester) async {
+      await tester.pumpWidget(_buildApp(todos: [overdue, upcoming, completed]));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(BeekeepingitApp)),
+      );
+      // The user narrows the tab by hand first...
+      container.read(todoPriorityFilterProvider.notifier).state =
+          todoPriorityHigh;
+      await tester.pumpAndSettle();
+
+      // ...then arrives from Home's "view all".
+      container.read(routerProvider).go('/todos?status=needsAttention');
+      await tester.pumpAndSettle();
+
+      expect(container.read(todoPriorityFilterProvider), isNull);
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
     });
 
     testWidgets('the needs-attention preset clears like any other filter', (
