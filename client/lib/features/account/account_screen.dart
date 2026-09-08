@@ -104,21 +104,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           .read(profileProvider.notifier)
           .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.profileSaveSuccess);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(appToast(l10n.profileSaveError(e.detail)));
+        showAppToast(
+          ScaffoldMessenger.of(context),
+          l10n.profileSaveError(e.detail),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.profileSaveError('$e')));
+      showAppToast(ScaffoldMessenger.of(context), l10n.profileSaveError('$e'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -145,12 +145,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     try {
       await ref.read(syncNowProvider)();
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.accountSyncNowTriggered)),
-      );
+      showAppToast(messenger, l10n.accountSyncNowTriggered);
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(appToast(l10n.accountSyncNowError('$e')));
+      showAppToast(messenger, l10n.accountSyncNowError('$e'));
     } finally {
       if (mounted) setState(() => _syncing = false);
     }

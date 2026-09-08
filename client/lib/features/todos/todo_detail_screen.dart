@@ -70,21 +70,15 @@ class _TodoDetailScreenState extends ConsumerState<TodoDetailScreen> {
         await repo.complete(todo.id);
       }
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            todo.isDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
-          ),
-        ),
+      showAppToast(
+        messenger,
+        todo.isDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        appToast(
-          todo.isDone
-              ? l10n.todoReopenError('$e')
-              : l10n.todoCompleteError('$e'),
-        ),
+      showAppToast(
+        messenger,
+        todo.isDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

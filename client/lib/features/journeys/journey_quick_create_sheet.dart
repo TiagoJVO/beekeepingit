@@ -160,7 +160,7 @@ class _JourneyQuickCreateSheetState
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.journeySaveError('$e')));
+      showAppToast(messenger, l10n.journeySaveError('$e'));
     }
   }
 

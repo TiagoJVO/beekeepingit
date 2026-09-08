@@ -9,6 +9,46 @@ import 'tap_target.dart';
 /// toast stops being a glance and starts being a paragraph.
 const int kToastMaxLines = 2;
 
+/// Shows [message] as the app's confirmation toast, **replacing** whatever
+/// toast is currently up rather than queueing behind it (#640, FR-UX-1,
+/// FR-ONB-3).
+///
+/// This is the single place the client raises a confirmation, and the reason
+/// it exists is [ScaffoldMessengerState.showSnackBar]'s queueing: a bar stays
+/// up for four seconds, and a second `showSnackBar` inside that window parks
+/// its message behind the first instead of showing it. Two symptoms followed,
+/// both reported in #640:
+///
+/// - **The toast read one action behind.** Revoking an invitation four seconds
+///   after sending one left "Invitation sent." on screen — the confirmation
+///   for the *previous* action, describing the opposite of what just happened.
+/// - **A parked message outlived its screen.** `MaterialApp` installs one root
+///   `ScaffoldMessenger` (see `app.dart`), so the queue spans every route: the
+///   parked "Invitation sent." surfaced minutes later over the Todos tab,
+///   reporting an action against unrelated content.
+///
+/// [ScaffoldMessengerState.clearSnackBars] fixes both at once, and it has to
+/// be `clearSnackBars` rather than `hideCurrentSnackBar`: hiding the current
+/// bar *promotes* the next queued one, so the new message would still land
+/// behind a stale one. Cleared, the queue can never hold more than the bar on
+/// screen, so there is nothing left to surface anywhere later.
+///
+/// A toast raised **just before** a navigation still travels with it, and must
+/// — the save-then-go-back flow all over `client/lib` (e.g.
+/// `apiary_form_screen.dart`) confirms the save and then pops to the list, and
+/// the destination is where the user reads it. Only *queued* messages are
+/// discarded, never the one the current action raised.
+///
+/// Takes a [ScaffoldMessengerState], not a [BuildContext]: every real call
+/// site awaits an API first and captures its messenger before the gap, because
+/// touching a context across an async gap is what
+/// `use_build_context_synchronously` exists to catch. A synchronous call site
+/// passes `ScaffoldMessenger.of(context)`.
+void showAppToast(ScaffoldMessengerState messenger, String message) {
+  messenger.clearSnackBars();
+  messenger.showSnackBar(appToast(message));
+}
+
 /// A [SnackBar] whose message is capped at [kToastMaxLines] lines, with a
 /// "Details" affordance when — and only when — that actually truncates it
 /// (#790, FR-UX-2/FR-AX-1).
@@ -35,11 +75,16 @@ const int kToastMaxLines = 2;
 ///   and captures its messenger before the gap; taking a context would mean
 ///   reaching across it, which `use_build_context_synchronously` catches.
 ///
-/// Deliberately does NOT set `duration`. Flutter's default applies, the same
-/// as every un-migrated call site — a longer one would hold short
-/// confirmations on screen too, and the shell shows engine notifications in a
-/// loop that `ScaffoldMessenger` queues serially, so a bumped duration
-/// multiplies across a batch.
+/// Deliberately does NOT set `duration`: Flutter's default applies. A longer
+/// one would hold short confirmations on screen too, and the shell shows
+/// engine notifications in a loop that `ScaffoldMessenger` queues serially, so
+/// a bumped duration multiplies across a batch.
+///
+/// Raising the bar directly is the escape hatch for the one caller that
+/// deliberately *wants* the queue — `shell/app_shell.dart`'s
+/// engine-notification batch, which has several distinct messages to deliver
+/// and no screen of its own to outlive. Everything a user action confirms goes
+/// through [showAppToast] instead.
 SnackBar appToast(String message) =>
     SnackBar(content: _BoundedToastContent(message: message));
 

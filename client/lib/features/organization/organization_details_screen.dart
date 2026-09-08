@@ -287,12 +287,11 @@ class _OrganizationDetailsScreenState
       // simply staying silent either — the user pressed a button and a button
       // that answers nothing reads as broken, especially on the flaky
       // connectivity this screen already warns about.
-      messenger.showSnackBar(
-        appToast(
-          sent
-              ? l10n.organizationDetailsSaved
-              : l10n.organizationDetailsNoChanges,
-        ),
+      showAppToast(
+        messenger,
+        sent
+            ? l10n.organizationDetailsSaved
+            : l10n.organizationDetailsNoChanges,
       );
     } on ApiException catch (e) {
       // A 409 means the `If-Match` this save carried is stale: another admin
@@ -302,18 +301,17 @@ class _OrganizationDetailsScreenState
       // form is deliberately left as the user typed it (the baseline and the
       // edited flag are NOT reset here, so the next build cannot re-seed over
       // what they still have on screen).
-      messenger.showSnackBar(
-        appToast(
-          e.statusCode == 409
-              ? l10n.organizationDetailsSaveConflict
-              : l10n.organizationDetailsSaveFailed,
-        ),
+      showAppToast(
+        messenger,
+        e.statusCode == 409
+            ? l10n.organizationDetailsSaveConflict
+            : l10n.organizationDetailsSaveFailed,
       );
     } on Exception {
       // Offline, a 403 for a non-admin, or a 422 for an over-long value — all
       // surface the same way rather than leaving the button spinning. The
       // specific cause is not actionable to the beekeeper beyond "try again".
-      messenger.showSnackBar(appToast(l10n.organizationDetailsSaveFailed));
+      showAppToast(messenger, l10n.organizationDetailsSaveFailed);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
