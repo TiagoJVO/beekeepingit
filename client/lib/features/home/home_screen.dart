@@ -6,6 +6,7 @@ import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
@@ -231,7 +232,15 @@ class _TasksSection extends StatelessWidget {
       subtitle: _todoSubtitle(l10n, formatting, attention.todo),
       trailing: badge.widget,
       trailingSemanticLabel: badge.rowLabel,
-      onTap: () => context.go('/todos/${attention.todo.id}'),
+      // Opens the task in HOME's own stack, not the Todos tab (#666) — see
+      // branch_local_navigation.dart: a summary row must not switch the tab
+      // under the user, and Back from here returns to Home.
+      onTap: () => context.go(
+        todoDetailLocation(
+          from: branchLocationOf(context),
+          todoId: attention.todo.id,
+        ),
+      ),
     );
   }
 
@@ -310,7 +319,13 @@ class _JourneysSection extends StatelessWidget {
             subtitle:
                 activityTypeLabel(l10n, journey.mainActivityType) ??
                 journey.mainActivityType,
-            onTap: () => context.go('/journeys/${journey.id}'),
+            // Home's own stack, per branch_local_navigation.dart (#666).
+            onTap: () => context.go(
+              journeyDetailLocation(
+                from: branchLocationOf(context),
+                journeyId: journey.id,
+              ),
+            ),
           ),
       ],
       footer: _SectionFooterLink(
@@ -382,7 +397,13 @@ class _StaleApiariesSection extends StatelessWidget {
       subtitle: _apiarySubtitle(l10n, formatting, recency),
       trailing: badge.widget,
       trailingSemanticLabel: badge.rowLabel,
-      onTap: () => context.go('/apiaries/${recency.apiary.id}'),
+      // Home's own stack, per branch_local_navigation.dart (#666).
+      onTap: () => context.go(
+        apiaryDetailLocation(
+          from: branchLocationOf(context),
+          apiaryId: recency.apiary.id,
+        ),
+      ),
     );
   }
 

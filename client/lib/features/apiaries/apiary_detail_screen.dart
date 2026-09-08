@@ -9,6 +9,7 @@ import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
@@ -71,8 +72,17 @@ class ApiaryDetailScreen extends ConsumerWidget {
             // Deleted/not found (e.g. a stale deep link) — nothing sensible
             // to render; bounce back to the list rather than show a blank
             // detail page.
+            // Where it bounces to follows branch_local_navigation.dart
+            // (#666): an apiary opened from Home returns to Home.
+            // Off-stage branches stay mounted, so only the live page
+            // may bounce (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
+            final gone = recordGoneLocation(
+              from: branchLocationOf(context),
+              ownerList: '/apiaries',
+            );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/apiaries');
+              if (context.mounted) context.go(gone);
             });
             return const SizedBox.shrink();
           }

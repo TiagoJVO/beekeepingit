@@ -6,6 +6,7 @@ import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
@@ -102,11 +103,25 @@ class _TodoDetailScreenState extends ConsumerState<TodoDetailScreen> {
         data: (todo) {
           if (todo == null) {
             // Deleted/not found (a stale deep link) — nothing sensible to
-            // render; bounce back to the Todos tab rather than show a blank
-            // detail page, mirroring activity_detail_screen.dart's/
-            // journey_detail_screen.dart's own null-bounce.
+            // render; bounce back rather than show a blank detail page,
+            // mirroring activity_detail_screen.dart's/
+            // journey_detail_screen.dart's own null-bounce. WHERE it bounces
+            // to follows branch_local_navigation.dart (#666): a task opened
+            // from Home returns to Home, not to a tab the user never chose.
+            // Resolved before scheduling the callback, while this frame's
+            // route state is still the one that raised it.
+            // Only the page the user is LOOKING at may navigate on its
+            // own initiative: every branch stays mounted off-stage, so
+            // without this a todo deleted from the Todos tab would make
+            // Home's off-stage copy of it bounce, jumping the whole app to
+            // Home (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
+            final gone = recordGoneLocation(
+              from: branchLocationOf(context),
+              ownerList: '/todos',
+            );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/todos');
+              if (context.mounted) context.go(gone);
             });
             return const SizedBox.shrink();
           }
