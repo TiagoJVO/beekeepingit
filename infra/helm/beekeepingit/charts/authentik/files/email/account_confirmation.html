@@ -76,9 +76,25 @@
             </tr>
             <tr>
               <td align="center" style="padding:20px 8px;font-family:Archivo,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:20px;color:#524B60;word-break:break-all;overflow-wrap:break-word;">
-                {% blocktrans with url=url %}
-                If that doesn't work, copy and paste the following link in your browser: {{ url }}
-                {% endblocktrans %}
+    {# The indentation of the next three lines is LOAD-BEARING and deliberately does not
+       match this file's. Django builds a `blocktrans` msgid from the LITERAL text between
+       the tags — newlines and leading spaces included — unless `trimmed` is given, and it
+       looks the catalogue up with that same literal at render time. So the msgid is
+       upstream's 4-space-indented three-line form, and re-indenting these lines to sit
+       neatly inside the table would silently produce a msgid no catalogue has: the line
+       would fall back to English for every pt-PT recipient with nothing to show for it
+       (`trimmed` would not help — upstream's catalogue entry is the untrimmed form).
+       Copied byte-for-byte from
+       authentik/stages/email/templates/email/account_confirmation.html.
+
+       This line is also what the verification e2e depends on. `pollForVerificationLink`
+       (client/e2e/tests/helpers.ts) reads the message's text/plain part — which Authentik
+       derives by stripping tags from this HTML — and regexes the first URL out of it. The
+       button's `href` does not survive that strip; the bare `{{ url }}` below does. Delete
+       this fallback line and the e2e stops finding a link, not just the user. #}
+    {% blocktrans with url=url %}
+    If that doesn't work, copy and paste the following link in your browser: {{ url }}
+    {% endblocktrans %}
               </td>
             </tr>
           </table>

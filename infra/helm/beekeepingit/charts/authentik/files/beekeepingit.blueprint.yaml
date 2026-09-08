@@ -811,6 +811,63 @@ entries:
       # the 44x44 target floor applied to the pages this issue brands. `:focus-visible`
       # keeps a 3px honeyHover ring (8.9:1 on the plum ground) instead of letting the
       # `!important` fills above swallow the default focus outline.
+      #
+      # NO `<`, `>` OR `&` ANYWHERE IN THIS BLOCK (infra review, #648). authentik does not
+      # serve `branding_custom_css` verbatim: `brands/utils.py` does
+      # `mark_safe(custom_css.translate(_json_script_escapes))` before
+      # `base/skeleton.html` writes it into a `<style>` element, and Django's
+      # `_json_script_escapes` maps `<`, `>` and `&` to the literal six-character sequences
+      # `<`, `>`, `&`. In CSS, `\u` is an escaped literal `u` (u is not a hex
+      # digit), so a child combinator does not survive: an earlier draft's
+      # `.pf-c-login__main-footer-links-item>a` reached the browser as the single class
+      # `.pf-c-login__main-footer-links-itemu003Ea`, which matches nothing — valid CSS, no
+      # console error, and the D-18 hit-target floor for the flow footer links silently
+      # absent. Descendant selectors say the same thing here, so nothing is lost. The
+      # base64 mark is unaffected: none of those three characters is in the base64 alphabet,
+      # and `"` is not in the escape table.
+      #
+      # NO TEXT COLOUR ON `body` (security review, #648). An earlier draft added
+      # `color:#F6F3EC` to the `body` rule. PatternFly sets text colour on `body` and lets
+      # almost everything inherit it, and brand CSS is injected last — so at equal
+      # specificity that wins and every element without its own colour turns cream,
+      # INCLUDING the text inside `.pf-c-login__main`, which paints its own background and
+      # is WHITE under PatternFly's light theme. A light-`prefers-color-scheme` device would
+      # then get cream-on-white for exactly the wrong half of the page: explicitly-coloured
+      # text (PF's error red, helper text) survives, while the inherited copy — the
+      # "continue to BeekeepingIT" identity string this issue exists to make legible —
+      # disappears. Nothing here could have caught it: the guard is textual, and Playwright
+      # runs the light scheme and selects by role. So the ground is painted and the text
+      # colour is left to PatternFly, which is internally consistent in both its themes.
+      # `attributes.settings.theme` below asks for the dark one so the painted ground and
+      # PF's own palette agree; if that key ever stops being honoured, this CSS is still no
+      # worse than PF's default, which is the point of not relying on it.
+      #
+      # THE CSS IS PUBLIC. `branding_custom_css` is served unauthenticated by the brand API
+      # — it must never carry anything conditional on identity, and it is trivially copyable
+      # by anyone building a lookalike. That is worth saying plainly: this branding is a
+      # CONSISTENCY control (the product looks like itself everywhere, so "this doesn't look
+      # right" becomes a signal a user can act on), not the anti-phishing control. The
+      # durable ones are the origin + TLS and the password manager's origin matching.
+      #
+      # WHAT `.pf-c-login__footer{display:none}` ALSO HIDES. That region carries "Powered by
+      # authentik" AND the brand's `ui_footer_links`. Nothing sets `ui_footer_links` today,
+      # but an operator who ever adds one (an imprint or privacy link on the credential page,
+      # say, if GDPR asks for it) will see it render nowhere and get no error. The enrolment
+      # and recovery links users need are NOT here — they live in
+      # `.pf-c-login__main-footer-links` / `__main-footer-band`, which are only given a hit
+      # box below. Record the coupling rather than narrowing the selector: a
+      # `:has()`-scoped rule that quietly stops matching on an upstream markup change would
+      # put the authentik footer back on the sign-in page without saying so.
+      attributes:
+        settings:
+          # Ask for PatternFly's dark theme so its own card/text/border palette agrees with
+          # the plum ground painted below, instead of the automatic
+          # `prefers-color-scheme` default. A JSONField on the brand, so there is no
+          # serializer shape to get wrong — the failure mode is "not honoured", not "the
+          # blueprint fails to apply". Brand attributes are the first layer merged into a
+          # user's effective settings (`User.group_attributes`), so a user or group that
+          # sets its own theme still wins.
+          theme: dark
       branding_custom_css: |
         .pf-c-brand img{display:none!important}
         .pf-c-brand{display:flex!important;align-items:center;justify-content:center;gap:12px}
@@ -819,11 +876,11 @@ entries:
         .pf-c-login__footer{display:none!important}
         :root{--ak-global--background-image:none!important}
         .pf-c-background-image,.pf-c-background-image::before{background:#221D31!important;background-image:none!important}
-        .ak-static-page,body{background:#221D31!important;color:#F6F3EC;font-family:'Archivo','Segoe UI',system-ui,-apple-system,sans-serif}
+        .ak-static-page,body{background:#221D31!important;font-family:'Archivo','Segoe UI',system-ui,-apple-system,sans-serif}
         .pf-c-button.pf-m-primary{background:#F0A81F!important;border-color:#F0A81F!important;color:#3A2E14!important;font-weight:600;min-height:44px}
         .pf-c-button.pf-m-primary:hover,.pf-c-button.pf-m-primary:active{background:#F7B637!important;border-color:#F7B637!important;color:#3A2E14!important}
         .pf-c-button,.pf-c-form-control{min-height:44px}
-        .pf-c-login__main-footer-links-item>a,.pf-c-login__main-footer-band a,.ak-static-page a{display:inline-flex;align-items:center;min-height:44px}
+        .pf-c-login__main-footer-links-item a,.pf-c-login__main-footer-band a,.ak-static-page a{display:inline-flex;align-items:center;min-height:44px}
         .pf-c-button:focus-visible,.pf-c-form-control:focus-visible,a:focus-visible{outline:3px solid #F7B637!important;outline-offset:2px!important}
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
   # Built when accounts were exclusively invite/admin-provisioned (registration

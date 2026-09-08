@@ -1968,6 +1968,31 @@ app's static hosting being up. **The browser-tab favicon is the one surface CSS 
 still Authentik's; changing it needs the `branding_favicon` FileField and therefore a live cluster to
 prove the entry applies — tracked separately.
 
+**What this branding is, and is not.** `branding_custom_css` is served **unauthenticated** by the
+brand API — it is public, and trivially copyable by anyone building a lookalike. So this is a
+**consistency** control, not the anti-phishing control: the product looks like itself everywhere, so
+"this doesn't look right" becomes a signal a user can act on. The durable controls are the origin plus
+TLS, and the password manager's origin matching (later, WebAuthn's origin binding). Read §8.19 that
+way rather than as a claim that a branded page is a safe page. The same fact is why nothing in that
+field may ever be conditional on identity.
+
+**Two silent rewrites this CSS has to survive** (both found in review, both now guarded). Authentik
+does not serve the field verbatim: `brands/utils.py` applies
+`custom_css.translate(_json_script_escapes)` before `base/skeleton.html` writes it into a `<style>`
+element, mapping `<`, `>` and `&` to the literal sequences `<`, `>`, `&`. CSS reads
+`\u` as an escaped literal `u`, so a **child combinator does not survive**:
+`.pf-c-login__main-footer-links-item>a` reaches the browser as the single class
+`.pf-c-login__main-footer-links-itemu003Ea` — valid CSS, no console error, and the D-18 hit-target
+floor on those links silently gone. And **no text colour is set on `body`**: PatternFly colours text
+there and lets almost everything inherit, brand CSS is injected last, so a cream `color` on `body`
+would win — including inside `.pf-c-login__main`, which paints its own background and is **white**
+under PatternFly's light theme. A light-`prefers-color-scheme` device would then lose exactly the
+inherited copy (the "continue to BeekeepingIT" identity string) while explicitly-coloured text
+survived. The ground is painted; the text colour is left to PatternFly, and
+`attributes.settings.theme: dark` asks for the theme whose palette agrees with it — a JSONField, so
+its failure mode is "not honoured", not "the blueprint fails to apply", and the CSS is correct either
+way.
+
 **Every value is the app's own.** The CSS this replaced used `#E8B979` on `#1a120b` — two hexes that
 appear nowhere in the app. They read as brand colours and were nobody's brand. Every hex on both
 branded surfaces is now a token in

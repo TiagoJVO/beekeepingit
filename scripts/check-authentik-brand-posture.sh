@@ -180,6 +180,41 @@ done <<EOF
 ${hexes}
 EOF
 
+# --- (3a) no `<`, `>` or `&` — authentik rewrites them and the rule dies silently ----------
+# authentik serves this field through
+# `mark_safe(custom_css.translate(_json_script_escapes))` (brands/utils.py) into a `<style>`
+# element, and Django's `_json_script_escapes` maps `<`, `>` and `&` to the literal
+# sequences `<`, `>`, `&`. CSS reads `\u` as an escaped literal `u`, so a
+# child combinator arrives as part of a class name: `.foo>a` becomes `.foou003Ea`, which
+# matches nothing — valid CSS, no console error, rule gone. That is exactly the failure mode
+# this guard exists for, and it cost the D-18 hit-target floor on the flow footer links once
+# already (infra review, #648).
+badchars="$(printf '%s\n' "${css}" | grep -nE '[<>&]' || true)"
+if [ -n "${badchars}" ]; then
+  fail "the brand CSS contains \`<\`, \`>\` or \`&\`: ${badchars}" \
+    "authentik rewrites all three to literal \\u003C / \\u003E / \\u0026 before the browser" \
+    "parses them, so the rule survives as text and matches nothing. Use a descendant" \
+    "selector instead of a child combinator, and spell any entity another way."
+fi
+
+# --- (3b) the branded page fetches NOTHING off-origin ---------------------------------------
+# The blueprint's typography comment says a Google Fonts <link> on the password page would
+# leak every sign-in to a third party — but nothing stopped one being ADDED. Pinning the logo
+# line (below) only rejects REPLACING the inlined mark; an `@import`, a webfont `src:`, or a
+# second `url(https://…)` next to it would sail through. So: no `@import` at all, and every
+# `url(` in the block must open with `data:`.
+if printf '%s\n' "${css}" | grep -qiF '@import'; then
+  fail "the brand CSS contains an \`@import\` — the sign-in page would fetch it at load." \
+    "This is the password-entry page: it must pull nothing from a third party or from" \
+    "another origin (NFR-SEC-1). Inline the content instead."
+fi
+offsite="$(printf '%s\n' "${css}" | grep -oE 'url\(["'\'']?[^)"'\'']*' | grep -viE 'url\(["'\'']?data:' || true)"
+if [ -n "${offsite}" ]; then
+  fail "the brand CSS references a non-\`data:\` URL: ${offsite}" \
+    "Every asset on the sign-in page is inlined on purpose — an off-origin fetch leaks the" \
+    "sign-in to whoever serves it, and makes the login page fail when that host is down."
+fi
+
 # --- (4) the mark is the app's mark, inlined through .Files.Get ---------------------------
 printf '%s\n' "${css}" | grep -qF 'url("data:image/png;base64,{{ .Files.Get "files/beekeepingit-mark.png" | b64enc }}")' || fail \
   "the brand mark is no longer inlined from \`files/beekeepingit-mark.png\` via \`.Files.Get\`." \
@@ -212,16 +247,48 @@ done <<'MSGIDS'
 {% trans 'Welcome!' %}
 {% trans "We're excited to have you get started. First, you need to confirm your account. Just press the button below."%}
 {% trans 'Confirm Account' %}
-If that doesn't work, copy and paste the following link in your browser: {{ url }}
 MSGIDS
+
+# The `blocktrans` block is checked WHOLE, INDENTATION INCLUDED — a substring grep passes at
+# any indentation and this one is not indentation-independent. Django builds a blocktrans
+# msgid from the literal text between the tags (`BlockTranslateNode.render_token_list`
+# concatenates the raw tokens and trims only when `trimmed` is given), and the shipped
+# pt_PT catalogue's entry is upstream's `\n` + FOUR spaces + text + `\n` + four spaces. Nest
+# these three lines to match the surrounding HTML and the msgid becomes one no catalogue
+# has: gettext falls back to the msgid and the line is English for every pt-PT recipient,
+# with no warning anywhere. Found in review on the first draft of this template, which
+# indented them to 16.
+expected_blocktrans="$(printf '%s\n' \
+  "    {% blocktrans with url=url %}" \
+  "    If that doesn't work, copy and paste the following link in your browser: {{ url }}" \
+  "    {% endblocktrans %}")"
+# Pulled as three CONSECUTIVE lines (a substring grep would accept them scattered, and a
+# multi-line `grep -F` pattern is matched per line, never as a block).
+actual_blocktrans="$(awk '
+  /^    \{% blocktrans with url=url %\}$/ { n = 3 }
+  n-- > 0 { print }
+' "${email_template}")"
+if [ "${actual_blocktrans}" != "${expected_blocktrans}" ]; then
+  fail "the branded email's \`{% blocktrans %}\` block is not upstream's exact text AND indentation." \
+    "The msgid INCLUDES the surrounding whitespace, and the pt_PT catalogue carries the" \
+    "4-space-indented form. Re-indenting these three lines to sit neatly inside the table" \
+    "silently makes that line English for every Portuguese recipient. Expected, verbatim:" \
+    "${expected_blocktrans}"
+fi
 
 # --- (6) the sender stays split, named, and placeholder-marked -----------------------------
 grep -qE '^[[:space:]]*fromName:[[:space:]]*BeekeepingIT[[:space:]]*$' "${chart_values}" || fail \
   "authentik.email.fromName is not BeekeepingIT — the inbox line goes back to a bare address."
 grep -qE '^[[:space:]]*fromAddress:' "${chart_values}" || fail \
   "authentik.email.fromAddress is gone; #417 needs exactly one value to set per environment."
-grep -qF 'printf "%s <%s>" .fromName .fromAddress' "${config_secret}" || fail \
-  "AUTHENTIK_EMAIL__FROM is no longer composed from fromName + fromAddress."
+from_line="$(grep -E '^[[:space:]]*AUTHENTIK_EMAIL__FROM:' "${config_secret}" || true)"
+case "${from_line}" in
+  *.fromName*.fromAddress*) : ;;
+  *) fail "AUTHENTIK_EMAIL__FROM is no longer composed from fromName + fromAddress." \
+      "Rendering the bare address drops the display name, which is the branding half of the" \
+      "sender — the inbox line goes back to reading as a bare address on an unfamiliar" \
+      "domain, which is the same phishing-shaped hand-off one surface further on." ;;
+esac
 
 legacy="$(grep -rlnE '^[[:space:]]*from:[[:space:]]*[^[:space:]#]+@' \
   "${chart_values}" "${repo_root}/infra/helm/beekeepingit/values.yaml" \

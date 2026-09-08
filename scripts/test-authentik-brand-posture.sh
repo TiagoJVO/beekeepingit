@@ -98,6 +98,16 @@ expect_reject "an invented ground hex on the flow pages" \
 expect_reject "an invented hex in the branded email" \
   'sed -i "s/#F6F3EC/#EFEAE0/g" "$ET"'
 
+# --- the two silent rewrites found in review -------------------------------------------------
+expect_reject "a child combinator in the CSS (authentik rewrites > to a literal \\u003E)" \
+  'sed -i "s/\.pf-c-login__main-footer-links-item a/.pf-c-login__main-footer-links-item>a/" "$BP"'
+expect_reject "an @import in the CSS (off-origin fetch on the password page)" \
+  'sed -i "s|^        \.pf-c-login__footer|        @import url(https://fonts.googleapis.com/css2?family=Archivo);\n        .pf-c-login__footer|" "$BP"'
+expect_reject "a webfont added next to the inlined mark" \
+  'sed -i "s|^        \.pf-c-login__footer|        @font-face{font-family:Archivo;src:url(https://fonts.gstatic.com/s/archivo.woff2)}\n        .pf-c-login__footer|" "$BP"'
+expect_reject "the blocktrans block re-indented to match the surrounding HTML (msgid miss)" \
+  'sed -i "s/^    {% blocktrans with url=url %}/                {% blocktrans with url=url %}/" "$ET"'
+
 # --- the mark ---------------------------------------------------------------------------------
 expect_reject ".Files.Get path renamed (renders an EMPTY data URI, no error)" \
   'sed -i "s|files/beekeepingit-mark.png|files/missing-mark.png|" "$BP"'
@@ -128,7 +138,7 @@ expect_reject "sender un-split back to a single from: key" \
 expect_reject "retired from: key reintroduced in an environment overlay" \
   'printf "\nauthentik:\n  email:\n    from: no-reply@example.com\n" >> "$R/infra/helm/beekeepingit/environments/staging.yaml"'
 expect_reject "AUTHENTIK_EMAIL__FROM no longer composed from name + address" \
-  'sed -i "s|printf \"%s <%s>\" .fromName .fromAddress|.fromAddress|" "$CS"'
+  'sed -i "s|^  AUTHENTIK_EMAIL__FROM:.*|  AUTHENTIK_EMAIL__FROM: {{ .fromAddress \| quote }}|" "$CS"'
 
 # --- and the clean tree must PASS ------------------------------------------------------------------
 clean="${work}/clean"
