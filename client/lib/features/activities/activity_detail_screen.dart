@@ -7,6 +7,7 @@ import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../routing/branch_local_navigation.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
@@ -80,7 +81,15 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
       final repo = await ref.read(activitiesRepositoryProvider.future);
       await repo.delete(widget.activityId);
       if (!mounted) return;
-      context.go('/apiaries/${widget.apiaryId}');
+      // Back to the apiary IN THE BRANCH this screen was opened from (#666):
+      // deleting an activity previewed from Home returns to Home's copy of
+      // the apiary, not to the Apiaries tab the user never chose.
+      context.go(
+        apiaryDetailLocation(
+          from: branchLocationOf(context),
+          apiaryId: widget.apiaryId,
+        ),
+      );
       showAppToast(messenger, l10n.activityDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
@@ -109,8 +118,15 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
             // delete above) — nothing sensible to render; bounce back to the
             // owning apiary rather than show a blank detail page, mirroring
             // apiary_detail_screen.dart's own null-bounce.
+            // Only the live page may bounce on its own initiative —
+            // every branch stays mounted off-stage (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
+            final gone = apiaryDetailLocation(
+              from: branchLocationOf(context),
+              apiaryId: widget.apiaryId,
+            );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/apiaries/${widget.apiaryId}');
+              if (context.mounted) context.go(gone);
             });
             return const SizedBox.shrink();
           }

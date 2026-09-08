@@ -109,7 +109,11 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
   │                        summary's single `now`. No FAB, no own Scaffold)
   │   ├ todos/:id          TodoDetailScreen       features/todos      ◄ #666, FR-UX-1/FR-UX-2
   │   ├ journeys/:id       JourneyDetailScreen    features/journeys   ◄ #666
+  │   │   └ activities/:activityId   ActivityDetailScreen (#666; a journey previews its own
+  │   │                              activities, and a preview row is reading, not doing)
   │   ├ apiaries/:id       ApiaryDetailScreen     features/apiaries   ◄ #666
+  │   │   └ activities/:activityId   ActivityDetailScreen (#666; likewise for the apiary page's
+  │   │                              own embedded activity preview, #42)
   │   │                    (Home's OWN copies of the three records its summary previews — the
   │   │                    same screens the owning branches render, reached from Home's rows so
   │   │                    the tab never switches under the user and Back pops to /home. Before
@@ -118,7 +122,8 @@ StatefulShellRoute (AppShell, 5-tab bottom nav below BrandDimens.breakpointExpan
   │   │                    its list, from the app's landing screen. Read-only landings and
   │   │                    deliberately leaves — one hop; an action taken on one (edit, "view
   │   │                    all", history) hands off to the entity's owning tab, and the nav
-  │   │                    follows. THE rule for every branch-local detail, incl.
+  │   │                    follows, while READING deeper (a journey's or apiary's own activity
+  │   │                    preview rows, above) stays in this branch. THE rule, incl.
   │   │                    journeyActivityDetail below, lives in
   │   │                    lib/routing/branch_local_navigation.dart, which every call site asks
   │   │                    for a destination — there is no per-caller override any more)

@@ -74,6 +74,9 @@ class ApiaryDetailScreen extends ConsumerWidget {
             // detail page.
             // Where it bounces to follows branch_local_navigation.dart
             // (#666): an apiary opened from Home returns to Home.
+            // Off-stage branches stay mounted, so only the live page
+            // may bounce (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
             final gone = recordGoneLocation(
               from: branchLocationOf(context),
               ownerList: '/apiaries',

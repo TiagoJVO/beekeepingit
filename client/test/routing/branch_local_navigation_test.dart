@@ -78,6 +78,34 @@ void main() {
       }
     });
 
+    test('a journey opened FROM HOME keeps its activity rows in Home\'s '
+        'stack', () {
+      // The case the first version of this rule missed: `/home/journeys/j1`
+      // is that journey's stack too, so an activity row on it must not fall
+      // through to the apiaries branch — which is exactly the hand-off #384
+      // exists to prevent, reached by another door.
+      expect(journeyBranchIdOf('/home/journeys/j1'), 'j1');
+      expect(
+        activityDetailLocation(
+          from: '/home/journeys/j1',
+          apiaryId: 'a1',
+          activityId: 'ac1',
+        ),
+        '/home/journeys/j1/activities/ac1?apiaryId=a1',
+      );
+    });
+
+    test('an apiary opened FROM HOME keeps its activity rows there too', () {
+      expect(
+        activityDetailLocation(
+          from: '/home/apiaries/a1',
+          apiaryId: 'a1',
+          activityId: 'ac1',
+        ),
+        '/home/apiaries/a1/activities/ac1',
+      );
+    });
+
     test('the journey CREATE form is not a journey stack', () {
       // `/journeys/new` matches the shape of `/journeys/:id` but `new` is a
       // route segment, not an id — reading it as one would build

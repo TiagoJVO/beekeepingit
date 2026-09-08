@@ -472,6 +472,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => JourneyDetailScreen(
                       journeyId: state.pathParameters['id']!,
                     ),
+                    routes: [
+                      // A journey previews its own activities, and a preview
+                      // row is reading, not doing — so a tap on one inside
+                      // Home's copy stays in Home's stack, exactly as the
+                      // journeys branch's own `journeyActivityDetail` keeps
+                      // it inside a journey. Same screen, same `?apiaryId=`
+                      // convention; edit/delete/history remain the
+                      // apiaries-branch route's alone.
+                      GoRoute(
+                        path: 'activities/:activityId',
+                        name: 'homeJourneyActivityDetail',
+                        builder: (context, state) => ActivityDetailScreen(
+                          apiaryId: state.uri.queryParameters['apiaryId'] ?? '',
+                          activityId: state.pathParameters['activityId']!,
+                        ),
+                      ),
+                    ],
                   ),
                   GoRoute(
                     path: 'apiaries/:id',
@@ -479,6 +496,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => ApiaryDetailScreen(
                       apiaryId: state.pathParameters['id']!,
                     ),
+                    routes: [
+                      // Likewise for the apiary detail page's own embedded
+                      // activity preview (#42).
+                      GoRoute(
+                        path: 'activities/:activityId',
+                        name: 'homeActivityDetail',
+                        builder: (context, state) => ActivityDetailScreen(
+                          apiaryId: state.pathParameters['id']!,
+                          activityId: state.pathParameters['activityId']!,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

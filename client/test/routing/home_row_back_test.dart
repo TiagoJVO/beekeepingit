@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
@@ -7,8 +9,10 @@ import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todo_detail_screen.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
+import 'package:beekeepingit_client/routing/branch_local_navigation.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,7 +93,33 @@ const _journey = Journey(
 
 const _apiary = Apiary(id: 'a1', name: 'Quinta velha', hiveCount: 3);
 
-Widget _buildApp() => ProviderScope(
+/// A todo the test can change under the app.
+///
+/// Every subscription replays the current value before following further
+/// changes, the way a local-store query does — a plain broadcast controller
+/// would silently hand a re-created provider an empty stream, and the page
+/// under test would sit on its loading state instead of seeing the record
+/// vanish.
+class _MutableTodo {
+  Todo? value = _todo;
+  final _changes = StreamController<Todo?>.broadcast();
+
+  Stream<Todo?> stream() async* {
+    yield value;
+    yield* _changes.stream;
+  }
+
+  void set(Todo? next) {
+    value = next;
+    _changes.add(next);
+  }
+
+  Future<void> dispose() => _changes.close();
+}
+
+Widget _buildApp({
+  Stream<Todo?> Function(String id)? todoById,
+}) => ProviderScope(
   overrides: [
     isAuthenticatedProvider.overrideWithValue(true),
     profileProvider.overrideWith(_CompleteProfileController.new),
@@ -104,7 +134,8 @@ Widget _buildApp() => ProviderScope(
     // screen bounces back to its own list when its record resolves to null,
     // which would erase the very navigation this file asserts on.
     todoByIdProvider.overrideWith(
-      (ref, id) => Stream.value(id == _todo.id ? _todo : null),
+      (ref, id) =>
+          todoById?.call(id) ?? Stream.value(id == _todo.id ? _todo : null),
     ),
     journeyByIdProvider.overrideWith(
       (ref, id) => Stream.value(id == _journey.id ? _journey : null),
@@ -139,25 +170,33 @@ int _selectedTab(WidgetTester tester) => tester
     .selectedIndex;
 
 final int _homeTab = AppShell.tabs.indexWhere((tab) => tab.route == 'home');
+final int _todosTab = AppShell.tabs.indexWhere((tab) => tab.route == 'todos');
 
 /// One Home row, and the location its tap must open **inside Home's own
 /// branch** — not the entity's own tab.
-typedef _HomeRow = ({Key row, String detail, String description});
+/// [title] is the shell header the record must carry: Home's copies render
+/// the same screens as the owning routes, so they owe the same titles — a
+/// header still reading "Home" over an apiary is the lie #638 fixed for the
+/// not-found screen, and nothing else would catch it.
+typedef _HomeRow = ({Key row, String detail, String title, String description});
 
 const _homeRows = <_HomeRow>[
   (
     row: Key('home-todo-t1'),
     detail: '/home/todos/t1',
+    title: 'Todo',
     description: 'a task row',
   ),
   (
     row: Key('home-journey-j1'),
     detail: '/home/journeys/j1',
+    title: 'Journey',
     description: 'a journey row',
   ),
   (
     row: Key('home-apiary-a1'),
     detail: '/home/apiaries/a1',
+    title: 'Apiary',
     description: 'an apiary row',
   ),
 ];
@@ -179,6 +218,73 @@ Future<void> _openHome(WidgetTester tester) async {
 }
 
 void main() {
+  // #666 review (MEDIUM): StatefulShellRoute.indexedStack keeps every branch
+  // MOUNTED, merely off-stage, so Home's copy of a record outlives the visit
+  // that opened it. A screen that navigates on its OWN initiative — the
+  // null-record bounce every detail screen has — must therefore be able to
+  // tell "I am the page the user is looking at" from "I am a page parked in
+  // another tab", or a record deleted elsewhere (or deleted over sync) would
+  // fire that bounce from off-stage and drag the whole app to Home.
+  //
+  // What this pins is `isLiveLocation`, the predicate the guard is written
+  // in, evaluated on the real off-stage page inside the real shell — not the
+  // bounce itself: the widget binding does not deliver that rebuild the way
+  // a running app does, so an assertion on the router alone would pass with
+  // the guard removed and pin nothing.
+  testWidgets('Home\'s copy of a record knows when it is not the page the '
+      'user is looking at', (tester) async {
+    final todo = _MutableTodo();
+    addTearDown(todo.dispose);
+
+    useViewport(tester, size: _tallPhone);
+    await tester.pumpWidget(_buildApp(todoById: (id) => todo.stream()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('shell-tab-home')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('home-todo-t1')));
+    await _pumpBounded(tester);
+    expect(_location(tester), '/home/todos/t1');
+
+    final onScreen = tester.element(find.byType(TodoDetailScreen));
+    expect(
+      isLiveLocation(onScreen),
+      isTrue,
+      reason:
+          'the page the user is looking at is the live location — if this '
+          'were false the guard would suppress a bounce that should happen',
+    );
+
+    // The user moves on to the Todos tab; Home's copy of the task stays
+    // mounted off-stage behind it, and the task is then deleted (there, or
+    // over sync).
+    await tester.tap(find.byKey(const Key('shell-tab-todos')));
+    await tester.pumpAndSettle();
+    expect(_location(tester), '/todos');
+    expect(_selectedTab(tester), _todosTab);
+    todo.set(null);
+    await _pumpBounded(tester);
+
+    final offStage = find.byType(TodoDetailScreen, skipOffstage: false);
+    expect(
+      offStage,
+      findsOneWidget,
+      reason:
+          'the premise: StatefulShellRoute.indexedStack keeps inactive '
+          'branches MOUNTED. If Home\'s copy were gone it could not navigate, '
+          'and the assertion below would pin nothing',
+    );
+    expect(
+      isLiveLocation(tester.element(offStage)),
+      isFalse,
+      reason:
+          'Home\'s parked copy of the deleted task must know it is not the '
+          'live page, so its null-bounce stays put instead of dragging the '
+          'user out of the Todos tab',
+    );
+    expect(_location(tester), '/todos');
+  });
+
   for (final row in _homeRows) {
     group('${row.description} on Home', () {
       testWidgets('opens the record inside the Home branch, keeping Home the '
@@ -203,6 +309,17 @@ void main() {
           reason:
               'the user tapped a row on Home and has gone nowhere else, so '
               'the bottom nav must still say Home (FR-UX-2)',
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AppBar),
+            matching: find.text(row.title),
+          ),
+          findsOneWidget,
+          reason:
+              'the shell header names the record, not the tab it is filed '
+              'under — Home\'s copy renders the same screen, so it owes the '
+              'same title',
         );
       });
 

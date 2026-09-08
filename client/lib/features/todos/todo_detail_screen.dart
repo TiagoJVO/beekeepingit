@@ -110,6 +110,12 @@ class _TodoDetailScreenState extends ConsumerState<TodoDetailScreen> {
             // from Home returns to Home, not to a tab the user never chose.
             // Resolved before scheduling the callback, while this frame's
             // route state is still the one that raised it.
+            // Only the page the user is LOOKING at may navigate on its
+            // own initiative: every branch stays mounted off-stage, so
+            // without this a todo deleted from the Todos tab would make
+            // Home's off-stage copy of it bounce, jumping the whole app to
+            // Home (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
             final gone = recordGoneLocation(
               from: branchLocationOf(context),
               ownerList: '/todos',

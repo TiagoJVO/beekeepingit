@@ -570,6 +570,8 @@ class AppShell extends ConsumerWidget {
       // over an apiary, which is the same class of lie #638 fixed for the
       // not-found screen below.
       'homeApiaryDetail' => l10n.apiaryDetailTitle,
+      'homeActivityDetail' => l10n.activityDetailTitle,
+      'homeJourneyActivityDetail' => l10n.activityDetailTitle,
       'homeJourneyDetail' => l10n.journeyDetailTitle,
       'homeTodoDetail' => l10n.todoDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,

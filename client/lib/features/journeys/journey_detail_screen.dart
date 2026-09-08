@@ -59,6 +59,9 @@ class JourneyDetailScreen extends ConsumerWidget {
             // handling of the same case.
             // Where it bounces to follows branch_local_navigation.dart
             // (#666): a journey opened from Home returns to Home.
+            // Off-stage branches stay mounted, so only the live page
+            // may bounce (see isLiveLocation).
+            if (!isLiveLocation(context)) return const SizedBox.shrink();
             final gone = recordGoneLocation(
               from: branchLocationOf(context),
               ownerList: '/journeys',
@@ -338,7 +341,6 @@ class _JourneyApiariesSection extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             data: (activities) => _ApiaryEntries(
-              journeyId: journey.id,
               plannedApiaryIds: plannedApiaryIds,
               activities: activities,
               apiaryNames: apiaryNames,
@@ -356,13 +358,11 @@ class _JourneyApiariesSection extends ConsumerWidget {
 /// seen-ids guard against a duplicate entry when an id appears in both.
 class _ApiaryEntries extends StatelessWidget {
   const _ApiaryEntries({
-    required this.journeyId,
     required this.plannedApiaryIds,
     required this.activities,
     required this.apiaryNames,
   });
 
-  final String journeyId;
   final List<String> plannedApiaryIds;
   final List<Activity> activities;
   final Map<String, String> apiaryNames;
@@ -395,7 +395,6 @@ class _ApiaryEntries extends StatelessWidget {
       children: [
         for (final apiaryId in apiaryIds) ...[
           _ApiaryCard(
-            journeyId: journeyId,
             apiaryId: apiaryId,
             // A raw internal id would leak into user-facing text if this
             // apiary isn't in the currently-loaded list (deleted since, or
@@ -423,14 +422,12 @@ class _ApiaryEntries extends StatelessWidget {
 /// an activity list (there's nothing to list yet).
 class _ApiaryCard extends StatelessWidget {
   const _ApiaryCard({
-    required this.journeyId,
     required this.apiaryId,
     required this.apiaryName,
     required this.isPlanned,
     required this.activities,
   });
 
-  final String journeyId;
   final String apiaryId;
   final String apiaryName;
   final bool isPlanned;
