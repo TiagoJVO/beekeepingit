@@ -28,8 +28,10 @@ String todoAssigneeLabel(
   if (assigneeId == null || assigneeId.isEmpty) {
     return l10n.todoAssigneeUnassigned;
   }
-  final name = memberNames[assigneeId];
-  if (name != null && name.isNotEmpty) return name;
+  // Sanitized, not taken verbatim (#582, NFR-SEC-1) — see
+  // member_display.dart's `sanitizedMemberName`.
+  final name = sanitizedMemberName(memberNames[assigneeId]);
+  if (name != null) return name;
   return l10n.todoAssigneeUnknown(shortMemberId(assigneeId));
 }
 

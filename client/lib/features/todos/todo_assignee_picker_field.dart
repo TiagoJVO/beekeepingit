@@ -96,9 +96,18 @@ class _RosterList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A currently-selected id absent from the roster still gets its own row
-    // (short-id fallback) — see this file's own class doc comment.
-    final entries = {...memberNames};
+    // Every roster name is sanitized before it becomes a row label (#582,
+    // NFR-SEC-1) — this is the one place the map's values are rendered
+    // directly rather than through `todoAssigneeLabel`, so it needs the same
+    // filter (member_display.dart's `sanitizedMemberName`). A name left with
+    // nothing readable takes the same short-id label a missing one does,
+    // rather than vanishing from the picker and becoming unassignable.
+    final entries = <String, String>{
+      for (final entry in memberNames.entries)
+        entry.key:
+            sanitizedMemberName(entry.value) ??
+            l10n.todoAssigneeUnknown(shortMemberId(entry.key)),
+    };
     final selected = selectedAssigneeId;
     if (selected != null &&
         selected.isNotEmpty &&

@@ -513,6 +513,37 @@ void main() {
       );
       expect(text, contains('aaaaaaaa'));
     });
+
+    // #582 (NFR-SEC-1): the roster name is authored outside this app, so it
+    // goes through `sanitizedMemberName` rather than being rendered verbatim.
+    // The rules themselves are covered in member_display_test.dart; these two
+    // pin that THIS caller is wired to them.
+    //
+    // Invisible codepoints are written by code point on purpose: spelled
+    // literally they are unreviewable in a diff, and an editor or a formatter
+    // could silently drop them.
+    test('a name carrying a bidi override renders sanitized', () {
+      final rlo = String.fromCharCode(0x202E); // right-to-left OVERRIDE
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-2'),
+        'user-1',
+        memberNames: {'user-2': '${rlo}Ana Silva'},
+      );
+      expect(text, 'Ana Silva');
+      expect(text.contains(rlo), isFalse);
+    });
+
+    test('a name with nothing readable left falls back to the short id', () {
+      final zwsp = String.fromCharCode(0x200B); // zero-width space
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-aaaaaaaa'),
+        'user-1',
+        memberNames: {'user-aaaaaaaa': ' $zwsp '},
+      );
+      expect(text, contains('aaaaaaaa'));
+    });
   });
 
   // #624 (NFR-I18N-1, C-2): the DISPLAY half of the separator problem.

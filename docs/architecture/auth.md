@@ -1423,12 +1423,23 @@ cannot express").
   structurally sound (exactly one `@`, non-empty local and domain parts, printable, no whitespace,
   ≤ 320 octets) and the display name is bounded to 128 characters with every non-printable
   codepoint dropped — control, bidi-override and zero-width characters are all
-  `not isprintable()`, so a Google profile name cannot render as somebody else's in a member list.
-  That is cosmetic-impersonation defense in depth; it confers no authority either way, since roles
-  are app-side (NFR-ROL-1).
+  `not isprintable()`, so an upstream profile name cannot enter the account as control or bidi
+  text. That is cosmetic-impersonation defense in depth; it confers no authority either way, since
+  roles are app-side (NFR-ROL-1).
   Nothing upstream-controlled survives: the resolver is the source's only property mapping
   (statically guarded), and it replaces the `username` the stand-in's source type would otherwise
   emit from `preferred_username`.
+  - _Scope correction ([#582](https://github.com/TiagoJVO/beekeepingit/issues/582)):_ the name
+    filter guards **one writer at one moment** — enrollment. It is **not** where a member list's
+    guarantee comes from, and reading it that way is the mistake #582's review caught.
+    `PATCH /v1/profile` is a second, self-service writer over the same `identity.users.name`
+    column, and it validates only "non-empty after `TrimSpace`, at most 200 runes" — so the
+    sanitized seed can be overwritten with anything the account's owner likes. What guarantees the
+    member list today is client-side: `sanitizedMemberName` in
+    `client/lib/features/members/member_display.dart`, applied to every roster name the app
+    renders. Closing the server-side half is
+    [#824](https://github.com/TiagoJVO/beekeepingit/issues/824), which also reconciles this
+    section's 128-character bound with the API's 200.
 - **`email_verified` gains a second writer — deliberately, and user-confirmed.** §8.10's
   restored-token stamp policy was the single writer; the enroll branch is now the second. The
   justification: §8.14 already trusts the upstream's strict boolean for the **stronger** operation

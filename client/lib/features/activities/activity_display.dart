@@ -277,7 +277,10 @@ String activityAttributionText(
     return l10n.activityPerformedByUnknown;
   }
   if (performedBy == currentUserId) return l10n.activityPerformedByYou;
-  final name = memberNames[performedBy];
-  if (name != null && name.isNotEmpty) return name;
+  // Sanitized, not taken verbatim (#582, NFR-SEC-1): the name is authored
+  // outside this app and a bidi override or a newline in it would misattribute
+  // this row. See member_display.dart's `sanitizedMemberName`.
+  final name = sanitizedMemberName(memberNames[performedBy]);
+  if (name != null) return name;
   return l10n.activityPerformedByMember(shortMemberId(performedBy));
 }
