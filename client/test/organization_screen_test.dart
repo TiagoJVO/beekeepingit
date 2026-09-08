@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'support/a11y_matchers.dart';
 import 'support/bottom_chrome.dart';
@@ -44,13 +45,33 @@ class _FakeOrganizationController extends OrganizationController {
   }
 }
 
+/// A router, not a bare `home:` — the screen ends a successful save with
+/// `context.go('/home')`, and with no `GoRouter` in the tree that call threw
+/// straight into `_save`'s own `catch`, so the harness was quietly exercising
+/// the failure path. It went unnoticed because `showSnackBar` **queued**: the
+/// error toast parked behind the success one, and the assertion below read the
+/// success message off a bar the code had already moved past. Toasts replace
+/// now (#640), which surfaced it.
 Widget _buildScreen(OrganizationController controller) {
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const OrganizationScreen(),
+      ),
+      GoRoute(
+        path: '/home',
+        builder: (context, state) =>
+            const Scaffold(body: Center(child: Text('home'))),
+      ),
+    ],
+  );
   return ProviderScope(
     overrides: [organizationProvider.overrideWith(() => controller)],
-    child: const MaterialApp(
+    child: MaterialApp.router(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: kSupportedLocales,
-      home: OrganizationScreen(),
+      routerConfig: router,
     ),
   );
 }
@@ -158,6 +179,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Organization created.'), findsOneWidget);
+    // The destination, not just the message: the harness routes for real
+    // precisely so a `context.go('/home')` that threw could not hide behind a
+    // stale bar again.
+    expect(find.text('home'), findsOneWidget);
   });
 
   testWidgets('address is optional', (tester) async {

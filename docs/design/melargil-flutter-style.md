@@ -91,31 +91,55 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
   `SafeArea` or a `MediaQuery.removePadding`: below one it correctly
   contributes `0`, above one the padding counts the home indicator twice.
 
-- **Toasts:** nothing positions them — every `showSnackBar` call site hands the
-  bar to `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top
-  of its bottom chrome. A message long enough to wrap goes through
-  `appToast(message)` (`core/widgets/app_toast.dart`), which caps it at
-  `kToastMaxLines` and, only when that truncates, offers a **Details**
-  affordance opening the full text in a scrollable dialog (`#790`). Unbounded,
+- **Toasts:** every confirmation goes through
+  `showAppToast(messenger, message)` (`core/widgets/app_toast.dart`) — the one
+  entry point, and the reason it exists is that
+  `ScaffoldMessenger.showSnackBar` **queues**. A bar stays up four seconds, so
+  a second action inside that window used to park its message behind the
+  first: the toast read one action _behind_ (revoking an invitation showed
+  "Invitation sent."), and because `MaterialApp` installs a single root
+  messenger spanning every route, the parked message later surfaced over an
+  unrelated screen (`#640`). `showAppToast` calls `clearSnackBars()` first, so
+  a toast **replaces** rather than queues and nothing is left to resurface.
+  It has to be `clearSnackBars`, not `hideCurrentSnackBar` — hiding the
+  current bar _promotes_ the next queued one. A toast raised just before a
+  navigation still travels with it, which is required: the save-then-go-back
+  flow confirms and then pops, and the destination is where the message is
+  read. The single deliberate exception is `shell/app_shell.dart`'s
+  engine-notification batch (`D-24`), which raises `appToast(...)` on the
+  messenger directly because a batch carries several distinct messages that
+  each have to be readable; `#821` tracks the rough edge that leaves.
+
+  Nothing positions a toast — the call site hands the bar to
+  `ScaffoldMessenger` and the enclosing `Scaffold` places it, at the top of
+  its bottom chrome. The bar itself is `appToast(message)`, which caps the
+  message at `kToastMaxLines` and, only when that truncates, offers a
+  **Details** affordance opening the full text in a scrollable dialog
+  (`#790`). Unbounded,
   `syncSupersededNotice` measured 268px at 200% text — a third of a 375x812
   window, and past anything `scrollBottomInset` can reserve. Do **not** "fix"
   that by clamping the toast's own text scale: that withdraws the large text
   from the reader who asked for it, which is the opposite of `FR-AX-1`.
 
-  **Any message that interpolates an exception or a server-supplied string
-  MUST use `appToast`, whatever the app copy around it looks like** (`#813`).
-  The length of `l10n.apiarySaveError('$e')` is not the app's to know: RFC 9457
-  `detail` is free-text server prose with no bound (`ApiException.detail`'s own
-  doc comment says so) and `ApiNetworkException.toString()` carries a raw
+  **The bound is not optional for any message, and least of all for one that
+  interpolates an exception or a server-supplied string** (`#813`). The length
+  of `l10n.apiarySaveError('$e')` is not the app's to know: RFC 9457 `detail`
+  is free-text server prose with no bound (`ApiException.detail`'s own doc
+  comment says so) and `ApiNetworkException.toString()` carries a raw
   `SocketException`. Driven through the account screen's save with a realistic
   server validation sentence, that toast measured **708px** at 200% text before
   the migration. "It looks short in English" is not a measurement — reading the
   ARB template tells you nothing about what lands in `{error}`.
 
-  A plain `SnackBar` is still right for **fixed** copy short enough to fit. All
-  17 such strings were measured in EN and PT at 200% text on 375x812: 16 render
-  at 108px and stay on the plain path; `profileGenericError` rendered 188px
-  (EN) / 148px (PT), over the 136px band, and was migrated too.
+  Fixed copy is not exempt either, and since `#640` there is no plain-`SnackBar`
+  path left to be exempt on: every call site routes through `showAppToast`, so
+  the cap reaches all of them. Nothing _enforces_ that — there is no lint or
+  `check-*.sh` gate, and `app_shell.dart` is a legitimate exception — so a 57th
+  call site reaching for `messenger.showSnackBar` directly is a review catch,
+  not a build failure. The cap was already needed on fixed copy: all 17 such
+  strings were measured in EN and PT at 200% text on 375x812, and while 16
+  render at 108px, `profileGenericError` rendered 188px (EN) / 148px (PT), over
+  the 136px band.
   `appToast` deliberately takes no `BuildContext` — a save awaits its API
   first, so the call site captures its messenger before the gap and must not
   reach across it. The shell puts a `BrandDimens.gapToastNav` gutter inside

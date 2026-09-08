@@ -147,8 +147,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.todoLoadError('$e')));
+      showAppToast(ScaffoldMessenger.of(context), l10n.todoLoadError('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -234,11 +233,11 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go('/todos/$savedId');
-      messenger.showSnackBar(SnackBar(content: Text(l10n.todoSaveSuccess)));
+      showAppToast(messenger, l10n.todoSaveSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.todoSaveError('$e')));
+      showAppToast(messenger, l10n.todoSaveError('$e'));
     }
   }
 
@@ -260,19 +259,15 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
       }
       if (!mounted) return;
       setState(() => _status = wasDone ? 'open' : 'done');
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            wasDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
-          ),
-        ),
+      showAppToast(
+        messenger,
+        wasDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        appToast(
-          wasDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
-        ),
+      showAppToast(
+        messenger,
+        wasDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -302,11 +297,11 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go('/todos');
-      messenger.showSnackBar(SnackBar(content: Text(l10n.todoDeleteSuccess)));
+      showAppToast(messenger, l10n.todoDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.todoDeleteError('$e')));
+      showAppToast(messenger, l10n.todoDeleteError('$e'));
     }
   }
 

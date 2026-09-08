@@ -255,7 +255,7 @@ class _NumberGroup extends ConsumerWidget {
       ],
       notes: result.notes,
     );
-    messenger.showSnackBar(appToast(l10n.stockDeclarationSaved));
+    showAppToast(messenger, l10n.stockDeclarationSaved);
   }
 }
 

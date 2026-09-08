@@ -506,7 +506,7 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(appToast(l10n.apiarySaveError('$e')));
+      showAppToast(messenger, l10n.apiarySaveError('$e'));
     }
   }
 
