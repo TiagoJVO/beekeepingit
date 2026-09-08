@@ -2,6 +2,7 @@ import { test, expect, Locator, Page } from "@playwright/test";
 import {
   enableSemantics,
   readIdTokenClaims,
+  scrollFlutterViewTo,
   submitIdpCredentials,
   waitForUrlCommitted,
 } from "./helpers";
@@ -155,16 +156,13 @@ async function goToApiariesTab(page: Page) {
 /**
  * Brings a control inside the apiary form's scroll view into the viewport.
  *
- * A Flutter-web semantics click does NOT scroll the Flutter scrollable to
- * reach an off-screen target: the DOM node Playwright clicks is an
- * absolutely-positioned mirror of the widget, so Playwright judges it
- * actionable, clicks it, and Flutter ignores it because the real widget is
- * below the fold. The symptom is a SILENT no-op — no timeout, no error, the
- * step simply does nothing and a later assertion fails somewhere unrelated.
- *
- * `scrollIntoViewIfNeeded` does not help; it moves the page, not the form. So
- * drive the form's own scrollable the way a user does, with the wheel, and
- * confirm by the mirror's own box that the widget actually moved into view.
+ * Thin wrapper over the shared [scrollFlutterViewTo] (which carries the full
+ * rationale for why a Flutter-web semantics click cannot reach an off-screen
+ * target, and what its silent no-op costs). It exists only to keep the
+ * form-specific reason for the wheel point in one place: the wheel is pointed
+ * at the middle of the FORM, not at the target — the target may be off-screen,
+ * and a wheel over the 220px map picker would be swallowed by flutter_map's
+ * own gesture handling instead of scrolling the form.
  *
  * Added after #629 put every field's label on its own row above the box: that
  * made the form materially taller, and "Use current location" — below the
@@ -173,22 +171,10 @@ async function goToApiariesTab(page: Page) {
 async function scrollFormTo(page: Page, target: Locator) {
   const viewport = page.viewportSize();
   if (!viewport) return;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    // `boundingBox()` AUTO-WAITS for the element. Left unbounded it inherits
-    // the 240s test timeout, so a target that is not yet attached hangs the
-    // whole test here rather than falling through to a scroll — which is
-    // exactly how the first version of this helper failed. Bound it: a null
-    // box is a normal answer meaning "not measurable yet, scroll and retry".
-    const box = await target.boundingBox({ timeout: 500 }).catch(() => null);
-    if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;
-    // Point the wheel at the middle of the form, not at the target: the
-    // target may be off-screen, and a wheel over the 220px map would be
-    // swallowed by flutter_map's own gesture handling instead of scrolling
-    // the form.
-    await page.mouse.move(viewport.width / 2, viewport.height / 2);
-    await page.mouse.wheel(0, box && box.y < 0 ? -240 : 240);
-    await page.waitForTimeout(150);
-  }
+  await scrollFlutterViewTo(page, target, {
+    x: viewport.width / 2,
+    y: viewport.height / 2,
+  });
 }
 
 async function setApiaryLocation(page: Page) {
@@ -485,7 +471,26 @@ test.fixme("logout revokes the session — a reload does not silently re-authent
   // sign out from there.
   await page.getByRole("button", { name: "Account settings" }).click();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "Sign out" }).click();
+
+  // Sign out is the LAST child of the Account screen's `SingleChildScrollView`
+  // and sits below the fold at this suite's 1280x720 viewport, so it must be
+  // scrolled to with the wheel before it can be clicked (#836 — see
+  // `scrollFlutterViewTo`; clicking its off-screen semantics mirror is a
+  // silent no-op, which is precisely what made this test look like a 60s app
+  // stall). Then assert the click actually took: leaving `/account` is the
+  // first observable effect of `AuthController.logout()`, and pinning it here
+  // makes a future silent no-op fail AT the click instead of one wait later.
+  const signOut = page.getByRole("button", { name: "Sign out" });
+  await scrollFlutterViewTo(page, signOut);
+  await signOut.click();
+  await expect
+    .poll(() => page.url(), {
+      timeout: 30_000,
+      message:
+        "Sign out was clicked but the app never left /account — the click did not reach " +
+        "the widget (#836), or logout() did not run",
+    })
+    .not.toMatch(/\/account/);
 
   // The app-side session is cleared and (after the end-session round trip
   // returns to the app origin) the router sends us back to /login.

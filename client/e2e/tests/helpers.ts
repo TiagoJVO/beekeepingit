@@ -1,4 +1,11 @@
-import { APIRequestContext, Browser, BrowserContext, expect, Page } from "@playwright/test";
+import {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  expect,
+  Locator,
+  Page,
+} from "@playwright/test";
 
 /**
  * Shared e2e plumbing, extracted from slice.spec.ts (#361) so the
@@ -49,6 +56,60 @@ export async function enableSemantics(page: Page) {
       timeout: 15_000,
     })
     .catch(() => {});
+}
+
+/**
+ * Brings a control inside a Flutter scroll view into the viewport, by driving
+ * the scrollable with the **wheel** the way a user does.
+ *
+ * **Never click a Flutter control without this unless you know it is above the
+ * fold.** A Flutter-web semantics click does NOT scroll the Flutter scrollable
+ * to reach an off-screen target: the DOM node Playwright clicks is an
+ * absolutely-positioned *mirror* of the widget, so Playwright judges it
+ * actionable, clicks it, and Flutter ignores it because the real widget is
+ * below the fold. `scrollIntoViewIfNeeded` does not help — it moves the page,
+ * not the Flutter scrollable.
+ *
+ * **The symptom is a silent no-op.** No timeout, no error, no failed
+ * assertion at the click: the step simply does nothing, and whatever the click
+ * was supposed to cause never happens. Every failure it produces surfaces far
+ * away from its cause. #836 is the worked example — four of five sign-out
+ * attempts in one CI run never reached `AuthController.logout()` at all
+ * (proved with in-app instrumentation), and the resulting 60s `waitForURL`
+ * timeout was read for weeks as a wedged browser main thread, a stalled
+ * PowerSync wipe, and a Riverpod teardown race in turn. It was none of those.
+ * The app had simply never been asked to sign out.
+ *
+ * Extracted from slice.spec.ts's `scrollFormTo` (added for #629, when taller
+ * form rows pushed "Use current location" off the bottom) when the Account
+ * screen's own Sign out — the last child of its `SingleChildScrollView` — hit
+ * the identical wall.
+ *
+ * @param wheelAt where to point the wheel. Defaults to the viewport centre.
+ *   Pass an explicit point when the centre sits over a widget with its own
+ *   gesture handling that would swallow the wheel (`flutter_map`'s picker is
+ *   why this parameter exists).
+ */
+export async function scrollFlutterViewTo(
+  page: Page,
+  target: Locator,
+  wheelAt?: { x: number; y: number },
+): Promise<void> {
+  const viewport = page.viewportSize();
+  if (!viewport) return;
+  const point = wheelAt ?? { x: viewport.width / 2, y: viewport.height / 2 };
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // `boundingBox()` AUTO-WAITS for the element. Left unbounded it inherits
+    // the whole test timeout, so a target that is not yet attached hangs here
+    // rather than falling through to a scroll — which is exactly how the first
+    // version of this helper failed. Bound it: a null box is a normal answer
+    // meaning "not measurable yet, scroll and retry".
+    const box = await target.boundingBox({ timeout: 500 }).catch(() => null);
+    if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, box && box.y < 0 ? -240 : 240);
+    await page.waitForTimeout(150);
+  }
 }
 
 // Navigate to the app root, tolerating a cold stack. On a freshly-booted k3d

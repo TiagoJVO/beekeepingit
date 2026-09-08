@@ -719,7 +719,7 @@ jobs:
           # than left to the spec's default so this host is configured, not
           # assumed, alongside the other two above.
           E2E_AUTH_ORIGIN: https://auth.beekeepingit.local:8443
-        run: npx playwright test logout-probe.spec.ts --repeat-each=5 --workers=1 --retries=0 --reporter=list
+        run: npx playwright test logout-tap.spec.ts --repeat-each=5 --workers=1 --retries=0 --reporter=list
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:
       # trace: on-first-retry, screenshot: only-on-failure) — the fastest way to
