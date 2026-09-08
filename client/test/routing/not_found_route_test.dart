@@ -10,6 +10,7 @@ import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_en.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_pt.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -132,6 +133,31 @@ Future<GoRouter> _goToUnmatched(WidgetTester tester) async {
   router.go(_unmatchedLocation);
   await tester.pumpAndSettle();
   return router;
+}
+
+/// Records the `replace` flag of every `routeInformationUpdated` the framework
+/// sends down [SystemChannels.navigation] from the moment it is installed.
+///
+/// That platform call IS the browser-history write on web (#841, D-10): the
+/// engine's history manager pushes a new entry when `replace` is false and
+/// overwrites the current one when it is true. Asserting on it is the only
+/// way a VM widget test can pin history behaviour at all — there is no
+/// `window.history` here to read, and the alternative (assert something else
+/// and call it proven) would pin nothing.
+List<bool> _recordHistoryWrites(WidgetTester tester) {
+  final replaces = <bool>[];
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.navigation, (call) async {
+    if (call.method == 'routeInformationUpdated') {
+      final arguments = call.arguments as Map<Object?, Object?>;
+      replaces.add(arguments['replace']! as bool);
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.navigation, null),
+  );
+  return replaces;
 }
 
 void main() {
@@ -327,6 +353,138 @@ void main() {
         reason:
             'the in-body action is the exit a user who never learned the '
             'header back control still finds (FR-UX-1, D-18)',
+      );
+    });
+  });
+
+  // #841 (FR-UX-2, D-10) — **the one exit that misbehaved.**
+  //
+  // #638 gave the unmatched location a real screen inside the shell, but
+  // reached it with a plain `go()`, whose new configuration is reported to the
+  // engine with push semantics. On web that stacks the not-found screen ON TOP
+  // of the failed URL's own history entry, so browser (or Android system) Back
+  // returns to the URL that failed, which re-fires `onException` and pushes
+  // forward again — the user cannot step back past it to whatever referred
+  // them.
+  group('the failed URL is not left behind in browser history', () {
+    testWidgets('landing on the not-found screen REPLACES the current history '
+        'entry rather than pushing over it', (tester) async {
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      // Installed only once the app has settled, so the writes recorded are
+      // the ones the unmatched location itself causes.
+      final historyWrites = _recordHistoryWrites(tester);
+
+      final router = await _goToUnmatched(tester);
+
+      expect(
+        _locationOf(router),
+        '/home/not-found',
+        reason: 'the precondition: the unmatched location reached the screen',
+      );
+      expect(
+        historyWrites,
+        isNotEmpty,
+        reason:
+            'reaching the not-found screen must reach the engine at all — an '
+            'empty list means this test has stopped observing the thing it '
+            'exists to pin',
+      );
+      expect(
+        historyWrites,
+        everyElement(isTrue),
+        reason:
+            'every history write on the way to the not-found screen must '
+            'replace, never push: a pushed entry leaves the URL that failed '
+            'sitting behind it, and browser Back walks straight back into it '
+            '(#841, FR-UX-2)',
+      );
+    });
+
+    testWidgets('an ordinary navigation still PUSHES — the replace is scoped '
+        'to the failure', (tester) async {
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      final historyWrites = _recordHistoryWrites(tester);
+
+      _routerOf(tester).go('/apiaries');
+      await tester.pumpAndSettle();
+
+      expect(historyWrites, isNotEmpty, reason: 'the same precondition');
+      expect(
+        historyWrites,
+        everyElement(isFalse),
+        reason:
+            'the fix must not collapse the whole app into a single history '
+            'entry — only the not-found hop replaces, or every ordinary Back '
+            'in the app breaks instead (#841)',
+      );
+    });
+
+    // The journey the issue actually describes — "a user arriving from a
+    // stale bookmark or a shared link" — is a COLD document load on web, and
+    // it takes the other branch of `_goToNotFound`: there is no navigator yet
+    // on the first parse, so the plain `go()` fallback runs and `Router
+    // .neglect` never gets a say. It replaces anyway, because go_router's
+    // provider has reported nothing to the engine yet — an internal of a
+    // pinned dependency, which is exactly the kind of thing that deserves a
+    // test rather than a comment.
+    testWidgets('a COLD load straight onto the unmatched location replaces '
+        'too, without a navigator to neglect through', (tester) async {
+      tester.platformDispatcher.defaultRouteNameTestValue = _unmatchedLocation;
+      addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+
+      // Installed before the first frame: on this path the app's own cold
+      // start IS the navigation under test, so nothing may be excluded.
+      final historyWrites = _recordHistoryWrites(tester);
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      expect(
+        _locationOf(_routerOf(tester)),
+        '/home/not-found',
+        reason: 'the precondition: the cold load reached the screen',
+      );
+      expect(historyWrites, isNotEmpty, reason: 'the same precondition');
+      expect(
+        historyWrites,
+        everyElement(isTrue),
+        reason:
+            'a cold load has the failed URL as the tab\'s CURRENT entry, with '
+            'the referring page behind it — pushing here is #841 exactly '
+            '(FR-UX-2, D-10)',
+      );
+    });
+
+    // Not re-asserting "the shell back control returns to Home" — the case of
+    // that name in "there is a way out" above already runs against this fix
+    // and would fail if the replace had flattened the page stack. What it
+    // cannot see is the stack ITSELF, which is the property the "history, not
+    // pages" claim rests on, so that is what this pins.
+    testWidgets('the PAGE stack under the not-found screen is untouched by '
+        'the history replace', (tester) async {
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await _goToUnmatched(tester);
+
+      expect(
+        find.byKey(const Key('shell-back-button')),
+        findsOneWidget,
+        reason:
+            'the shell offers Back only when the branch has something to pop '
+            '— /home still sits under the not-found page (#638)',
+      );
+      expect(
+        tester.state<NavigatorState>(find.byType(Navigator).last).canPop(),
+        isTrue,
+        reason:
+            'replacing the HISTORY entry must not flatten the PAGE stack: '
+            'go_router\'s replace()/pushReplacement() would have dropped '
+            '/home from underneath, which is why the fix stays a go() (#841)',
       );
     });
   });
