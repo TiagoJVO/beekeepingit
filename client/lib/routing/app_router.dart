@@ -75,6 +75,46 @@ final _todosBranchKey = GlobalKey<NavigatorState>(debugLabel: 'todosBranch');
 /// would have caught it.
 const _orgOnboardingLocations = {'/organization/new', '/organization/waiting'};
 
+/// Where every unmatched location is answered (#638) — declared as the route
+/// nested under `/home` further down. Named once because `onException` both
+/// navigates to it and compares against it, and the two drifting apart would
+/// silently re-arm the unbounded loop that comparison exists to bound.
+const _notFoundLocation = '/home/not-found';
+
+/// Sends the router to [_notFoundLocation] **without leaving the URL that
+/// failed behind in the browser's history** (#841, FR-UX-2, D-10).
+///
+/// A plain `router.go()` is reported to the engine with push semantics, so on
+/// web (and in the installed PWA) the not-found screen stacks ON TOP of the
+/// entry the browser created for the stale link. Browser — or Android system —
+/// Back then returns to the URL that failed, which re-fires `onException` and
+/// pushes forward again: the one exit that cannot reach the referring page.
+///
+/// [Router.neglect] is the framework's own answer: it marks this build cycle's
+/// route-information report as "do not add a history entry", so the engine
+/// overwrites the current entry instead of pushing a new one. It is scoped to
+/// the one navigation inside the callback — ordinary navigation keeps pushing,
+/// which is what makes Back work everywhere else.
+///
+/// It is deliberately still a `go()` and not `replace()`/`pushReplacement()`:
+/// those two rewrite the PAGE stack (dropping `/home` from underneath), which
+/// would undo #638's reason for nesting this route under `/home` — the shell's
+/// Back has to pop somewhere real. Only the history entry is replaced.
+///
+/// The context has to come from the navigator, not from the one `onException`
+/// hands us: that one is the `Router` element itself, which sits ABOVE the
+/// scope [Router.neglect] looks up. On the very first parse of a cold load
+/// there is no navigator yet, and the plain `go()` fallback is correct there
+/// anyway — nothing of this app's is in that tab's history to step back to.
+void _goToNotFound(GoRouter router) {
+  final navigatorContext = router.routerDelegate.navigatorKey.currentContext;
+  if (navigatorContext == null) {
+    router.go(_notFoundLocation);
+    return;
+  }
+  Router.neglect(navigatorContext, () => router.go(_notFoundLocation));
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   // Re-evaluate redirects whenever auth, the profile fetch, or the
   // organization fetch itself changes (listening to the raw providers, not
@@ -116,6 +156,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     // very thing #638 reports. The PATH only — an inbound link's query and
     // fragment are the parts that could carry a token, and the path alone is
     // the whole diagnostic.
+    //
+    // How it navigates there matters as much as where: see [_goToNotFound]
+    // for why the hop replaces the browser's current history entry rather
+    // than pushing over it (#841).
     onException: (context, state, router) {
       developer.log(
         'router exception at ${state.uri.path} — showing the not-found screen',
@@ -130,8 +174,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       // are already at the destination bounds it at one hop: the worst case
       // degrades to go_router's own fallback page, which is what shipped
       // before this route existed, rather than to a spin.
-      if (state.uri.path == '/home/not-found') return;
-      router.go('/home/not-found');
+      if (state.uri.path == _notFoundLocation) return;
+      _goToNotFound(router);
     },
     redirect: (context, state) {
       final authed = ref.read(isAuthenticatedProvider);
