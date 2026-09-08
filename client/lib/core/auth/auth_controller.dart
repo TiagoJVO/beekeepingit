@@ -35,6 +35,15 @@ const _kIdToken = 'bk.id_token';
 /// that user-initiated flow already surfaces failures via [loginErrorProvider]
 /// and a bounded timeout there would just add an artificial delay before the
 /// (already-fast) real failure surfaces.
+///
+/// Also bounds every best-effort step of [AuthController.logout] that runs
+/// BEFORE the front-channel redirect (#237): the local-store wipe, discovery,
+/// and refresh-token revocation. Each was already documented as best-effort
+/// and each was already wrapped in a catch — but a catch only handles a
+/// throw, and an unbounded `await` that never completes parks sign-out
+/// entirely: no end-session request, no navigation, and a UI still showing the
+/// user as signed in. Same "don't park the user on a hanging screen" promise,
+/// applied to the other end of the session.
 const _kAuthNetworkTimeout = Duration(seconds: 5);
 
 /// Cached OIDC discovery: fetches the provider's `.well-known` document once
@@ -377,11 +386,21 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // the two steps never leaves stale replicated data behind paired with a
     // session that looks logged out. Best-effort: a wipe failure must not
     // block the user from finishing logout.
+    //
+    // BOUNDED (#237). "Best-effort" has to mean best-effort against a HANG,
+    // not just against a throw: opening/tearing down PowerSync is the one step
+    // here that can stall indefinitely, and an unbounded `await` on it parks
+    // sign-out forever — the user is left on a screen that still says they are
+    // signed in, no end-session request is ever sent, and the SSO session
+    // survives. That is what the #237 e2e caught: a confirmed "Sign out" click
+    // followed by 60s of ZERO network activity and no navigation. A timeout
+    // here degrades to exactly the failure this catch block already accepts.
     try {
       final store =
           await (_injectedLocalStore ??
-              () => ref.read(localStoreProvider.future))();
-      await store.clear();
+                  () => ref.read(localStoreProvider.future))()
+              .timeout(_authNetworkTimeout);
+      await store.clear().timeout(_authNetworkTimeout);
     } catch (e, st) {
       // Deliberately catch-all (not narrowed to Exception): a test double's
       // wipe failure (or a real PowerSync failure) can surface as a
@@ -409,7 +428,10 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     if (session == null || platform == null) return;
 
     try {
-      final issuer = await _issuer();
+      // Bounded for the same reason as the wipe above: everything between here
+      // and `assignLocation` is best-effort, and a stall in any of it means the
+      // end-session request is never sent at all (#237).
+      final issuer = await _issuer().timeout(_authNetworkTimeout);
       final metadata = issuer.metadata;
 
       // Best-effort refresh-token revocation (optional per §7).
@@ -420,7 +442,9 @@ class AuthController extends AsyncNotifier<AuthSession?> {
             refreshToken: session.refreshToken,
             idToken: session.idToken.isNotEmpty ? session.idToken : null,
           );
-          await cred.revoke();
+          // Bounded: revocation is explicitly optional, and the front-channel
+          // redirect below is not — it must never wait on this (#237).
+          await cred.revoke().timeout(_authNetworkTimeout);
         } on Exception catch (e, st) {
           // Non-fatal: front-channel end-session below still ends the session.
           developer.log(

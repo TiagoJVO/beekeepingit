@@ -1830,6 +1830,19 @@ audience — the two values `EndSessionView.validate` decodes the hint against. 
 consequently **all-or-nothing**: any origin that legitimately signs out through an application must
 be listed, or it regresses from an interstitial to a 400.
 
+**The client half had to be bounded too.** The blueprint makes the provider do the right thing; it
+cannot make the browser get there. `logout()` runs three best-effort steps before the front-channel
+redirect — the local-store wipe, discovery, and refresh-token revocation — each wrapped in a catch
+and each, until now, awaited with no bound. A catch only handles a **throw**: when the PowerSync
+wipe simply never completed, sign-out was parked forever, with no end-session request, no
+navigation, and a UI still showing the user signed in. The un-`fixme`'d e2e caught exactly that (a
+confirmed "Sign out" click followed by 60s of zero network activity). All three are now bounded by
+the same `_kAuthNetworkTimeout` that already keeps a dead link from parking boot restore (§8.14/#390),
+with a regression test that injects a never-completing `clear()` and asserts the redirect is still
+issued. The bound guarantees sign-out completes; it does not explain the stall, and when it fires the
+local database is left un-wiped on a just-signed-out device — tracked as
+[#836](https://github.com/TiagoJVO/beekeepingit/issues/836).
+
 **What sign-out still does _not_ do.** Ending the SSO session does **not** revoke the 30-day
 `offline_access` refresh token. `EndSessionView.get` deletes only the provider's 15-minute
 `AccessToken`s, and `RefreshToken` deliberately shadows the `session` foreign key

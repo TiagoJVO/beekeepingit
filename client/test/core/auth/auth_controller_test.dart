@@ -115,6 +115,18 @@ class FakeLocalPrefs implements LocalPrefs {
   bool get isEmpty => _store.isEmpty;
 }
 
+/// A [FakeLocalStoreEngine] whose wipe NEVER COMPLETES — not one that throws.
+/// The difference is the whole point of the #237 regression below: `logout()`
+/// already caught a failing wipe, but an `await` that never returns is not a
+/// failure it could catch, and it parked sign-out before any network call.
+class HangingLocalStoreEngine extends FakeLocalStoreEngine {
+  @override
+  Future<void> clear() {
+    clearCalls++;
+    return Completer<void>().future; // never completes
+  }
+}
+
 /// A fake [LocalStoreEngine] so `logout()`'s local-data wipe (#125) can be
 /// asserted without standing up a real PowerSync database — mirrors
 /// [FakeAuthPlatform]'s role for the session-storage side of `logout()`.
@@ -164,6 +176,7 @@ buildLoggedInContainer({
   required http.Client client,
   LocalStoreEngine? localStore,
   LocalPrefs? localPrefs,
+  Duration? authNetworkTimeout,
 }) async {
   final platform = FakeAuthPlatform(
     initialUri: Uri.parse(
@@ -178,6 +191,7 @@ buildLoggedInContainer({
     client,
     localStore: localStore,
     localPrefs: localPrefs,
+    authNetworkTimeout: authNetworkTimeout,
   );
   final session = await container.read(authControllerProvider.future);
   expect(
@@ -827,6 +841,45 @@ void main() {
         expect(notifier.state.value, isNull);
         expect(platform.hasAnySession, isFalse);
         expect(platform.hasAnyLocal, isFalse);
+      },
+    );
+
+    // #237 REGRESSION. Every step before the front-channel redirect is
+    // documented as best-effort and wrapped in a catch — but a catch only
+    // handles a THROW. A local-store wipe that simply never completes (a
+    // PowerSync teardown stall) used to park sign-out forever: no end-session
+    // request, no navigation, and a UI still showing the user signed in. The
+    // walking-skeleton e2e caught it as a confirmed "Sign out" click followed
+    // by 60s of zero network activity. Every such step is now bounded, so the
+    // redirect always happens.
+    test(
+      'a local-store wipe that HANGS still reaches the end-session redirect (#237)',
+      () async {
+        final localStore = HangingLocalStoreEngine();
+        final (_, platform, notifier) = await buildLoggedInContainer(
+          client: MockClient((req) async => _tokenResponse(req)),
+          localStore: localStore,
+          authNetworkTimeout: const Duration(milliseconds: 20),
+        );
+
+        // Must not hang: bounded by the injected timeout, not by the wipe.
+        await notifier.logout().timeout(const Duration(seconds: 5));
+
+        expect(
+          localStore.clearCalls,
+          1,
+          reason: 'the wipe is still attempted first, it just cannot block',
+        );
+        expect(
+          platform.assignedLocation,
+          isNotNull,
+          reason:
+              'the front-channel end-session redirect must still be issued — '
+              'that is the only thing that ends the provider SSO session',
+        );
+        expect(platform.assignedLocation, contains(_endSessionUrl));
+        expect(notifier.state.value, isNull);
+        expect(platform.hasAnySession, isFalse);
       },
     );
 
