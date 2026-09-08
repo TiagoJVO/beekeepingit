@@ -103,9 +103,10 @@ class _TodosListScreenState extends ConsumerState<TodosListScreen> {
   /// [StatefulShellRoute.indexedStack]), so this [State] — and with it the
   /// filter the user last chose — outlives any single visit and [initState]
   /// only ever runs once. Seeding on a changed parameter alone therefore
-  /// missed the ordinary repeat: Home's "view all" → `?status=overdue`, the
-  /// user widens the filter, goes back to Home, taps the SAME link — the new
-  /// parameter equals the old one, nothing re-seeds, and the list contradicts
+  /// missed the ordinary repeat: Home's "view all" →
+  /// `?status=needsAttention`, the user widens the filter, goes back to Home,
+  /// taps the SAME link — the new parameter equals the old one, nothing
+  /// re-seeds, and the list contradicts
   /// the count that was just tapped. (The Todos tab's own bottom-nav
   /// destination hides this, because `goBranch(initialLocation: true)` resets
   /// the branch to a parameterless `/todos` first.)
@@ -146,15 +147,24 @@ class _TodosListScreenState extends ConsumerState<TodosListScreen> {
   /// drives (rather than a parallel "route filter" the bar doesn't know
   /// about): the controls then visibly show the seeded selection, and
   /// "clear filters" clears it like any other.
+  ///
+  /// A route that names ANY filter defines the WHOLE filter set: every
+  /// dimension it does not name goes back to its default rather than keeping
+  /// whatever the user last picked here. Without that, a leftover priority
+  /// (this branch stays mounted across tab switches, so filters chosen by
+  /// hand outlive a visit) silently ANDs with the seeded status — and Home's
+  /// "View all N tasks" lands on fewer than N rows, or on "No todos match
+  /// your filters", which is exactly the promise #661 exists to keep. A
+  /// route that names NOTHING (the bottom-nav `/todos`) still makes no claim
+  /// and still leaves everything alone.
   void _seedFiltersFromRoute() {
     final status = widget.initialStatusFilter;
     final due = widget.initialDueFilter;
-    if (status != null) {
-      ref.read(todoStatusFilterProvider.notifier).state = status;
-    }
-    if (due != null) {
-      ref.read(todoDueFilterProvider.notifier).state = due;
-    }
+    if (status == null && due == null) return;
+    ref.read(todoStatusFilterProvider.notifier).state =
+        status ?? TodoStatusFilter.all;
+    ref.read(todoDueFilterProvider.notifier).state = due ?? TodoDueFilter.any;
+    ref.read(todoPriorityFilterProvider.notifier).state = null;
   }
 
   @override

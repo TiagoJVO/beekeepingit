@@ -1,4 +1,3 @@
-import 'todo_filters.dart' show isOverdue;
 import 'todo_priority.dart';
 import 'todos_repository.dart';
 
@@ -35,6 +34,34 @@ int dueSoonWindowDays(String priority) => switch (priority) {
   _ => 1,
 };
 
+/// [d] reduced to its calendar day — a local midnight, matching the plain
+/// `YYYY-MM-DD` shape [Todo.dueDate] itself carries (no time component to
+/// compare). Shared with `todo_filters.dart`'s own calendar-window presets so
+/// "which day is this" is answered one way across the feature.
+///
+/// Deliberately NOT the UTC normalization [_daysBetween] uses: this one is
+/// only ever compared with another value from the same function (equality,
+/// `isBefore`), where the timezone cancels out, while [_daysBetween]
+/// SUBTRACTS two instants and would lose an hour to a DST transition (#665).
+DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// True when [todo] is open (not done) and its due date has already passed
+/// [today] — the calendar date only, never time-of-day. A todo due exactly
+/// [today] is NOT overdue; a done todo is never overdue regardless of its due
+/// date; a todo with no due date can never be overdue.
+///
+/// Lives here, with [todoDueBucket] and [dueSoonWindowDays], rather than in
+/// `todo_filters.dart` where #53 first wrote it: this file is the single
+/// owner of "what does this todo's due date mean right now", and the Todos
+/// tab's status filter, the D-24 reminder engine and D-35's Home summary all
+/// read that one answer instead of each keeping their own (#661).
+bool isOverdue(Todo todo, DateTime today) {
+  if (todo.isDone) return false;
+  final dueDate = todo.dueDate;
+  if (dueDate == null) return false;
+  return dateOnly(DateTime.parse(dueDate)).isBefore(dateOnly(today));
+}
+
 /// Whole days between two calendar days, counted on **UTC** midnights — the
 /// client's one day-difference convention, shared verbatim with
 /// `apiary_visit_recency.dart`'s `_daysBetween` and `home_screen.dart`'s
@@ -54,13 +81,12 @@ int _daysBetween(DateTime from, DateTime to) => DateTime.utc(
 
 /// The due-date bucket [todo] currently falls in relative to [today], or
 /// null when it isn't due-soon/overdue at all (no due date, already done, or
-/// due further out than its own priority's window). Reuses
-/// `todo_filters.dart`'s own [isOverdue] for the overdue check (DRY,
-/// coding-style.md) rather than re-deriving "what counts as overdue" here —
-/// the Todos tab's filter, the notification engine and the Home summary
-/// (#658, D-35) must never disagree on that question, which is why this
-/// lives in shared todo domain code instead of privately inside any one of
-/// them.
+/// due further out than its own priority's window). Reuses this file's own
+/// [isOverdue] for the overdue check (DRY, coding-style.md) rather than
+/// re-deriving "what counts as overdue" here — the Todos tab's filter, the
+/// notification engine and the Home summary (#658, D-35) must never disagree
+/// on that question, which is why this lives in shared todo domain code
+/// instead of privately inside any one of them.
 TodoDueBucket? todoDueBucket(Todo todo, DateTime today) {
   if (todo.isDone) return null;
   final dueDate = todo.dueDate;
@@ -74,3 +100,17 @@ TodoDueBucket? todoDueBucket(Todo todo, DateTime today) {
   }
   return null;
 }
+
+/// True when [todo] is in EITHER due bucket as of [today] — overdue or due
+/// soon. The union D-35's Home "tasks needing attention" section shows, and
+/// the set `TodoStatusFilter.needsAttention` filters the Todos tab to
+/// (#661).
+///
+/// Deliberately phrased as "[todoDueBucket] returned something" rather than
+/// as a predicate of its own: there is exactly ONE definition of overdue and
+/// of due-soon in this app, and every surface that asks the question — the
+/// Home count, the Todos tab's filtered list, the D-24 reminder engine —
+/// reads it from here, so they cannot drift apart. Widening or narrowing the
+/// rule stays a single edit to [todoDueBucket]/[dueSoonWindowDays].
+bool todoNeedsAttention(Todo todo, DateTime today) =>
+    todoDueBucket(todo, today) != null;

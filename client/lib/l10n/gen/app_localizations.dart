@@ -2935,6 +2935,12 @@ abstract class AppLocalizations {
   /// **'Open'**
   String get todoFilterStatusOpen;
 
+  /// Status filter option for the overdue-or-due-soon preset — the same set Home's tasks section shows, per todo_due.dart's todoDueBucket (#661, D-35). A preset spanning two lifecycle states, not a status word for a single todo
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get todoFilterStatusNeedsAttention;
+
   /// Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later "overdue todos" example)
   ///
   /// In en, this message translates to:
@@ -3485,11 +3491,11 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 task needs attention} other{{count} tasks need attention}}'**
   String homeTasksCountLabel(int count);
 
-  /// Home tasks section footer link into the Todos list. Names the OVERDUE count, not the section's own union of overdue-plus-due-soon, because the link opens /todos?status=overdue and the Todos tab cannot express that union yet (#661). Suppressed entirely when no row is overdue (#658, D-35)
+  /// Home tasks section footer link into the Todos list, counted with the section's OWN full set — overdue plus due-soon — because the link now opens /todos?status=needsAttention, which shows exactly that set (#661, #658, D-35)
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =1{View the 1 overdue task} other{View all {count} overdue tasks}}'**
-  String homeTasksViewAllOverdueAction(int count);
+  /// **'{count, plural, =1{View the 1 task} other{View all {count} tasks}}'**
+  String homeTasksViewAllAction(int count);
 
   /// Compact trailing badge on an overdue Home task row, paired with a warning icon so it never relies on colour alone (#658, D-35, WCAG 2.2 AA 1.4.1)
   ///

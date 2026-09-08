@@ -25,10 +25,13 @@ import 'todo_priority.dart';
 /// scan quickly. The four are now three compact controls:
 ///
 ///  * **Estado** ([status]) is the one dimension worth a genuine multi-option
-///    chip row (4 short values, the dominant filter this tab already
+///    chip row (short values, the dominant filter this tab already
 ///    defaults non-trivially, #427/D-29) — a horizontally-scrollable,
 ///    single-select row of [BrandChip]s, turning "open dropdown, read menu,
-///    tap option" into one tap.
+///    tap option" into one tap. #661 added a fifth chip to it ("needs
+///    attention", the overdue ∪ due-soon preset Home's "view all" link
+///    opens); the row already scrolls horizontally, so it absorbs the extra
+///    option without a layout change.
 ///  * **Prioridade** ([priority]) and **Prazo** ([due]) are each a single
 ///    *menu chip* that opens a [showModalBottomSheet] picker (this repo's
 ///    established sheet convention — `apiary_detail_screen.dart`,
@@ -94,6 +97,7 @@ class TodoFilterBar extends StatelessWidget {
       switch (value) {
         TodoStatusFilter.all => l10n.todoFilterStatusAll,
         TodoStatusFilter.open => l10n.todoFilterStatusOpen,
+        TodoStatusFilter.needsAttention => l10n.todoFilterStatusNeedsAttention,
         TodoStatusFilter.overdue => l10n.todoFilterStatusOverdue,
         TodoStatusFilter.done => l10n.todoFilterStatusDone,
       };

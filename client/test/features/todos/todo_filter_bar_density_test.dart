@@ -85,6 +85,7 @@ Todo _todo(String id, {String title = 'Todo'}) => Todo(
 const _allInteractiveKeys = [
   'todo-filter-status-chip-all',
   'todo-filter-status-chip-open',
+  'todo-filter-status-chip-needsAttention',
   'todo-filter-status-chip-overdue',
   'todo-filter-status-chip-done',
   'todo-filter-priority-chip',
