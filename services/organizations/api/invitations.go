@@ -370,24 +370,48 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 			return
 		}
 
-		// Rate limit BEFORE the insert (#641 security review). This endpoint
-		// now causes mail to be sent to an address the caller chose, so it is
-		// a spam/abuse amplifier if left unbounded -- see
-		// invitation_delivery.go's maxInvitationsPerWindow for the sizing
-		// rationale. Counted per organization, not per admin: the budget
-		// belongs to the tenant, so adding a second admin account must not
-		// double it.
-		if ok := checkInvitationBudget(w, r, q, member.OrgID, sender.clock()); !ok {
-			return
-		}
-
 		// History (FR-HIS-1, #165): the invitation's create row commits in
 		// the same local transaction as the domain insert (history.md section 4).
 		var invitation sqlcgen.OrganizationsInvitation
 		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		budget := sender.clock()
 		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
 			txq := q.WithTx(tx)
-			var err error
+
+			// Rate limit BEFORE the insert and INSIDE the transaction (#641
+			// security review). This endpoint now causes mail to be sent to
+			// an address the caller chose, so it is a spam/abuse amplifier if
+			// left unbounded -- see invitation_delivery.go's
+			// maxInvitationsPerWindow for the sizing rationale. Counted per
+			// organization, not per admin: the budget belongs to the tenant,
+			// so adding a second admin account must not double it.
+			//
+			// The org row is locked FOR UPDATE first, exactly as the
+			// last-admin guard does (#290, memberships.sql's
+			// LockOrganizationForUpdate). Without it the count and the insert
+			// are a TOCTOU pair: N concurrent requests with N distinct
+			// addresses all read the same pre-limit count and all insert, and
+			// the one control that stops a compromised admin session becoming
+			// an open relay does not hold under the only attack that matters.
+			// Locking serializes this org's invitation creations, so the
+			// count is stable until this transaction commits.
+			if _, err := txq.LockOrganizationForUpdate(r.Context(), member.OrgID); err != nil {
+				return fmt.Errorf("lock organization for invitation budget: %w", err)
+			}
+			count, err := txq.CountInvitationsCreatedSince(r.Context(), sqlcgen.CountInvitationsCreatedSinceParams{
+				OrganizationID: member.OrgID,
+				Since:          pgtype.Timestamptz{Time: budget.Add(-invitationRateWindow).UTC(), Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("count recent invitations: %w", err)
+			}
+			if count >= maxInvitationsPerWindow {
+				// Fails CLOSED by construction: a count that cannot be read
+				// returns the error above and aborts the transaction rather
+				// than letting the invitation through.
+				return errInvitationBudget
+			}
+
 			invitation, err = txq.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
 				ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 				OrganizationID: member.OrgID,
@@ -412,6 +436,18 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 			return nil
 		})
 		if txErr != nil {
+			if errors.Is(txErr, errInvitationBudget) {
+				// The 429's detail states the LIMIT and nothing else -- not
+				// how many the organization has used, not when the window
+				// opened. A rate-limit response that narrates the tenant's
+				// own recent activity is a side channel for anyone who has
+				// gained an admin session, and it buys the honest admin
+				// nothing the Retry-After header does not already give them.
+				problem.Write(w, r, problem.TooManyRequests(
+					fmt.Sprintf("an organization may create at most %d invitations per hour", maxInvitationsPerWindow),
+					int(invitationRateWindow.Seconds())))
+				return
+			}
 			if isUniqueViolation(txErr) {
 				problem.Write(w, r, problem.Conflict("this email already has a pending invitation to this organization"))
 				return
@@ -441,37 +477,11 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 	}
 }
 
-// checkInvitationBudget enforces the per-organization invitation rate limit
-// (#641 security review, invitation_delivery.go's maxInvitationsPerWindow),
-// writing the 429 itself and reporting whether the caller may proceed.
-//
-// The 429's detail states the LIMIT and nothing else -- not how many the
-// organization has used, not when the window opened. A rate-limit response
-// that narrates the tenant's own recent activity is a side channel for anyone
-// who has gained an admin session, and it buys the honest admin nothing the
-// Retry-After header does not already give them.
-//
-// Fails CLOSED: if the count cannot be read, the invitation is refused with a
-// 500 rather than allowed through. An unbounded send path is the worse outcome.
-func checkInvitationBudget(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, orgID pgtype.UUID, now time.Time) bool {
-	since := now.Add(-invitationRateWindow).UTC()
-	count, err := q.CountInvitationsCreatedSince(r.Context(), sqlcgen.CountInvitationsCreatedSinceParams{
-		OrganizationID: orgID,
-		Since:          pgtype.Timestamptz{Time: since, Valid: true},
-	})
-	if err != nil {
-		logging.FromContext(r.Context()).ErrorContext(r.Context(), "count recent invitations failed", slog.Any("error", err))
-		problem.Write(w, r, problem.Internal())
-		return false
-	}
-	if count >= maxInvitationsPerWindow {
-		problem.Write(w, r, problem.TooManyRequests(
-			fmt.Sprintf("an organization may create at most %d invitations per hour", maxInvitationsPerWindow),
-			int(invitationRateWindow.Seconds())))
-		return false
-	}
-	return true
-}
+// errInvitationBudget aborts the create transaction when the organization has
+// exhausted its hourly invitation budget (#641 security review). A sentinel
+// rather than a pre-transaction check so the count and the insert are one
+// atomic, serialized decision -- see createInvitationHandler.
+var errInvitationBudget = errors.New("organization invitation budget exhausted")
 
 // resendInvitationHandler retries the outbound email for one still-pending
 // invitation (#641 AC 5: "a failed send is visible to the admin and
