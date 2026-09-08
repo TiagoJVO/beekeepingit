@@ -400,36 +400,46 @@ entries:
         #     because `scope-admin-audience` already rewrites admin tokens to
         #     this issuer + `beekeepingit-pwa` audience — the same two values
         #     `EndSessionView.validate` decodes the hint against.
-        #   * localhost — a `flutter run` / `vite dev` origin, the logout
-        #     counterpart of the localhost authorization entry above. Written
-        #     `\d+` rather than reusing that entry's `.*`: matching is
-        #     `fullmatch`, and `http://localhost:.*` also accepts
-        #     `http://localhost:@evil.example`, which a browser resolves to
-        #     evil.example with `localhost:` as userinfo. Tightening the
-        #     AUTHORIZATION entry the same way is #822 (pre-existing).
+        #   * the localhost dev origins — a `flutter run` / `vite dev` origin,
+        #     the logout counterpart of the localhost AUTHORIZATION entries
+        #     above, and spelled EXACTLY the same way: a STRICT LITERAL per
+        #     real dev port, never a regex. That is the owner decision recorded
+        #     on #822, and it is the decision because all three regex spellings
+        #     were verified unsafe by running Python rather than by reading
+        #     them (the full evidence is on the authorization entry above):
+        #     `.*` fullmatches `http://localhost:@evil.example`, which a
+        #     browser resolves to evil.example with `localhost:` as userinfo;
+        #     `\d+` allow-lists UNICODE digits and makes `urlparse(...).port`
+        #     raise inside `cors_allow`; and `[0-9]+` is a bracketed netloc
+        #     whose `urlparse` behaviour is Python-version-dependent and which
+        #     500'd every browser request carrying an `Origin` header on this
+        #     change's first CI run. A strict literal carries no
+        #     metacharacter at all, so it is immune to all three — and it is
+        #     also the only form that grants a localhost origin real CORS,
+        #     since `token.py` builds that allow-list from ALL `redirect_uris`.
+        #     The ports mirror the authorization entries exactly: 5175 (the
+        #     Flutter client's dev server, pinned in `client/README.md`) and
+        #     5174 (the admin Vite dev server, which signs out through THIS
+        #     application's `end_session_endpoint` — see `adminOrigin` above).
+        #     A NEW dev port is a deliberate edit here and in both guards, not
+        #     a wider pattern.
         #
-        #     `\d+` and NOT `[0-9]+`, which is the same character class and
-        #     broke the whole deployment: NO `redirect_uris` entry may contain
-        #     `[` or `]`, regex-mode included. authentik derives its CORS
-        #     allow-list from this list and `urlparse()`s EVERY entry
-        #     (`providers/oauth2/utils.py::cors_allow`); on the image's Python,
-        #     `_check_bracketed_netloc` rejects a netloc with data before a
-        #     `[` — so `http://localhost:[0-9]+` makes every browser request
-        #     carrying an `Origin` header 500, including the discovery
-        #     document. In-cluster health probes send no Origin and stayed
-        #     green, so the only symptom was every browser sign-in failing with
-        #     "Failed to fetch" (caught by the walking-skeleton e2e, 15/25
-        #     failing). Asserted by scripts/check-logout-invalidation-posture.sh
-        #     over EVERY redirect URI on these providers, not just the logout
-        #     ones.
+        # Asserted by scripts/check-logout-invalidation-posture.sh (the
+        # logout-typed entries exist, name only these targets, and are
+        # `strict`) and by scripts/check-authorization-redirect-posture.sh,
+        # which validates EVERY redirect URI on these providers — logout ones
+        # included — against one reviewed `<matching_mode> <url>` allow-list.
         - matching_mode: strict
           url: "{{ .Values.global.appOrigin }}"
           redirect_uri_type: logout
         - matching_mode: strict
           url: "{{ .Values.global.adminOrigin }}"
           redirect_uri_type: logout
-        - matching_mode: regex
-          url: 'http://localhost:\d+'
+        - matching_mode: strict
+          url: "http://localhost:5175"
+          redirect_uri_type: logout
+        - matching_mode: strict
+          url: "http://localhost:5174"
           redirect_uri_type: logout
       property_mappings:
         - !Find [
@@ -642,12 +652,16 @@ entries:
         # the beekeepingit issuer — see that provider's entry), so these cover
         # the OTHER door: anything that reaches
         # /application/o/beekeepingit-admin/end-session/ directly. Same
-        # posture, same fail-closed validation, admin origins only.
+        # posture, same fail-closed validation, admin origins only — and the
+        # same STRICT-LITERAL spelling as this provider's authorization entry
+        # above (#822): 5174 only, because only the admin app authenticates
+        # here. No regex; the three disqualified spellings and the evidence
+        # against each are documented on that entry.
         - matching_mode: strict
           url: "{{ .Values.global.adminOrigin }}"
           redirect_uri_type: logout
-        - matching_mode: regex
-          url: 'http://localhost:\d+'
+        - matching_mode: strict
+          url: "http://localhost:5174"
           redirect_uri_type: logout
       property_mappings:
         - !Find [

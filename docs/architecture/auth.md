@@ -1797,8 +1797,8 @@ appends an in-memory `SessionEndStage` **last**. With no stages of its own:
   the provider's existing `redirect_uris`, filtered to `redirect_uri_type: logout`, while the
   authorize view matches the complementary `authorization_redirect_uris`
   (`providers/oauth2/models.py`). The logout allow-list is therefore three added entries on the PWA
-  provider (`appOrigin`, `adminOrigin`, a localhost dev regex) and two on the admin provider — and
-  it widens **no** authorization target.
+  provider (`appOrigin`, `adminOrigin`, and one strict literal per localhost dev port) and two on
+  the admin provider — and it widens **no** authorization target.
 
 **Why a stage binding and not our own flow.** Owning a `designation: invalidation` flow would
 re-arm §8.17's second-order trap: with `brand.flow_invalidation` unpinned, `ToDefaultFlow.get_flow`
@@ -1813,24 +1813,31 @@ by authentik itself: a `post_logout_redirect_uri` matching none of the entries i
 `invalid_request`**, never a redirect; an `id_token_hint` becomes **required** alongside it; and
 `FORBIDDEN_URI_SCHEMES` is rejected outright. Nothing in the list is user-supplied — the two origins
 are this chart's own `global.appOrigin` / `global.adminOrigin`, so every environment overlay
-allow-lists exactly its own hosts, and the one dev exception is written `http://localhost:\d+`
-rather than reusing the authorization entry's `http://localhost:.*`, because matching is `fullmatch`
-and that looser pattern also accepts `http://localhost:@evil.example` — which a browser resolves to
-`evil.example`. (Tightening the **authorization** entry the same way is
-[#822](https://github.com/TiagoJVO/beekeepingit/issues/822), pre-existing and deliberately not
-bundled into a logout change.)
+allow-lists exactly its own hosts, and the dev exceptions are **strict literals, one per real dev
+port** (`http://localhost:5175` for the Flutter client, `http://localhost:5174` for the admin Vite
+server) — exactly the spelling and exactly the ports the **authorization** entries use since
+[#822](https://github.com/TiagoJVO/beekeepingit/issues/822). No regex, in any spelling: matching is
+`fullmatch`, so `http://localhost:.*` also accepts `http://localhost:@evil.example` — which a
+browser resolves to `evil.example` with `localhost:` as userinfo — while `\\d+` allow-lists Unicode
+decimal digits (`http://localhost:٤٥` matches) and raises inside `cors_allow`, and `[0-9]+` is a
+bracketed netloc (below). A strict literal has no metacharacter at all, and it is also the only
+form that grants a localhost origin real CORS on `/token` and `/userinfo`, since `token.py` builds
+that allow-list from **all** `redirect_uris`, unfiltered. A new dev port is a deliberate edit to
+the blueprint and to both guards.
 
-**`\d+`, never `[0-9]+` — no redirect URI may contain `[` or `]`.** The two are the same character
-class, and the bracketed spelling took the whole deployment down on this change's first CI run.
+**No redirect URI may contain `[` or `]`.** The bracketed spelling took the whole deployment down
+on this change's first CI run.
 Authentik derives its **CORS allow-list from `redirect_uris`** and `urlparse()`s **every** entry,
 regex-mode included (`providers/oauth2/utils.py::cors_allow`); the image's Python raises
 `ValueError: Invalid IPv6 URL` on a netloc with data before a `[` (`_check_bracketed_netloc`). One
 bracketed entry therefore **500s every request carrying an `Origin` header** — the discovery
 document included — so every browser sign-in failed with "Failed to fetch" while the in-cluster
 readiness probe, which sends no `Origin`, reported the discovery endpoint healthy. The only symptom
-was 15 of 25 e2e tests timing out. `scripts/check-logout-invalidation-posture.sh` now rejects `[` or
-`]` in **any** redirect URI on either provider, logout and authorization alike, so #822's fix must
-also use `\d+`.
+was 15 of 25 e2e tests timing out. `scripts/check-logout-invalidation-posture.sh` rejects `[` or `]`
+in **any** redirect URI on either provider, logout and authorization alike, and
+`scripts/check-authorization-redirect-posture.sh` (#822) additionally validates **every** redirect
+URI — logout-typed ones included — against one reviewed `<matching_mode> <url>` allow-list, which
+is where the two localhost literals are enumerated.
 
 **Why the admin origin is on the PWA provider.** The admin app signs out through **this**
 application's `end_session_endpoint`, not its own: it is pointed at the beekeepingit **issuer**

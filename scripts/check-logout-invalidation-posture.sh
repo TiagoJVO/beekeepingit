@@ -43,22 +43,34 @@
 #      an origin this chart renders — `{{ .Values.global.appOrigin }}` or
 #      `{{ .Values.global.adminOrigin }}`, so every environment overlay
 #      allow-lists exactly its own hosts and nothing hand-written can drift in
-#      — or the ONE tightened localhost dev regex. A literal host, a `.*`, or a
-#      bare-origin regex would turn a validated allow-list back into an open
-#      redirect while still looking like a list. `http://localhost:.*` is
-#      rejected by name: matching is `fullmatch`, and that pattern also accepts
-#      `http://localhost:@evil.example`, which a browser resolves to
-#      evil.example. The dev entry is spelled `\d+` and NOT the equivalent
-#      `[0-9]+`, because NO redirect URI on these providers may contain `[` or
-#      `]` at all — see (3).
+#      — or one of the enumerated localhost DEV PORTS, each a STRICT LITERAL.
+#      A literal host, a `.*`, or a bare-origin regex would turn a validated
+#      allow-list back into an open redirect while still looking like a list.
+#      There is deliberately NO localhost regex here in ANY spelling — that is
+#      the owner decision recorded on #822, and each candidate was
+#      disqualified by running Python, not by reading the pattern:
+#      `http://localhost:.*` fullmatches `http://localhost:@evil.example`,
+#      which a browser resolves to host evil.example with `localhost:` as
+#      USERINFO; `http://localhost:\d+` allow-lists UNICODE decimal digits
+#      (`http://localhost:٤٥` fullmatches) and makes `urlparse(...).port`
+#      RAISE inside `cors_allow`, 500ing every localhost `Origin`; and
+#      `http://localhost:[0-9]+` is a BRACKETED netloc — see (3). A strict
+#      literal carries no metacharacter at all, so it is immune to all three,
+#      and it is the only form that actually grants a localhost origin CORS
+#      on /token and /userinfo. The cost is that each dev port is listed
+#      deliberately (5175 Flutter, 5174 admin Vite) — which is the point: the
+#      list is reviewable by reading it. The same two ports, in the same
+#      strict form, are the allow-list of
+#      scripts/check-authorization-redirect-posture.sh, which validates EVERY
+#      redirect URI on these providers, logout-typed ones included.
 #
 #      The URL is only half of an entry — `matching_mode` is asserted too, and
 #      the "bare-origin regex" above is exactly why. Under `fullmatch` a
 #      RENDERED origin read as a pattern turns every unescaped `.` into a
 #      wildcard: staging's `https://beekeepingit-rc.melargil.pt` would then also
 #      match `https://beekeepingit-rcamelargil.pt`, a registrable domain someone
-#      can buy. So the two rendered origins must be `strict` and only the
-#      localhost entry may be `regex` — a port cannot be spelled literally.
+#      can buy. So EVERY logout entry must be `strict`: the two rendered
+#      origins and the two localhost dev ports alike, none of them a `regex`.
 #      Duplicate `url:`/`matching_mode:`/`redirect_uri_type:` keys inside one
 #      entry are rejected for the same last-wins reason as (1), every key and
 #      value is read with QUOTES TOLERATED on either side (`redirect_uri_type:
@@ -81,8 +93,9 @@
 #      included — so every browser sign-in dies with "Failed to fetch" while
 #      in-cluster health probes, which send no Origin, stay green. That is
 #      exactly what `http://localhost:[0-9]+` did on this change's first CI run
-#      (15 of 25 e2e tests down, ~30 minutes to find out). `\d+` is the same
-#      character class without the brackets.
+#      (15 of 25 e2e tests down, ~30 minutes to find out). The fix is not a
+#      bracket-free character class: it is a STRICT LITERAL per dev port,
+#      which has no character class at all — see (2).
 #
 #   4. NO OWNED `designation: invalidation` FLOW. (1) is spelled as a binding
 #      onto upstream's flow rather than a flow of our own precisely because
@@ -147,9 +160,15 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   function required_mode(u) {
     if (u == "{{ .Values.global.appOrigin }}") return "strict"
     if (u == "{{ .Values.global.adminOrigin }}") return "strict"
-    # The one dev exception: a localhost ORIGIN with a numeric port. `\d+` and
-    # nothing looser — see the header, including why NOT `[0-9]+`.
-    if (u == "http://localhost:\\d+") return "regex"
+    # The dev exception, and it is a LITERAL, not a pattern: one strict entry
+    # per real dev port, enumerated here so the list is reviewable by reading
+    # it. A localhost REGEX is not an option in any spelling — `.*`, `\d+` and
+    # `[0-9]+` are each unsafe on their own axis (see the header) — so all
+    # three fall through to "not a reviewed target". A new dev port is a
+    # deliberate edit to these two lines, matching the same two entries in
+    # scripts/check-authorization-redirect-posture.sh (#822).
+    if (u == "http://localhost:5175") return "strict"
+    if (u == "http://localhost:5174") return "strict"
     return ""
   }
 
@@ -404,10 +423,16 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
 
         want = required_mode(url)
         if (want == "") {
-          fail("provider `" entry_id "` allow-lists logout redirect `" url "`, which is neither " \
-               "`{{ .Values.global.appOrigin }}`/`{{ .Values.global.adminOrigin }}` nor the " \
-               "tightened `http://localhost:\\d+` dev regex. A logout allow-list entry IS the " \
-               "open-redirect boundary — keep every target rendered from this charts values.")
+          fail("provider `" entry_id "` allow-lists logout redirect `" url "`, which is none of " \
+               "the four reviewed targets: `{{ .Values.global.appOrigin }}`, " \
+               "`{{ .Values.global.adminOrigin }}`, `http://localhost:5175` and " \
+               "`http://localhost:5174` — every one of them a STRICT literal. A logout " \
+               "allow-list entry IS the open-redirect boundary, so each target is either " \
+               "rendered from this charts values or one enumerated dev port. A localhost REGEX " \
+               "is not an option in any spelling: `.*` admits `http://localhost:@evil.example`, " \
+               "`\\d` admits unicode digits and raises in `cors_allow`, and `[0-9]` is a " \
+               "bracketed netloc that 500s every request carrying an `Origin` header. A new dev " \
+               "port is a deliberate edit to this guard and to the authorization one (#822).")
           continue
         }
 
