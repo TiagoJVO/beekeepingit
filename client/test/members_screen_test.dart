@@ -990,8 +990,11 @@ void main() {
   // never sent — which everywhere else in this product means *sent, awaiting
   // response*.
   group('invitation delivery is reported honestly (#641)', () {
-    Future<void> pumpWith(WidgetTester tester, List<Invitation> invitations,
-        {Future<Invitation> Function(String)? onResend}) async {
+    Future<void> pumpWith(
+      WidgetTester tester,
+      List<Invitation> invitations, {
+      Future<Invitation> Function(String)? onResend,
+    }) async {
       await tester.pumpWidget(
         _buildScreen(
           _FakeMembersController(
@@ -1036,7 +1039,8 @@ void main() {
       expect(
         find.byKey(const Key('invitation-delivery-error-inv-1')),
         findsOneWidget,
-        reason: 'a failure with no reason is exactly the dead end #641 is about',
+        reason:
+            'a failure with no reason is exactly the dead end #641 is about',
       );
       expect(
         find.text('The mail server could not be reached.'),
@@ -1059,45 +1063,57 @@ void main() {
       expect(find.textContaining('Not sent'), findsNothing);
     });
 
-    testWidgets('a pending invitation offers a retry that reports its outcome', (
-      tester,
-    ) async {
-      var resends = 0;
-      await pumpWith(
-        tester,
-        [_invitation(deliveryStatus: 'failed', deliveryError: 'not_configured')],
-        onResend: (id) async {
-          resends++;
-          return _invitation(id: id, deliveryStatus: 'sent');
-        },
-      );
+    testWidgets(
+      'a pending invitation offers a retry that reports its outcome',
+      (tester) async {
+        var resends = 0;
+        await pumpWith(
+          tester,
+          [
+            _invitation(
+              deliveryStatus: 'failed',
+              deliveryError: 'not_configured',
+            ),
+          ],
+          onResend: (id) async {
+            resends++;
+            return _invitation(id: id, deliveryStatus: 'sent');
+          },
+        );
 
-      await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
+        await tester.pumpAndSettle();
 
-      expect(resends, 1);
-      expect(find.text('Invitation email sent.'), findsOneWidget);
-    });
+        expect(resends, 1);
+        expect(find.text('Invitation email sent.'), findsOneWidget);
+      },
+    );
 
-    testWidgets('a retry that fails again says so rather than claiming success', (
-      tester,
-    ) async {
-      await pumpWith(
-        tester,
-        [_invitation(deliveryStatus: 'failed', deliveryError: 'not_configured')],
-        onResend: (id) async => _invitation(
-          id: id,
-          deliveryStatus: 'failed',
-          deliveryError: 'relay_unavailable',
-        ),
-      );
+    testWidgets(
+      'a retry that fails again says so rather than claiming success',
+      (tester) async {
+        await pumpWith(
+          tester,
+          [
+            _invitation(
+              deliveryStatus: 'failed',
+              deliveryError: 'not_configured',
+            ),
+          ],
+          onResend: (id) async => _invitation(
+            id: id,
+            deliveryStatus: 'failed',
+            deliveryError: 'relay_unavailable',
+          ),
+        );
 
-      await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('resend-invitation-inv-1')));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('Still could not send it'), findsOneWidget);
-      expect(find.text('Invitation email sent.'), findsNothing);
-    });
+        expect(find.textContaining('Still could not send it'), findsOneWidget);
+        expect(find.text('Invitation email sent.'), findsNothing);
+      },
+    );
 
     testWidgets('a resolved invitation offers neither retry nor revoke', (
       tester,
