@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
@@ -101,7 +103,23 @@ class _OrganizationDetailsScreenState
     final editable = isAdmin && !_busy;
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.organizationDetailsTitle)),
+      appBar: AppBar(
+        // Same dead end #639 fixed on the stock-declaration log, and for the
+        // same reason: an out-of-shell route has no bottom navigation, and a
+        // standalone-display PWA has no browser back button. Back to Account,
+        // the only screen that links here (FR-UX-2).
+        //
+        // Unlike the other four out-of-shell screens this is an EDIT FORM, so
+        // the exit is guarded: a one-tap control that silently discards typed
+        // edits trades a dead end for data loss (#345's rule, FR-UX-1).
+        leading: IconButton(
+          key: const Key('organization-details-back-button'),
+          icon: const Icon(Icons.arrow_back),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          onPressed: _leave,
+        ),
+        title: Text(l10n.organizationDetailsTitle),
+      ),
       // Horizontally centred (so the 480px column stays middle-of-page on a
       // wide window) but TOP-aligned, the shape #630 settled on for profile
       // and new-organization (#769, FR-UX-1). A plain `Center` split the
@@ -210,6 +228,33 @@ class _OrganizationDetailsScreenState
   /// value so it can be passed straight as a field's `onChanged`: WHAT they
   /// typed is irrelevant here, only THAT they typed.
   void _markEdited(String _) => _userHasEdited = true;
+
+  /// Leaves for Account, confirming first if there are unsaved edits (#345).
+  ///
+  /// Reuses [_userHasEdited] — already the screen's record of "the user has
+  /// touched this form and a save has not reconciled it since", which is
+  /// exactly the dirty question — rather than introducing a second flag that
+  /// could disagree with it. `_save` clears it, so leaving right after a save
+  /// does not prompt.
+  ///
+  /// Not while [_busy]: a save is already in flight and will complete whatever
+  /// this screen does next, so "discard your changes?" would be asking about
+  /// edits that are on their way to the server — the prompt would state the
+  /// opposite of what happens. Leaving stays available rather than being
+  /// disabled during the save; a control that goes dead mid-request is the
+  /// dead end this issue is about, only briefer.
+  ///
+  /// This is the deliberately narrow version of the guard: it covers the
+  /// control #639 adds. The OS/browser back gesture still bypasses it, because
+  /// that needs the `PopScope` half of the full `UnsavedChangesMixin` wiring
+  /// this screen has never had — tracked in #829.
+  Future<void> _leave() async {
+    if (!_busy && _userHasEdited && !await showDiscardChangesDialog(context)) {
+      return;
+    }
+    if (!mounted) return;
+    context.go('/account');
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
