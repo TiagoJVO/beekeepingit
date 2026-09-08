@@ -97,11 +97,7 @@ class _AttentionSections extends StatelessWidget {
       if (summary.readiness == HomeDataReadiness.unavailable)
         const _UnavailableNotice(),
       if (summary.attentionTodos.isNotEmpty)
-        _TasksSection(
-          section: summary.attentionTodos,
-          overdueCount: summary.overdueTodoCount,
-          now: summary.now,
-        ),
+        _TasksSection(section: summary.attentionTodos, now: summary.now),
       if (summary.openJourneys.isNotEmpty)
         _JourneysSection(section: summary.openJourneys),
       if (summary.staleApiaries.isNotEmpty)
@@ -134,18 +130,9 @@ class _AttentionSections extends StatelessWidget {
 
 /// D-35's "tasks overdue or due soon" section (FR-TD-1).
 class _TasksSection extends StatelessWidget {
-  const _TasksSection({
-    required this.section,
-    required this.overdueCount,
-    required this.now,
-  });
+  const _TasksSection({required this.section, required this.now});
 
   final HomeSummarySection<AttentionTodo> section;
-
-  /// How many of [section]'s FULL set are overdue ([HomeSummary.
-  /// overdueTodoCount]) — what the footer link is labelled with, since that
-  /// is the subset the link opens.
-  final int overdueCount;
 
   /// The single instant the whole summary was computed against
   /// ([HomeSummary.now]) — the ONLY time input a row's badge may use.
@@ -171,28 +158,17 @@ class _TasksSection extends StatelessWidget {
           _todoRow(context, l10n, formatting, attention),
       ],
       // D-35 asks for a link "to that list screen filtered to the same set",
-      // and the Todos tab cannot express this section's set: it is "overdue
-      // OR due soon", a UNION, while the tab's filters combine with AND, its
-      // `open` status excludes overdue, and its due-date presets are calendar
-      // windows (today/this week/this month) rather than todo_due.dart's
-      // per-priority "due soon" lead time. Closing that gap is #661.
-      //
-      // Until it closes, `?status=overdue` is the closest honest subset and
-      // the LABEL is what has to stay truthful. Labelling it with
-      // `section.count` — the union — promised rows the destination would
-      // not show, and with no overdue row at all it read "View all 2 tasks"
-      // and landed on "No todos match your filters." So: count and word the
-      // link as OVERDUE, and when nothing is overdue offer no link at all
-      // rather than one that opens an empty list. The count badge above
-      // still reports the full section, which is the number that is true of
-      // what is on screen.
-      footer: overdueCount == 0
-          ? null
-          : _SectionFooterLink(
-              buttonKey: const Key('home-tasks-view-all'),
-              label: l10n.homeTasksViewAllOverdueAction(overdueCount),
-              onPressed: () => context.go('/todos?status=overdue'),
-            ),
+      // and since #661 the Todos tab can express exactly this section's set:
+      // `?status=needsAttention` filters it through the very same
+      // `todoDueBucket` this section is built from, so the link opens the
+      // union of overdue and due-soon rather than the overdue half it used
+      // to. That is what lets the label carry `section.count` — the number
+      // on the badge above — and be true of what the destination renders.
+      footer: _SectionFooterLink(
+        buttonKey: const Key('home-tasks-view-all'),
+        label: l10n.homeTasksViewAllAction(section.count),
+        onPressed: () => context.go('/todos?status=needsAttention'),
+      ),
     );
   }
 

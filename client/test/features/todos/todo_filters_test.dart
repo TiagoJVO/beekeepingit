@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/features/todos/todo_due.dart';
 import 'package:beekeepingit_client/features/todos/todo_filters.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
@@ -447,6 +448,132 @@ void main() {
       expect(
         container.read(todoSortDirectionProvider),
         SortDirection.descending,
+      );
+    });
+  });
+
+  // #661: Home's tasks section is the UNION of overdue and due-soon
+  // (`todoDueBucket`), and D-35 wants its "view all" link to open the Todos
+  // tab showing THAT set. The tab could not express it — its filters AND
+  // together, `open` excludes overdue, and the due presets are calendar
+  // windows rather than the per-priority lead time. `needsAttention` is that
+  // set as a status preset, and it must stay derived from `todoDueBucket`
+  // rather than re-deriving "overdue or due soon" a second time.
+  group('needsAttention status filter (#661, FR-TD-1, D-35)', () {
+    // Against `_today` = Wednesday 2026-06-10, with dueSoonWindowDays of
+    // high=3 / medium=2 / low=1.
+    final overdueOld = _todo('overdue-old', dueDate: '2026-05-01');
+    final overdueYesterday = _todo('overdue-yesterday', dueDate: '2026-06-09');
+    final dueTodayLow = _todo('due-today-low', dueDate: '2026-06-10');
+    final dueTomorrowLow = _todo('due-tomorrow-low', dueDate: '2026-06-11');
+    final dueInTwoLow = _todo('due-in-two-low', dueDate: '2026-06-12');
+    final dueInTwoMedium = _todo(
+      'due-in-two-medium',
+      priority: todoPriorityMedium,
+      dueDate: '2026-06-12',
+    );
+    final dueInThreeHigh = _todo(
+      'due-in-three-high',
+      priority: todoPriorityHigh,
+      dueDate: '2026-06-13',
+    );
+    final dueInFourHigh = _todo(
+      'due-in-four-high',
+      priority: todoPriorityHigh,
+      dueDate: '2026-06-14',
+    );
+    final noDueDate = _todo('no-due-date');
+    final doneButLate = _todo(
+      'done-but-late',
+      status: 'done',
+      dueDate: '2026-05-01',
+      completedAt: '2026-06-05T00:00:00Z',
+    );
+    final todos = [
+      overdueOld,
+      overdueYesterday,
+      dueTodayLow,
+      dueTomorrowLow,
+      dueInTwoLow,
+      dueInTwoMedium,
+      dueInThreeHigh,
+      dueInFourHigh,
+      noDueDate,
+      doneButLate,
+    ];
+
+    Set<String> idsOf(Iterable<Todo> matches) =>
+        matches.map((t) => t.id).toSet();
+
+    test('the `?status=` deep link Home uses parses to a real filter', () {
+      expect(
+        todoStatusFilterFromName('needsAttention'),
+        isNotNull,
+        reason:
+            'home_screen.dart links to /todos?status=needsAttention; an '
+            'unparseable name would silently leave the tab on its own '
+            'default filter',
+      );
+    });
+
+    test('keeps every overdue and every due-soon todo, and nothing else', () {
+      final status = todoStatusFilterFromName('needsAttention');
+      expect(status, isNotNull);
+
+      expect(idsOf(filterTodosByStatus(todos, status!, _today)), {
+        'overdue-old',
+        'overdue-yesterday',
+        'due-today-low',
+        'due-tomorrow-low',
+        'due-in-two-medium',
+        'due-in-three-high',
+      });
+    });
+
+    // The second acceptance criterion of #661, as an assertion: the filter
+    // is not allowed to have its own opinion about what "needs attention"
+    // means. Whatever `todoDueBucket` buckets — the one rule Home and the
+    // notification engine also read — is exactly what this filter keeps.
+    test('is exactly the set todoDueBucket buckets — one definition, not '
+        'two', () {
+      final status = todoStatusFilterFromName('needsAttention');
+      expect(status, isNotNull);
+
+      expect(
+        idsOf(filterTodosByStatus(todos, status!, _today)),
+        idsOf(todos.where((t) => todoDueBucket(t, _today) != null)),
+      );
+    });
+
+    test('is a superset of the overdue bucket, which stays available on its '
+        'own', () {
+      final status = todoStatusFilterFromName('needsAttention');
+      expect(status, isNotNull);
+
+      final attention = idsOf(filterTodosByStatus(todos, status!, _today));
+      final overdue = idsOf(
+        filterTodosByStatus(todos, TodoStatusFilter.overdue, _today),
+      );
+      expect(overdue, isNotEmpty);
+      expect(attention.containsAll(overdue), isTrue);
+      expect(attention.length, greaterThan(overdue.length));
+    });
+
+    test('still combines with the priority filter (the filters AND, as '
+        'before)', () {
+      final status = todoStatusFilterFromName('needsAttention');
+      expect(status, isNotNull);
+
+      expect(
+        idsOf(
+          filterTodos(
+            todos,
+            status: status!,
+            priority: todoPriorityHigh,
+            today: _today,
+          ),
+        ),
+        {'due-in-three-high'},
       );
     });
   });

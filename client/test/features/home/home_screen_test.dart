@@ -265,10 +265,10 @@ void main() {
         _rowTitlesInOrder(tester, const Key('home-tasks-section')).length,
         3,
       );
-      // All five fixtures are overdue, so the link's own count matches the
-      // section's here — the two diverge only when due-soon rows are mixed
-      // in, which the "#661" group below pins.
-      expect(find.text('View all 5 overdue tasks'), findsOneWidget);
+      // The link is counted with the whole section, never with the preview
+      // (#661) — the group further down pins that against a mixed set and
+      // against the rows the destination actually renders.
+      expect(find.text('View all 5 tasks'), findsOneWidget);
     });
 
     testWidgets('renders overdue rows before due-soon rows, each badged from '
@@ -616,17 +616,17 @@ void main() {
       await tester.tap(find.byKey(const Key('home-tasks-view-all')));
       await tester.pumpAndSettle();
 
-      expect(_location(tester), '/todos?status=overdue');
+      expect(_location(tester), '/todos?status=needsAttention');
       expect(find.byKey(const Key('todo-t1')), findsOneWidget);
       expect(find.byKey(const Key('todo-t2')), findsNothing);
       // The control visibly reflects the seeded state (todos_list_screen_
       // test.dart's own identical check): the compact filter bar (#635)
-      // shows this as the "Overdue" status chip rendering selected, not a
-      // dropdown's own visible text.
-      final overdueChip = tester.widget<BrandChip>(
-        find.byKey(const Key('todo-filter-status-chip-overdue')),
+      // shows this as the "Needs attention" status chip rendering selected,
+      // not a dropdown's own visible text (#661).
+      final attentionChip = tester.widget<BrandChip>(
+        find.byKey(const Key('todo-filter-status-chip-needsAttention')),
       );
-      expect(overdueChip.selected, isTrue);
+      expect(attentionChip.selected, isTrue);
     });
 
     testWidgets('the journeys view-all opens the Journeys tab filtered to '
@@ -747,53 +747,15 @@ void main() {
     });
   });
 
-  // The tasks section shows the UNION of overdue and due-soon, but its link
-  // opens `/todos?status=overdue` — a strict subset. Labelling that link with
-  // the union's count promises rows the destination will not show, and with
-  // no overdue row at all it promises N tasks and delivers "No todos match
-  // your filters." The Tasks tab cannot express the union today (its filters
-  // AND together, `open` excludes overdue, and its due presets are calendar
-  // windows rather than todo_due.dart's per-priority lead time) — that gap is
-  // #661. Until then the LABEL must describe what the link actually opens.
-  group('the tasks view-all promises only what it opens (#658 review, '
-      '#661)', () {
-    testWidgets('with no overdue row, the section offers no view-all link at '
-        'all rather than one that lands on an empty list', (tester) async {
-      await _openHome(
-        tester,
-        todos: [
-          _todo(
-            'soon-1',
-            title: 'Due tomorrow',
-            priority: todoPriorityHigh,
-            dueDate: _isoDate(_today.add(const Duration(days: 1))),
-          ),
-          _todo(
-            'soon-2',
-            title: 'Due today',
-            priority: todoPriorityHigh,
-            dueDate: _isoDate(_today),
-          ),
-        ],
-      );
-
-      // Both rows are on screen and counted...
-      expect(find.byKey(const Key('home-todo-soon-1')), findsOneWidget);
-      expect(find.byKey(const Key('home-todo-soon-2')), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('home-tasks-count')),
-          matching: find.text('2'),
-        ),
-        findsOneWidget,
-      );
-      // ...and nothing offers to "view all 2" of them anywhere else.
-      expect(find.byKey(const Key('home-tasks-view-all')), findsNothing);
-      expect(find.textContaining('View all 2'), findsNothing);
-    });
-
-    testWidgets('with a mix, the link is worded and counted as OVERDUE — the '
-        'subset it opens — not as the whole section', (tester) async {
+  // D-35 asks the "view all" link to open "that list screen filtered to the
+  // same set". The set is the UNION of overdue and due-soon, which the Todos
+  // tab could not express until #661 gave it a `needsAttention` status filter
+  // built on the same `todoDueBucket`. These pin the promise the link makes:
+  // it is worded and counted with the WHOLE section, and the destination
+  // renders exactly that many rows.
+  group('the tasks view-all opens exactly the set it counts (#661, D-35)', () {
+    testWidgets('the link is counted with the whole section, not just its '
+        'overdue half', (tester) async {
       await _openHome(
         tester,
         todos: [
@@ -813,7 +775,6 @@ void main() {
         ],
       );
 
-      // The section still counts the full union of 3...
       expect(
         find.descendant(
           of: find.byKey(const Key('home-tasks-count')),
@@ -821,22 +782,22 @@ void main() {
         ),
         findsOneWidget,
       );
-      // ...but the link names the 1 overdue task it actually opens.
-      expect(find.byKey(const Key('home-tasks-view-all')), findsOneWidget);
-      expect(find.text('View the 1 overdue task'), findsOneWidget);
-      expect(find.textContaining('View all 3'), findsNothing);
+      expect(find.text('View all 3 tasks'), findsOneWidget);
     });
 
-    testWidgets('the link it does offer lands on a list with rows in it', (
-      tester,
-    ) async {
+    testWidgets('a section with nothing overdue still offers the link — the '
+        'filter reaches due-soon too', (tester) async {
       await _openHome(
         tester,
         todos: [
-          _todo('late-1', title: 'Late one', dueDate: _isoDate(_daysAgo(3))),
-          _todo('late-2', title: 'Late two', dueDate: _isoDate(_daysAgo(9))),
           _todo(
             'soon-1',
+            title: 'Due tomorrow',
+            priority: todoPriorityHigh,
+            dueDate: _isoDate(_today.add(const Duration(days: 1))),
+          ),
+          _todo(
+            'soon-2',
             title: 'Due today',
             priority: todoPriorityHigh,
             dueDate: _isoDate(_today),
@@ -844,14 +805,77 @@ void main() {
         ],
       );
 
-      expect(find.text('View all 2 overdue tasks'), findsOneWidget);
+      expect(find.byKey(const Key('home-tasks-view-all')), findsOneWidget);
+      expect(find.text('View all 2 tasks'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('home-tasks-view-all')));
       await tester.pumpAndSettle();
 
-      expect(_location(tester), '/todos?status=overdue');
-      expect(find.byKey(const Key('todo-late-1')), findsOneWidget);
-      expect(find.byKey(const Key('todo-late-2')), findsOneWidget);
+      expect(_location(tester), '/todos?status=needsAttention');
+      expect(find.byKey(const Key('todo-soon-1')), findsOneWidget);
+      expect(find.byKey(const Key('todo-soon-2')), findsOneWidget);
+    });
+
+    // The third acceptance criterion of #661, pinned literally: whatever
+    // number Home puts on the section badge is the number of rows the list
+    // renders after the link is followed — no more (a done or far-off task
+    // leaking in) and no fewer (the overdue-only subset it used to open).
+    // The fixture deliberately holds MORE matches than [kHomePreviewLimit],
+    // so the count under test is the full set rather than the preview.
+    testWidgets('the count Home shows equals the number of rows the filtered '
+        'list renders', (tester) async {
+      final matching = <String>{'late-1', 'late-2', 'soon-1', 'soon-2'};
+      final todos = [
+        _todo('late-1', title: 'Late one', dueDate: _isoDate(_daysAgo(3))),
+        _todo('late-2', title: 'Late two', dueDate: _isoDate(_daysAgo(30))),
+        _todo(
+          'soon-1',
+          title: 'Due today',
+          priority: todoPriorityHigh,
+          dueDate: _isoDate(_today),
+        ),
+        _todo(
+          'soon-2',
+          title: 'Due in three days',
+          priority: todoPriorityHigh,
+          dueDate: _isoDate(_today.add(const Duration(days: 3))),
+        ),
+        // Not in the set, and so not in the count or the list.
+        _todo(
+          'far-1',
+          title: 'Due next month',
+          priority: todoPriorityLow,
+          dueDate: _isoDate(_today.add(const Duration(days: 30))),
+        ),
+        _todo('none-1', title: 'No due date at all'),
+        _todo(
+          'done-1',
+          title: 'Long done',
+          status: 'done',
+          dueDate: _isoDate(_daysAgo(9)),
+        ),
+      ];
+      await _openHome(tester, todos: todos);
+
+      // What Home says, read off the badge rather than assumed.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('home-tasks-count')),
+          matching: find.text('${matching.length}'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('home-tasks-view-all')));
+      await tester.pumpAndSettle();
+
+      // What the list renders, counted over every fixture row: each todo is
+      // either on screen or it is not, so the matches ARE the row count.
+      final rendered = <String>{
+        for (final todo in todos)
+          if (find.byKey(Key('todo-${todo.id}')).evaluate().isNotEmpty) todo.id,
+      };
+      expect(rendered, matching);
     });
   });
 
