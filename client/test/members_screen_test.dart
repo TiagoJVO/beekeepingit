@@ -439,6 +439,63 @@ void main() {
     expect(find.text('Invitation revoked.'), findsOneWidget);
   });
 
+  // #640 (FR-UX-1, FR-ONB-3): `showSnackBar` queues, so a second action taken
+  // inside the first toast's 4s life leaves the first message on screen and
+  // parks the second behind it — the toast reads one action behind. This
+  // screen is where the report came from: invite, then revoke, and the bar
+  // still says "Invitation sent."
+  testWidgets(
+    'revoking right after inviting shows the revoke confirmation, not the '
+    'invite one (#640)',
+    (tester) async {
+      final controller = _FakeMembersController(
+        MembersState(members: const [], invitations: [_invitation()]),
+        // A no-op invite so the seeded invitation list stays as it is: the
+        // default seam appends a second row carrying the same `inv-1` id,
+        // which would make the revoke key ambiguous.
+        onInvite: ({required email, role = 'user'}) async {},
+      );
+      await tester.pumpWidget(_buildScreen(controller));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('invite-email-field')),
+        'new@example.com',
+      );
+      await tester.tap(find.byKey(const Key('invite-submit-button')));
+      // Timed pumps, not `pumpAndSettle`: the invite toast has to still be
+      // on screen when the next action arrives, which is the whole
+      // precondition of the bug.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        find.text('Invitation sent.'),
+        findsOneWidget,
+        reason: 'precondition: the invite toast is still on screen',
+      );
+
+      await tester.tap(find.byKey(const Key('revoke-invitation-inv-1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The exact English copy of `membersRevokeSuccess` /
+      // `membersInviteSuccess` (lib/l10n/arb/app_en.arb).
+      expect(
+        find.text('Invitation revoked.'),
+        findsOneWidget,
+        reason: 'the toast reports the action the user just took',
+      );
+      expect(
+        find.text('Invitation sent.'),
+        findsNothing,
+        reason:
+            'the superseded confirmation is gone, not still occupying '
+            'the bar',
+      );
+    },
+  );
+
   testWidgets('surfaces an error when revoking fails', (tester) async {
     final controller = _FakeMembersController(
       MembersState(members: const [], invitations: [_invitation()]),

@@ -68,8 +68,7 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
             address: _addressController.text.trim(),
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.organizationSaveSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.organizationSaveSuccess);
       // Onboarding complete → the app's home, which is the Home tab now
       // (#658, D-35, amending D-29's Tasks landing) — and a brand-new
       // organization is exactly the case a task list can't answer: it has no
@@ -81,13 +80,17 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(appToast(l10n.organizationSaveError(e.detail)));
+        showAppToast(
+          ScaffoldMessenger.of(context),
+          l10n.organizationSaveError(e.detail),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.organizationSaveError('$e')));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.organizationSaveError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }

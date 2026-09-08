@@ -81,13 +81,11 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
       await repo.delete(widget.activityId);
       if (!mounted) return;
       context.go('/apiaries/${widget.apiaryId}');
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.activityDeleteSuccess)),
-      );
+      showAppToast(messenger, l10n.activityDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.activityDeleteError('$e')));
+      showAppToast(messenger, l10n.activityDeleteError('$e'));
     }
   }
 

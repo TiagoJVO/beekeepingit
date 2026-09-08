@@ -277,8 +277,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.activityLoadError('$e')));
+      showAppToast(ScaffoldMessenger.of(context), l10n.activityLoadError('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -803,11 +802,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go(widget.effectiveReturnLocation);
-      messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveSuccess)));
+      showAppToast(messenger, l10n.activitySaveSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.activitySaveError('$e')));
+      showAppToast(messenger, l10n.activitySaveError('$e'));
     }
   }
 
@@ -835,13 +834,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go(widget.effectiveReturnLocation);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.activityDeleteSuccess)),
-      );
+      showAppToast(messenger, l10n.activityDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(appToast(l10n.activityDeleteError('$e')));
+      showAppToast(messenger, l10n.activityDeleteError('$e'));
     }
   }
 

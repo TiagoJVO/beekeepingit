@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/api/api_client.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -45,6 +47,12 @@ class _FakeOrganizationController extends OrganizationController {
   /// When true, [saveDetails] throws — the offline / 403 / 422 path.
   bool failSave = false;
 
+  /// When set, [saveDetails] parks on this before returning, so a test can
+  /// hold the screen in its `_busy` state and act on it MID-save. Without it
+  /// the save resolves within the same `pump`, and the in-flight window the
+  /// back control has to behave correctly in is unreachable from a test.
+  Completer<void>? holdSave;
+
   @override
   Future<Organization?> build() async => Organization(
     id: 'org-1',
@@ -73,6 +81,8 @@ class _FakeOrganizationController extends OrganizationController {
     required String address,
     required String registrationNumber,
   }) async {
+    final hold = holdSave;
+    if (hold != null) await hold.future;
     if (failSave) throw Exception('offline');
     savedFrom = from;
     saved = (
@@ -126,6 +136,39 @@ Widget _buildScreen(_FakeOrganizationController controller) {
       ],
       supportedLocales: kSupportedLocales,
       home: OrganizationDetailsScreen(),
+    ),
+  );
+}
+
+/// The same screen behind a minimal router that declares `/account`, for the
+/// two things [_buildScreen] cannot assert: that leaving actually navigates,
+/// and where to. Everything else stays on the routerless harness, which is
+/// cheaper and is what the rest of this file is written against.
+Widget _buildRoutedScreen(_FakeOrganizationController controller) {
+  final router = GoRouter(
+    initialLocation: '/organization/details',
+    routes: [
+      GoRoute(
+        path: '/organization/details',
+        builder: (context, state) => const OrganizationDetailsScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        builder: (context, state) => const Scaffold(body: Text('account')),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [organizationProvider.overrideWith(() => controller)],
+    child: MaterialApp.router(
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: kSupportedLocales,
+      routerConfig: router,
     ),
   );
 }
@@ -753,5 +796,148 @@ void main() {
         );
       });
     }
+  });
+
+  // #639 (FR-AP-9, FR-UX-2, FR-AX-1): this route is declared OUTSIDE the app
+  // shell, so it carries neither the shell's bottom navigation nor its back
+  // action — and its own AppBar had no `leading`. The whole file contained no
+  // `context.go/pop/push` at all: saving left the user standing on the same
+  // screen with no way out but the browser/OS back gesture.
+  //
+  // Mirrors the guard the members and account screens already carry
+  // (`members-back-button`, `account-back-button`). Where it LANDS is pinned
+  // by the live-router sweep in test/routing/pushed_screen_exit_test.dart;
+  // this harness has no GoRouter, so it only pins presence + a11y label.
+  group('the app bar offers a way back (#639, FR-UX-2)', () {
+    testWidgets('the app bar has a back button', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-details-back-button')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the back button has a tooltip/semantic label', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    });
+
+    // Unlike the other four out-of-shell screens #639 swept, this one is an
+    // EDIT FORM. A one-tap exit that silently drops typed edits would trade
+    // the dead end for data loss, which #345 (FR-UX-1) already ruled out for
+    // every other form in the app.
+    testWidgets('leaving with unsaved edits asks before discarding them', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(_FakeOrganizationController(name: 'Apiário Velho')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_nameField), 'Apiário Novo');
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsOneWidget);
+    });
+
+    testWidgets('keeping editing returns to the form with the edit intact', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(_FakeOrganizationController(name: 'Apiário Velho')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_nameField), 'Apiário Novo');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('discard-changes-cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+      // Still on the form, and the typed value survived the round trip — a
+      // prompt that dropped the edit anyway would be worse than none.
+      expect(find.byKey(_nameField), findsOneWidget);
+      expect(
+        tester.widget<TextFormField>(find.byKey(_nameField)).controller?.text,
+        'Apiário Novo',
+      );
+    });
+
+    // The converse — an UNTOUCHED form must leave without a prompt, or every
+    // exit from a screen the user only read costs a pointless extra tap.
+    // Asserting "no dialog" alone would pass just as happily if the button did
+    // nothing at all, so these two run on [_buildRoutedScreen] and assert the
+    // router actually ARRIVES; the sweep in
+    // test/routing/pushed_screen_exit_test.dart pins the same landing against
+    // the real router.
+    testWidgets('an untouched form leaves for /account without a prompt', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildRoutedScreen(_FakeOrganizationController(name: 'Apiário Velho')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+      expect(find.text('account'), findsOneWidget);
+    });
+
+    // Tapping Save and then back before the PATCH returns. The edits are
+    // already on their way to the server, so "discard your changes?" would
+    // state the opposite of what happens — and disabling the control for the
+    // duration would be the dead end this issue is about, only briefer.
+    testWidgets('leaving mid-save neither prompts nor traps the user', (
+      tester,
+    ) async {
+      final hold = Completer<void>();
+      final controller = _FakeOrganizationController(name: 'Apiário Velho')
+        ..holdSave = hold;
+      await tester.pumpWidget(_buildRoutedScreen(controller));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_nameField), 'Apiário Novo');
+      await tester.pump();
+      await tester.tap(find.byKey(_saveButton));
+      // One frame only: the save is now parked on `hold`, so the screen is
+      // sitting in `_busy` — the window this test exists for.
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const Key('organization-details-back-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+      expect(find.text('account'), findsOneWidget);
+
+      // Let the save finish so the test does not end with a pending future,
+      // and confirm it went through rather than being cancelled by leaving.
+      hold.complete();
+      await tester.pumpAndSettle();
+      expect(controller.saved?.name, 'Apiário Novo');
+    });
   });
 }
