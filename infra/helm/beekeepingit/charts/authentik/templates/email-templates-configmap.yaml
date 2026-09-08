@@ -1,0 +1,35 @@
+{{/*
+`beekeepingit-authentik-email-templates` — the BeekeepingIT-branded Django templates for
+Authentik's outbound flow email (#648, FR-ONB-1, FR-UX-1, NFR-SEC-1).
+
+Same shape as the blueprint ConfigMap next door: this chart owns no workload (Authentik is
+an external Flux HelmRelease — ADR-0012/ADR-0016), so it ships the CONTENT and the external
+release mounts it. The mount is `beekeepingit-authentik-email-templates` -> the directory
+named by `AUTHENTIK_EMAIL__TEMPLATE_DIR` (templates/config-secret.yaml, default `/templates`)
+on BOTH the server and the worker — the worker is what actually sends, the server renders
+previews.
+
+Keys are FLAT (`account_confirmation.html`) but the file must land at `email/…` inside the
+template dir, because Django resolves it by the name the email stage asks for
+(`email/account_confirmation.html`). A ConfigMap key cannot contain `/`, so the mount uses a
+`subPath`-per-file or an `items:`+`path:` mapping — see the gitops issue linked from the PR.
+Getting that wrong is not silent: the built-in template keeps rendering, so mail still goes
+out, just unbranded.
+
+`.Files.Glob` rather than a hardcoded list so a second template (a future password-reset or
+notification mail) is shipped by dropping the file in `files/email/`, with no template edit.
+`AsConfig` renders the whole glob as `key: |`-style data entries keyed by BASE NAME, which is
+exactly the flat-key shape above.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beekeepingit-authentik-email-templates
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: authentik
+data:
+  {{- (.Files.Glob "files/email/*.html").AsConfig | nindent 2 }}
+{{- end }}

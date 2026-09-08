@@ -30,10 +30,36 @@ bootstrapEmail: admin@beekeepingit.local
 email:
   host: mailpit
   port: 1025
-  from: no-reply@beekeepingit.local
+  # Sender identity, split in two (#648, was a single `from:` literal). Two reasons:
+  #
+  #  - The DISPLAY NAME is branding and is decided here. "BeekeepingIT <addr>" is what a
+  #    mail client shows in the inbox list, and an account-confirmation mail whose sender
+  #    reads as a bare address on an unfamiliar domain is the same phishing-shaped hand-off
+  #    #648 is about, one surface further on.
+  #  - The ADDRESS is not ours to decide. Choosing a real sending domain (and the SPF/DKIM/
+  #    DMARC records behind it) belongs to #417 — "provision a real SMTP relay" — which is
+  #    the owner's call. Splitting the field means #417 sets ONE value per environment and
+  #    touches nothing else.
+  fromName: BeekeepingIT
+  # PLACEHOLDER, NOT A ROUTABLE SENDER. `.local` is reserved for link-local mDNS (RFC 6762),
+  # so this address can never receive and will fail SPF/DMARC at any real receiver. It is
+  # kept as-is deliberately: dev/CI deliver to the Mailpit sink, which accepts anything, and
+  # inventing a plausible-looking public domain here would be a worse lie than an obviously
+  # unroutable one. Real outbound mail does not leave staging or prod until #417 lands and
+  # replaces this per environment.
+  fromAddress: no-reply@beekeepingit.local
   useTls: false
   useSsl: false
   timeout: 10
+  # Where Authentik looks for template overrides BEFORE its own bundled ones — Django's
+  # `TEMPLATES[0]["DIRS"]` is `[CONFIG.get("email.template_dir")]` (root/settings.py), and
+  # DIRS is searched ahead of the per-app loader. This is what makes the branded
+  # `email/account_confirmation.html` in files/email/ take effect (#648). The directory is
+  # populated by mounting the `beekeepingit-authentik-email-templates` ConfigMap this chart
+  # renders — a change to the EXTERNAL Authentik HelmRelease (beekeepingit-gitops), not to
+  # this chart. Until that mount exists the directory is simply empty and Authentik's own
+  # templates render: unbranded mail, never no mail.
+  templateDir: /templates
 
 # Dev/CI federation stand-in (#363, NFR-TST-1) — a generic `openidconnect`
 # source that exercises the SAME federation code path as Google, so the
