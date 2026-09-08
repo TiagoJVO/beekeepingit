@@ -586,6 +586,12 @@ abstract class AppLocalizations {
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
 
+  /// Members-list title for a member the org roster has no display name for (#582) — an account created before profile seeding (#572), a member who has not completed the FR-ONB-1 profile gate yet, or the offline / pre-first-fetch case. Mirrors activityPerformedByMember/todoAssigneeUnknown/historyActorMember; {id} is a short trailing fragment of the internal user id, never the full 36-character id.
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String memberNameFallback(String id);
+
   /// Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))
   ///
   /// In en, this message translates to:

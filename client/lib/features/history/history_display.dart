@@ -49,8 +49,11 @@ String historyActorText(
     return l10n.historyActorUnknown;
   }
   if (actorUserId == currentUserId) return l10n.historyActorYou;
-  final name = memberNames[actorUserId];
-  if (name != null && name.isNotEmpty) return name;
+  // Sanitized, not taken verbatim (#582, NFR-SEC-1) — see
+  // member_display.dart's `sanitizedMemberName`. An audit trail is exactly
+  // where a forged actor name would do the most damage.
+  final name = sanitizedMemberName(memberNames[actorUserId]);
+  if (name != null) return name;
   return l10n.historyActorMember(shortMemberId(actorUserId));
 }
 

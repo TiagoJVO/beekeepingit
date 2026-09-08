@@ -227,4 +227,78 @@ void main() {
       },
     );
   });
+
+  // The picker is the ONE place the roster map's values are rendered
+  // directly rather than through `todoAssigneeLabel`, so it needs the same
+  // `sanitizedMemberName` filter every other render site applies — and its
+  // own coverage for it (#582, NFR-SEC-1). A display name is authored outside
+  // this app: seeded from the IdP claim (#572), then rewritable by the
+  // account's owner through `PATCH /v1/profile`, which today only trims and
+  // length-bounds it.
+  group('a hostile roster name is sanitized before it becomes a row', () {
+    testWidgets('a bidi override and a zero-width space are dropped', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _Harness(
+          initial: null,
+          onChanged: (_) {},
+          // U+202E RIGHT-TO-LEFT OVERRIDE, U+200B ZERO WIDTH SPACE — written
+          // as escapes on purpose: a literal here would be invisible in every
+          // diff and code review of this file.
+          memberNames: const {'m1': 'Ana\u202ESilva', 'm2': 'Jo\u200Bao'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('AnaSilva'), findsOneWidget);
+      expect(find.text('Joao'), findsOneWidget);
+      expect(find.text('Ana\u202ESilva'), findsNothing);
+      expect(find.text('Jo\u200Bao'), findsNothing);
+    });
+
+    testWidgets('an embedded newline cannot paint a second line', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _Harness(
+          initial: null,
+          onChanged: (_) {},
+          memberNames: const {'m1': 'Ana Silva\nAdmin'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ana Silva Admin'), findsOneWidget);
+    });
+
+    testWidgets(
+      'a name left with nothing readable takes the short-id label rather '
+      'than vanishing from the picker and becoming unassignable',
+      (tester) async {
+        final changes = <String?>[];
+        await tester.pumpWidget(
+          _Harness(
+            initial: null,
+            onChanged: changes.add,
+            memberNames: const {'abcdefgh12345678': '\u200B\u202E  '},
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final row = find.byKey(
+          const Key('todo-assignee-option-abcdefgh12345678'),
+        );
+        expect(row, findsOneWidget);
+        expect(find.text('Member 12345678'), findsOneWidget);
+        expect(find.byKey(const Key('todo-assignee-empty')), findsNothing);
+
+        // Still selectable — the whole point of labelling it rather than
+        // dropping it from the list.
+        await tester.tap(row);
+        await tester.pumpAndSettle();
+        expect(changes, ['abcdefgh12345678']);
+      },
+    );
+  });
 }

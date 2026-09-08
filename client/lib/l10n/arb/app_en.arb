@@ -378,6 +378,15 @@
   "@membersRevokeSuccess": {
     "description": "Snackbar shown after successfully revoking an invitation"
   },
+  "memberNameFallback": "Member {id}",
+  "@memberNameFallback": {
+    "description": "Members-list title for a member the org roster has no display name for (#582) — an account created before profile seeding (#572), a member who has not completed the FR-ONB-1 profile gate yet, or the offline / pre-first-fetch case. Mirrors activityPerformedByMember/todoAssigneeUnknown/historyActorMember; {id} is a short trailing fragment of the internal user id, never the full 36-character id.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "memberRoleAdmin": "Admin",
   "@memberRoleAdmin": {
     "description": "Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))"
