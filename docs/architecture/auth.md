@@ -712,6 +712,28 @@ awaiting response_ (FR-ONB-3 says the admin "can invite members by email"; #641)
   per-invitation cooldown and a total-attempts cap. No `audit_log` row: a delivery attempt
   changes none of the invitation's own fields (history.md §3), and the attempt is recorded on
   the row's delivery columns instead.
+- **Every send claims its attempt before the mail leaves (#854).** Both send paths take the
+  per-org `FOR UPDATE` lock, count the hourly budget, and then spend the attempt with one
+  conditional `UPDATE` (`ClaimInvitationDeliverySlot`) that checks still-`pending`, the
+  attempts cap and the cooldown in the same statement that increments
+  `delivery_attempts` and stamps `last_delivery_at`; only then does the SMTP conversation
+  start, and `RecordInvitationDeliveryOutcome` writes back the outcome alone. Three
+  consequences, all deliberate: concurrent resends of one invitation cannot both pass the
+  cooldown; **resends spend the same hourly budget as creations**, because what is bounded
+  is mail leaving on behalf of one organization rather than one endpoint; and the
+  bookkeeping **fails closed** — an outcome write that is lost costs the admin an accurate
+  status line, never a free attempt after mail has already gone out (the claim also resets
+  `delivery_status` to `pending`, so a row whose outcome never landed reads _unknown_, not
+  the previous attempt's result).
+- **The budget counts messages, not invitations.** `CountInvitationDeliveryBudgetSince`
+  sums `delivery_attempts` over the rows created or last attempted inside the window. A
+  per-row count — the first shape of the #854 fix, caught in its security review — charged
+  an invitation once however much mail it emitted, so a handful of invitations resent on a
+  loop ran about ten times past the stated ceiling. The sum's one approximation is in the
+  safe direction: resending an invitation created _before_ the window drags its whole
+  attempt history into the sum, so it can cost several slots for one message. An exact
+  per-attempt ledger needs a table, and a new table in this schema joins the PowerSync
+  publication, so it is deliberately left as follow-up.
 - **Language (FR-ONB-3 AC 3, NFR-I18N-1).** The recipient's `identity.users.locale` when
   identity knows the address, otherwise `organizations.organizations.locale` — a new column
   seeded at org-creation time from the creating admin's own locale (D-3: the creator is the
@@ -726,9 +748,10 @@ awaiting response_ (FR-ONB-3 says the admin "can invite members by email"; #641)
   `APP_BASE_URL` + a constant `/login` path — no request input, so no open-redirect surface,
   and deliberately **no token**: acceptance is still accept-on-login, so a forwarded or
   logged link grants nothing. The message wording is byte-identical whether or not the
-  address already has an account, so it is not an account-existence oracle. `POST
-.../invitations` is rate limited per organization (an admin session must not be an open
-  relay) and the delivery reason stored and shown is a short code, never relay text.
+  address already has an account, so it is not an account-existence oracle. Both send
+  endpoints are rate limited per organization, on one shared hourly budget (an admin session
+  must not be an open relay), and the delivery reason stored and shown is a short code, never
+  relay text.
 - **Environments.** Dev/CI/staging point at the in-cluster Mailpit sink (ADR-0019 §4), so the
   whole path is exercisable end to end and no test mail can reach a real inbox
   (`client/e2e/tests/invitation-email.spec.ts` proves it against the deployed stack).

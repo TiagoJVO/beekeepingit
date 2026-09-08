@@ -8,13 +8,22 @@
 //
 // WHY THE SEND IS SYNCHRONOUS AND ITS FAILURE IS NOT AN ERROR. Creating an
 // invitation is a low-volume, human-initiated admin action, so there is no
-// queue and no background worker here: the row is committed first, the email
-// is attempted immediately after with a bounded timeout, and the outcome is
-// written back to the row. That ordering is deliberate --
+// queue and no background worker here: the row is committed first -- with its
+// attempt already CLAIMED in that same transaction (#854, see
+// claimDeliverySlot) -- the email is attempted immediately after with a
+// bounded timeout, and the outcome is written back to the row. That ordering
+// is deliberate --
+//
+//   - claiming the attempt before the SMTP conversation, never after it, means
+//     the two limits that matter (this invitation's cooldown and its lifetime
+//     cap) are spent by the same statement that checks them, so concurrent
+//     attempts cannot both pass and a lost outcome write cannot hand back a
+//     free attempt;
 //
 //   - committing first means a relay outage can never lose an invitation the
 //     admin was told was created, and the invitee can still be joined by hand
 //     (accept-on-login matches on the address, auth.md §8.7, not on delivery);
+//
 //   - a failed send therefore returns 201 with delivery_status "failed", not a
 //     5xx. The invitation EXISTS. Reporting the create as failed would be the
 //     mirror image of the bug #641 is about -- a screen saying something that
@@ -68,14 +77,21 @@ const (
 )
 
 const (
-	// invitationRateWindow / maxInvitationsPerWindow bound how many
-	// invitations ONE organization can create per rolling window (#641
+	// invitationRateWindow / maxInvitationsPerWindow bound how much
+	// invitation mail ONE organization can cause per rolling window (#641
 	// security review). Without this, a compromised or malicious admin
 	// account turns the service into an open relay aimed at arbitrary
 	// addresses -- an abuse amplifier and a deliverability risk for the
 	// sending domain #417 will provision. 20/hour is far above any real
 	// onboarding burst (an organization is a beekeeping business, not a
 	// mailing list) and far below anything useful to a spammer.
+	//
+	// RESENDS SPEND THE SAME BUDGET (#854): a resend can target
+	// any still-pending invitation of any age, so a window counted only over
+	// creations left the endpoint that actually causes most of the mail
+	// outside the ceiling. What is bounded is mail leaving on behalf of one
+	// organization per hour, not the endpoint that triggered it --
+	// CountInvitationDeliveryBudgetSince counts both.
 	invitationRateWindow    = time.Hour
 	maxInvitationsPerWindow = 20
 
@@ -83,6 +99,11 @@ const (
 	// invitation. It stops a resend button (or a script driving the endpoint)
 	// from mailbombing a single address, which is the abuse shape the
 	// per-organization budget above does not cover.
+	//
+	// It only stops that if it is SERIALIZED, which is what
+	// claimDeliverySlot's conditional UPDATE provides (#854): the cooldown
+	// used to be read on the pool and acted on afterwards, so concurrent
+	// resends all observed the same pre-attempt state.
 	resendCooldown = time.Minute
 
 	// maxDeliveryAttempts caps total attempts per invitation. A permanently
@@ -96,6 +117,12 @@ const (
 	// synchronously, so it is short: a slow relay becomes a recorded, visible,
 	// retryable failure rather than a request that hangs.
 	sendTimeout = 15 * time.Second
+
+	// recordTimeout bounds the outcome write that follows the send. It is
+	// detached from the request's cancellation (the outcome must be recorded
+	// even if the admin closed the tab) but must not be unbounded: it is a
+	// single indexed UPDATE, and on the resend path it decides 200 vs 500.
+	recordTimeout = 5 * time.Second
 )
 
 // invitationSender carries everything the delivery step needs. Built once per
@@ -124,6 +151,13 @@ func (s invitationSender) enabled() bool {
 // state, not an error -- and only returns one when the outcome could not be
 // PERSISTED, which is a real fault the caller must surface.
 //
+// PRECONDITION (#854): the attempt slot must already be claimed --
+// claimDeliverySlot, committed -- before deliver is called. deliver records
+// only what the attempt DID; it does not charge the attempt or restart the
+// cooldown. That ordering is what makes the bookkeeping fail CLOSED: losing
+// the write below costs the admin an accurate status line, never a spent
+// attempt or a cooldown that never started after mail had already gone out.
+//
 // bearer is the caller's Authorization header, forwarded to identity for the
 // two composition lookups below (service-decomposition.md §4 rule 3).
 func (s invitationSender) deliver(ctx context.Context, bearer string, invitation sqlcgen.OrganizationsInvitation) (sqlcgen.OrganizationsInvitation, error) {
@@ -147,17 +181,72 @@ func (s invitationSender) deliver(ctx context.Context, bearer string, invitation
 			slog.String("reason", reason))
 	}
 
-	updated, err := s.q.MarkInvitationDelivery(context.WithoutCancel(ctx), sqlcgen.MarkInvitationDeliveryParams{
+	// Detached from the request's cancellation for the same reason as the send
+	// above, but BOUNDED: this single UPDATE is what decides the resend's 200
+	// vs 500, and an unbounded wait on a wedged database would pin a pool
+	// connection and the admin's request behind it indefinitely.
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer recordCancel()
+
+	updated, err := s.q.RecordInvitationDeliveryOutcome(recordCtx, sqlcgen.RecordInvitationDeliveryOutcomeParams{
 		ID:             invitation.ID,
 		OrganizationID: invitation.OrganizationID,
 		DeliveryStatus: status,
 		DeliveryError:  reason,
-		LastDeliveryAt: pgtype.Timestamptz{Time: s.clock().UTC(), Valid: true},
 	})
 	if err != nil {
 		return invitation, fmt.Errorf("record invitation delivery: %w", err)
 	}
 	return updated, nil
+}
+
+// claimDeliverySlot charges ONE attempt against invitationID and restarts its
+// cooldown, atomically, inside the caller's transaction (#854, NFR-SEC-1).
+//
+// It is the single place either send path is allowed to decide "this attempt
+// may happen", and it decides by WRITING: one conditional UPDATE that checks
+// still-pending, the lifetime cap and the cooldown in the same statement that
+// spends them. pgx.ErrNoRows means refused, and the caller must not open an
+// SMTP conversation.
+//
+// Both callers additionally hold LockOrganizationForUpdate, so the budget
+// count next to this claim is stable too; the conditional UPDATE is what makes
+// the PER-INVITATION limits hold on its own, independently of that lock.
+func claimDeliverySlot(ctx context.Context, txq *sqlcgen.Queries, invitationID, orgID pgtype.UUID, now time.Time) (sqlcgen.OrganizationsInvitation, error) {
+	return txq.ClaimInvitationDeliverySlot(ctx, sqlcgen.ClaimInvitationDeliverySlotParams{
+		ID:             invitationID,
+		OrganizationID: orgID,
+		AttemptedAt:    pgtype.Timestamptz{Time: now.UTC(), Valid: true},
+		MaxAttempts:    maxDeliveryAttempts,
+		CooldownCutoff: pgtype.Timestamptz{Time: now.Add(-resendCooldown).UTC(), Valid: true},
+	})
+}
+
+// checkDeliveryBudget returns errInvitationBudget when this organization has
+// already spent its hourly outbound-mail allowance (#641 security review,
+// extended to resends by #854). Called inside the caller's transaction, after
+// LockOrganizationForUpdate, so the count cannot move between being read and
+// being acted on.
+//
+// The allowance is counted in MESSAGES, not invitations: see
+// CountInvitationDeliveryBudgetSince for why a per-row count let a resend loop
+// run about ten times past the stated ceiling, and for the one direction in
+// which the sum deliberately over-charges.
+//
+// Fails CLOSED by construction: a count that cannot be read returns an error
+// and aborts the transaction rather than letting the send through.
+func checkDeliveryBudget(ctx context.Context, txq *sqlcgen.Queries, orgID pgtype.UUID, now time.Time) error {
+	count, err := txq.CountInvitationDeliveryBudgetSince(ctx, sqlcgen.CountInvitationDeliveryBudgetSinceParams{
+		OrganizationID: orgID,
+		Since:          pgtype.Timestamptz{Time: now.Add(-invitationRateWindow).UTC(), Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("count recent invitation sends: %w", err)
+	}
+	if count >= maxInvitationsPerWindow {
+		return errInvitationBudget
+	}
+	return nil
 }
 
 // attempt renders and sends, returning (delivery_status, delivery_error code).
