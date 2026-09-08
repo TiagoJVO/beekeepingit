@@ -325,13 +325,14 @@ optional.
   ([auth.md §8.18](auth.md)).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
-  pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201))
-  — since #237 sign-out depends on three specific upstream behaviours, so a bump must re-verify all
-  three: that `post_logout_redirect_uris` is still the `redirect_uri_type: logout` **filter over
-  `redirect_uris`** (not a field of its own), that `SessionEndStage` still prefers
+  pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)
+  — since #237, sign-out rests on three specific internals a bump must re-verify: that
+  `post_logout_redirect_uris` is still the `redirect_uri_type: logout` **filter over
+  `redirect_uris`** rather than a field of its own, that `SessionEndStage` still prefers
   `PLAN_CONTEXT_POST_LOGOUT_REDIRECT_URI` over its interstitial, and that a stage bound into the
   provider invalidation flow still runs **before** the appended `SessionEndStage`
-  ([auth.md §8.18](auth.md)); `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
+  — [auth.md §8.18](auth.md));
+  `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
   bump must not resurrect the managed built-in on the provider), the default authentication
   flow's stage-binding shape the #361 entries splice into, **`default_user_change_email` staying
   disabled** (upstream `Tenant` default `false` at 2026.5.4, `tenants/models.py` lines 64–66 —

@@ -781,10 +781,14 @@ void main() {
       // end_session_endpoint carrying the id_token_hint (replaces the previous
       // refresh-token POST to the provider's logout endpoint).
       //
-      // Since #237 BOTH parameters are load-bearing, not belt-and-braces: the
-      // provider now allow-lists post_logout_redirect_uri (auth.md §8.18), and
-      // authentik REQUIRES id_token_hint alongside it — dropping either one
-      // turns sign-out into a 400 at the IdP instead of a return to /login.
+      // Since #237 BOTH parameters are load-bearing, not belt-and-braces, but
+      // they fail DIFFERENTLY (auth.md §8.18). The provider now allow-lists
+      // post_logout_redirect_uri, and authentik REQUIRES id_token_hint
+      // alongside it: drop the hint and sign-out is a 400 at the IdP. Drop
+      // post_logout_redirect_uri and there is no 400 — EndSessionView.validate
+      // simply plans no redirect, so the browser dead-ends on the session-end
+      // interstitial instead of returning to /login. That is #237's original
+      // symptom, which is exactly why this assertion pins it.
       // The redirect URI must stay the app's OWN origin (platform.redirectUri):
       // it has to match the allow-list exactly, and it is never computed from
       // anything a caller supplies.

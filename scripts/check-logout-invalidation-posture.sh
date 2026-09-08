@@ -16,7 +16,18 @@
 #      the opposite ("revokes the SERVER-SIDE SSO session, not just local
 #      tokens"), so the `user_logout` stage bound into that flow is the only
 #      thing making the promise true. Asserted by BINDING, not by "a logout
-#      stage exists": an unbound stage is decoration.
+#      stage exists": an unbound stage is decoration. And asserted as a LIVE,
+#      SINGLE, REACHABLE binding, because "the text is in the file" is not the
+#      same claim (each of these passed the first version of this guard):
+#      `state: absent` deletes the entry on apply; `conditions: [false]` leaves
+#      the planner skipping it; a duplicate `target:` key silently re-points it
+#      (PyYAML is last-wins and raises nothing); a second entry for the same id
+#      overrides the one that was read; and repointing BOTH providers'
+#      `invalidation_flow` elsewhere leaves the binding intact on a flow neither
+#      provider ever plans. So: exactly one stage entry, exactly one binding,
+#      no `state:`/`conditions:` on either, exactly one `target:`/`stage:` in
+#      the binding, and `invalidation_flow: !KeyOf` the pinned flow declared
+#      exactly once in EACH provider.
 #
 #   2. THE RETURN HALF, AND ITS ALLOW-LIST. `post_logout_redirect_uris` is not
 #      a field at 2026.5.4 — it is a PROPERTY over the provider's `redirect_uris`
@@ -38,6 +49,19 @@
 #      rejected by name: matching is `fullmatch`, and that pattern also accepts
 #      `http://localhost:@evil.example`, which a browser resolves to
 #      evil.example.
+#
+#      The URL is only half of an entry — `matching_mode` is asserted too, and
+#      the "bare-origin regex" above is exactly why. Under `fullmatch` a
+#      RENDERED origin read as a pattern turns every unescaped `.` into a
+#      wildcard: staging's `https://beekeepingit-rc.melargil.pt` would then also
+#      match `https://beekeepingit-rcamelargil.pt`, a registrable domain someone
+#      can buy. So the two rendered origins must be `strict` and only the
+#      localhost entry may be `regex` — a port cannot be spelled literally.
+#      Duplicate `url:`/`matching_mode:`/`redirect_uri_type:` keys inside one
+#      entry are rejected for the same last-wins reason as (1), and the list is
+#      walked by INDENTATION rather than fixed columns, because a blank line or
+#      a re-indented item used to end the walk and silently drop every entry
+#      below it — counters above it kept the guard green (review findings).
 #
 #   3. NO OWNED `designation: invalidation` FLOW. (1) is spelled as a binding
 #      onto upstream's flow rather than a flow of our own precisely because
@@ -88,19 +112,61 @@ fi
 # and none of the keys below ever carry a trailing comment.
 awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
     -v PWA="${pwa_provider_id}" -v ADMIN="${admin_provider_id}" '
-  # The only two redirect targets a logout entry may name: the per-environment
-  # origins this chart renders. Compared as literal template text so the check
-  # stays offline and every overlay is covered at once.
-  function allowed_logout_url(u) {
-    if (u == "{{ .Values.global.appOrigin }}") return 1
-    if (u == "{{ .Values.global.adminOrigin }}") return 1
+  # The only redirect targets a logout entry may name, each with the ONE
+  # `matching_mode` that makes it mean what it reads as. Compared as literal
+  # template text so the check stays offline and every overlay is covered at
+  # once. Returns the required mode, or "" for a target that is not allowed.
+  #
+  # The mode is half the assertion, not decoration: authentik matches a `regex`
+  # entry with `re.fullmatch`, so `https://beekeepingit-rc.melargil.pt` read as
+  # a pattern also matches `https://beekeepingit-rcamelargil.pt` — a DIFFERENT
+  # registrable domain an attacker can buy. A rendered origin is a literal URL
+  # and must therefore be `strict`; only the localhost dev entry is a pattern,
+  # and only because a port cannot be spelled literally (review finding).
+  function required_mode(u) {
+    if (u == "{{ .Values.global.appOrigin }}") return "strict"
+    if (u == "{{ .Values.global.adminOrigin }}") return "strict"
     # The one dev exception: a localhost ORIGIN with a numeric port. `[0-9]+`
     # and nothing looser — see the header.
-    if (u == "http://localhost:[0-9]+") return 1
-    return 0
+    if (u == "http://localhost:[0-9]+") return "regex"
+    return ""
   }
 
   function fail(msg) { printf "✗ [logout-invalidation] %s\n", msg > "/dev/stderr"; bad = 1 }
+
+  # How many times a chunk of YAML DECLARES a key. Presence is not enough on its
+  # own: PyYAML (authentiks `BlueprintLoader`) takes LAST-WINS on a duplicate
+  # mapping key and raises nothing, so a second `target:` / `url:` would satisfy
+  # a presence test while shipping the value it hides (review finding — the
+  # sibling check-federation-source-posture.sh:194 hardened the same class).
+  # `&` as the replacement leaves the text untouched; only the count is used.
+  function key_count(text, field,   pattern, tmp) {
+    pattern = "(^|[^A-Za-z0-9_-])" field "[[:space:]]*:"
+    tmp = text
+    return gsub(pattern, "&", tmp)
+  }
+
+  # `state:` and `conditions:` on an entry this guard asserts EXISTS. Both make
+  # the entry read as present while it does nothing: `state: absent` makes the
+  # apply DELETE it, and a falsy `conditions:` list makes the planner skip the
+  # binding. The blueprint already uses `conditions:` elsewhere, so neither is
+  # hypothetical (review finding).
+  function assert_live(what,   ok) {
+    ok = 1
+    if (key_count(body, "state") > 0) {
+      fail(what " `" entry_id "` carries a `state:` key. `absent` DELETES it on apply while this " \
+           "guard still sees the entry — which restores #237 verbatim. An entry the posture " \
+           "depends on must be unconditionally present.")
+      ok = 0
+    }
+    if (key_count(body, "conditions") > 0) {
+      fail(what " `" entry_id "` carries a `conditions:` key. A falsy condition list makes the " \
+           "planner skip it, so the entry exists and never runs — same outcome as deleting it " \
+           "(#237). Keep the invalidation path unconditional.")
+      ok = 0
+    }
+    return ok
+  }
 
   # ---- entry boundaries -----------------------------------------------------
   /^[[:space:]]*#/ { next }
@@ -120,29 +186,60 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
   }
 
   # ---- the redirect_uris list of the current entry ---------------------------
-  /^      redirect_uris:[[:space:]]*$/ { in_uris = 1; next }
-  in_uris && /^        - / { push_item(); item = $0; next }
-  in_uris && /^          / { item = item " " $0; next }
-  in_uris { push_item(); in_uris = 0 }
+  # Driven off the indentation of the `redirect_uris:` KEY rather than a fixed
+  # column, and blank lines are skipped rather than ending the list. The old
+  # fixed-column rules dropped every entry after the first blank line or after
+  # any re-indentation — both of which YAML (and prettier) accept — so an
+  # `https://evil.example` appended below one passed assertion (4) untouched
+  # while the counters above it stayed satisfied (review finding; the sibling
+  # check-federation-source-posture.sh:538 already skips blank lines).
+  /^[[:space:]]*redirect_uris:[[:space:]]*$/ {
+    in_uris = 1; uris_indent = match($0, /[^ ]/) - 1; next
+  }
+  in_uris && /^[[:space:]]*$/ { next }
+  in_uris {
+    line_indent = match($0, /[^ ]/) - 1
+    if (line_indent > uris_indent || ($0 ~ /^[[:space:]]*- / && line_indent == uris_indent)) {
+      if ($0 ~ /^[[:space:]]*- /) { push_item(); item = $0 } else { item = item " " $0 }
+      next
+    }
+    push_item(); in_uris = 0
+  }
 
   function push_item() {
     if (item != "") { items[++n_items] = item; item = "" }
   }
 
   # ---- per-entry assertions --------------------------------------------------
-  function flush(   i, it, url, is_logout, n_logout, saw_app, saw_admin) {
+  function flush(   i, it, url, mode, want, is_logout, n_logout, saw_app, saw_admin) {
     if (entry_model == "") return
     push_item()
 
     # (1) the user_logout stage, and (2) its binding onto UPSTREAMS invalidation
     # flow — both reached by !KeyOf, never !Find (#599: !Find resolves to None
-    # silently, and a binding with a null target is not a binding).
-    if (entry_model ~ /authentik_stages_user_logout\.userlogoutstage/ && entry_id == LOGOUT_STAGE)
-      seen_stage = 1
+    # silently, and a binding with a null target is not a binding). COUNTED, not
+    # flagged: `n_* == 1` at the END is what makes a second, contradicting
+    # declaration of the same object a failure instead of a no-op.
+    if (entry_model ~ /authentik_stages_user_logout\.userlogoutstage/ && entry_id == LOGOUT_STAGE) {
+      n_stage++
+      assert_live("logout stage")
+    }
     if (entry_model ~ /authentik_flows\.flowstagebinding/ &&
         body ~ ("target[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" INVAL_PIN "([^A-Za-z0-9_-]|$)") &&
-        body ~ ("stage[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" LOGOUT_STAGE "([^A-Za-z0-9_-]|$)"))
-      seen_binding = 1
+        body ~ ("stage[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" LOGOUT_STAGE "([^A-Za-z0-9_-]|$)")) {
+      n_binding++
+      assert_live("invalidation binding")
+      # Duplicate `target:`/`stage:` — last-wins, silently. A second
+      # `target: !KeyOf flow-source-enrollment` binds the logout stage onto the
+      # ENROLLMENT flow while this guard still reads the first one.
+      if (key_count(body, "target") != 1)
+        fail("invalidation binding `" entry_id "` declares `target:` " key_count(body, "target") \
+             " times. PyYAML takes LAST-WINS silently, so the target this guard read is not " \
+             "necessarily the one authentik applies. Declare it exactly once.")
+      if (key_count(body, "stage") != 1)
+        fail("invalidation binding `" entry_id "` declares `stage:` " key_count(body, "stage") \
+             " times — last-wins, so the stage that actually binds may not be `" LOGOUT_STAGE "`.")
+    }
 
     # (3) nothing in this file may OWN an invalidation-designation flow.
     if (entry_model ~ /authentik_flows\.flow$/ &&
@@ -151,14 +248,35 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
            "slug-ordering trap the blueprints #599 pin block documents: pin " \
            "`brand.flow_invalidation` in the same change, then relax this assertion.")
 
-    # (4) every logout-typed redirect URI, on every provider.
+    # (4) every logout-typed redirect URI, on every provider — and (5) the flow
+    # the binding above is attached to is the one each provider invalidates
+    # through.
     if (entry_model ~ /authentik_providers_oauth2\.oauth2provider/) {
+      # (5) Without this, repointing BOTH providers at another flow leaves the
+      # binding correct, attached, and unreachable — the stage never runs and
+      # #237s session half returns with the guard still green.
+      if (key_count(body, "invalidation_flow") != 1 ||
+          body !~ ("invalidation_flow[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" INVAL_PIN "([^A-Za-z0-9_-]|$)"))
+        fail("provider `" entry_id "` must set `invalidation_flow: !KeyOf " INVAL_PIN "` exactly " \
+             "once. The logout stage is bound onto THAT flow — point the provider anywhere else " \
+             "and the binding is still there, still correct, and never planned (#237).")
+
       n_logout = 0; saw_app = 0; saw_admin = 0
       for (i = 1; i <= n_items; i++) {
         it = items[i]
         is_logout = (it ~ /redirect_uri_type[[:space:]]*:[[:space:]]*logout([^A-Za-z0-9_-]|$)/)
         if (!is_logout) continue
         n_logout++
+        # One `url:`, one `matching_mode:`, one `redirect_uri_type:` per entry —
+        # a duplicate is last-wins in PyYAML, so a second `url:` would ship a
+        # target this guard never reads.
+        if (key_count(it, "url") != 1 || key_count(it, "matching_mode") != 1 ||
+            key_count(it, "redirect_uri_type") != 1) {
+          fail("provider `" entry_id "` has a logout redirect entry that declares `url:`, " \
+               "`matching_mode:` or `redirect_uri_type:` more than once (or not at all). " \
+               "PyYAML takes last-wins silently: " it)
+          continue
+        }
         url = it
         if (!match(url, /url[[:space:]]*:[[:space:]]*["'"'"']/)) {
           fail("provider `" entry_id "` has a logout redirect URI with no QUOTED `url:` — " \
@@ -167,11 +285,27 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
         }
         url = substr(url, RSTART + RLENGTH)
         sub(/["'"'"'].*$/, "", url)
-        if (!allowed_logout_url(url))
+
+        want = required_mode(url)
+        if (want == "") {
           fail("provider `" entry_id "` allow-lists logout redirect `" url "`, which is neither " \
                "`{{ .Values.global.appOrigin }}`/`{{ .Values.global.adminOrigin }}` nor the " \
                "tightened `http://localhost:[0-9]+` dev regex. A logout allow-list entry IS the " \
                "open-redirect boundary — keep every target rendered from this charts values.")
+          continue
+        }
+
+        mode = it
+        match(mode, /matching_mode[[:space:]]*:[[:space:]]*/)
+        mode = substr(mode, RSTART + RLENGTH)
+        sub(/[^A-Za-z0-9_].*$/, "", mode)
+        if (mode != want)
+          fail("provider `" entry_id "` allow-lists logout redirect `" url "` with " \
+               "`matching_mode: " mode "`, but it must be `" want "`. authentik matches a regex " \
+               "entry with `re.fullmatch`, so a rendered origin read as a pattern turns every " \
+               "unescaped `.` into a wildcard and admits a DIFFERENT registrable domain — the " \
+               "open redirect this list exists to prevent.")
+
         if (url == "{{ .Values.global.appOrigin }}") saw_app = 1
         if (url == "{{ .Values.global.adminOrigin }}") saw_admin = 1
       }
@@ -197,13 +331,15 @@ awk -v LOGOUT_STAGE="${logout_stage_id}" -v INVAL_PIN="${inval_flow_pin_id}" \
 
   END {
     flush()
-    if (!seen_stage)
-      fail("no `authentik_stages_user_logout.userlogoutstage` entry with id `" LOGOUT_STAGE "`. " \
-           "Without it the authentik SSO session outlives Sign out and re-entry needs no " \
-           "password (#237, NFR-SEC-1).")
-    if (!seen_binding)
-      fail("no `authentik_flows.flowstagebinding` binding `" LOGOUT_STAGE "` onto `" INVAL_PIN \
-           "` by !KeyOf. An unbound logout stage ends nothing.")
+    if (n_stage != 1)
+      fail("expected EXACTLY ONE `authentik_stages_user_logout.userlogoutstage` entry with id `" \
+           LOGOUT_STAGE "`, found " (n_stage+0) ". Without it the authentik SSO session outlives " \
+           "Sign out and re-entry needs no password (#237, NFR-SEC-1); with two, the last one " \
+           "wins and this guard read the wrong one.")
+    if (n_binding != 1)
+      fail("expected EXACTLY ONE `authentik_flows.flowstagebinding` binding `" LOGOUT_STAGE \
+           "` onto `" INVAL_PIN "` by !KeyOf, found " (n_binding+0) ". An unbound logout stage ends " \
+           "nothing, and a second binding entry decides what the first one meant.")
     if (!seen_pwa)   fail("provider entry `" PWA "` not found — this guard has drifted from the blueprint.")
     if (!seen_admin_provider) fail("provider entry `" ADMIN "` not found — this guard has drifted from the blueprint.")
     if (bad) exit 1

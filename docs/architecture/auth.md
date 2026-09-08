@@ -1818,14 +1818,39 @@ audience — the two values `EndSessionView.validate` decodes the hint against. 
 consequently **all-or-nothing**: any origin that legitimately signs out through an application must
 be listed, or it regresses from an interstitial to a 400.
 
+**What sign-out still does _not_ do.** Ending the SSO session does **not** revoke the 30-day
+`offline_access` refresh token. `EndSessionView.get` deletes only the provider's 15-minute
+`AccessToken`s, and `RefreshToken` deliberately shadows the `session` foreign key
+(`providers/oauth2/models.py`), so the refresh token outlives the session that minted it and stays
+redeemable. The only thing that kills it is the client's best-effort `cred.revoke()` in
+[`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) —
+which sits inside a `try` that begins with `await _issuer()`, so an **offline** sign-out never
+reaches it and the token remains valid until it expires. Revocation is therefore **client-driven and
+best-effort, not a server-side guarantee**; making it durable is
+[#830](https://github.com/TiagoJVO/beekeepingit/issues/830). A second consequence of the strict
+validation this section introduces: a **second admin tab** signing out after the first sends
+`post_logout_redirect_uri` with no `id_token_hint` (oidc-client-ts sends the former
+unconditionally and the latter only when the shared `localStorage` user store still holds a user,
+which the first tab cleared), so it 400s instead of returning to `/login` — fail-closed, but
+user-visible: [#831](https://github.com/TiagoJVO/beekeepingit/issues/831).
+
 **Verified by.** [`scripts/check-logout-invalidation-posture.sh`](../../scripts/check-logout-invalidation-posture.sh)
 (offline, `task repo:lint` → `task ci`) asserts the stage, its `!KeyOf` binding onto the pinned
 upstream flow, that every provider carries a logout allow-list containing the origins it must accept
 back, that **every** logout-typed URL is one of the rendered origins or the tightened localhost
-regex, and that no entry in the file owns an invalidation-designation flow. Each assertion was
-mutation-checked against a deliberately broken copy of the blueprint (binding removed, allow-list
-removed, an `https://.*` target, an owned invalidation flow, stage removed, `logout` flipped back to
-`authorization`) — all six fail it. Live, the logout e2e in
+regex, and that no entry in the file owns an invalidation-designation flow. Review of the first
+version showed those assertions were **structurally evadable** — the guard is only worth what it
+rejects — so it now also pins the things that make an entry _mean_ what it reads as: exactly one
+stage and one binding entry, no `state:`/`conditions:` on either (both make an entry present and
+inert), no duplicate `target:`/`stage:`/`url:`/`matching_mode:` keys (PyYAML is silently last-wins),
+`matching_mode: strict` on the two rendered origins (under `fullmatch` a rendered origin read as a
+`regex` turns every unescaped `.` into a wildcard and admits a neighbouring registrable domain), and
+`invalidation_flow: !KeyOf` the pinned flow in **each** provider (repoint both and the binding hangs
+off a flow nothing plans). The list is walked by indentation, because a blank line or a re-indented
+item used to end the walk and silently drop every entry below it. All of it is mutation-checked
+against sixteen deliberately broken copies of the blueprint — binding removed, allow-list removed, an
+`https://.*` target, an owned invalidation flow, stage removed, `logout` flipped back to
+`authorization`, plus each evasion above — and **all sixteen fail it**. Live, the logout e2e in
 [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) is un-`fixme`'d and extended
 past a reload (which only ever proved no **local** credential survived) to **start a new sign-in**
 and require the IdP's own credential form — the only observable proof the SSO cookie is gone.
