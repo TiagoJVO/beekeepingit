@@ -2210,7 +2210,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toastDetailsCloseAction => 'Close';
 
   @override
-  String get notFoundTitle => 'This page doesn\'t exist';
+  String get notFoundTitle => 'Not found';
 
   @override
   String get notFoundMessage =>

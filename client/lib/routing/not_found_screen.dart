@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../core/widgets/content_column.dart';
 import '../core/widgets/field_action_button.dart';
 import '../l10n/gen/app_localizations.dart';
-import '../theming/app_theme.dart';
 import '../theming/brand_dimens.dart';
 import '../theming/brand_widgets.dart';
 
@@ -17,7 +16,7 @@ import '../theming/brand_widgets.dart';
 /// link — the framework's own diagnostics, shown to a beekeeper, in English
 /// whatever locale the app was running in.
 ///
-/// Two deliberate choices here:
+/// Three deliberate choices here:
 ///
 /// 1. **It is an ordinary page of the app, not a replacement for it.** The
 ///    route lives inside the shell's home branch (see `app_router.dart`), so
@@ -32,65 +31,58 @@ import '../theming/brand_widgets.dart';
 ///    would put arbitrary untranslated text back on the screen — the very
 ///    shape #638 reports. The router logs it instead (`app_router.dart`'s
 ///    `onException`), where diagnostics belong.
+/// 3. **It composes [EmptyState], rather than restating it.** This is the
+///    same shape Home's own `_FirstRunState` uses — one message, one action,
+///    the whole page — and reusing it is what earns this screen `EmptyState`'s
+///    bounded/unbounded layout fix (#797, FR-AX-1): at the 200% text scale
+///    D-18 commits to, the message wraps to several times its height and a
+///    hand-rolled `Center > Padding > Column` overflows inside the shell's
+///    bounded body. `not_found_route_test.dart` pins that at 200% rather than
+///    trusting this comment.
 class NotFoundScreen extends StatelessWidget {
   const NotFoundScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final scheme = Theme.of(context).colorScheme;
 
-    // ContentColumn (#650) caps this at BrandDimens.maxWidthList on a wide
-    // desktop viewport; the scroll view is what keeps the column laying out
-    // at the 200% text scale D-18 commits to, where the message wraps to
-    // several times its normal height inside the shell's bounded body.
+    // Deliberately the same composition as `_FirstRunState` in
+    // `home_screen.dart`: ContentColumn (#650) narrows the measure to
+    // BrandDimens.maxWidthList on a wide viewport, and the inner Center still
+    // centres vertically within that narrowed column. Two whole-page
+    // "one message + one action" states reachable from the same branch should
+    // not sit differently on the screen.
     return ContentColumn(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: BrandDimens.gutter,
-          vertical: 32,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Purely decorative — it carries no `semanticLabel`, because the
-            // heading right below already says what it would say (FR-AX-1).
-            // `Align` because the column stretches (so the action button
-            // spans it), and a stretched `Icon` would centre its glyph out
-            // of line with the text beside it.
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Icon(
-                Icons.explore_off_outlined,
-                size: 40,
-                color: scheme.onSurfaceVariant,
+      child: Center(
+        child: SingleChildScrollView(
+          key: const Key('not-found-body'),
+          padding: const EdgeInsets.symmetric(horizontal: BrandDimens.gutter),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // No in-body heading: the shell's own header already titles this
+              // route (`app_shell.dart`'s `_titleFor`), and `AppBar.title`
+              // carries header semantics, so adding a `SectionHeader` here
+              // would announce the same heading twice in a row. The icon is
+              // decorative and carries no `semanticLabel` for the same reason
+              // (FR-AX-1).
+              EmptyState(
+                message: l10n.notFoundMessage,
+                icon: Icons.explore_off_outlined,
               ),
-            ),
-            const SizedBox(height: 12),
-            // A real heading node, so a screen-reader user landing here from
-            // a stale link hears what this page is before its body (#771).
-            SectionHeader(l10n.notFoundTitle),
-            const SizedBox(height: 8),
-            Text(
-              l10n.notFoundMessage,
-              key: const Key('not-found-message'),
-              style: TextStyle(
-                fontFamily: AppTheme.bodyFontFamily,
-                fontSize: 15,
-                color: scheme.onSurfaceVariant,
+              PrimaryActionButton(
+                key: const Key('not-found-home-button'),
+                label: l10n.notFoundHomeAction,
+                icon: Icons.home_outlined,
+                // `go`, not `pop`: the shell's Back is the pop, and this is
+                // the exit for a user who never reads the header. It also has
+                // to work when this screen is the only thing on the branch's
+                // stack.
+                onPressed: () => context.go('/home'),
               ),
-            ),
-            const SizedBox(height: 24),
-            PrimaryActionButton(
-              key: const Key('not-found-home-button'),
-              label: l10n.notFoundHomeAction,
-              icon: Icons.home_outlined,
-              // `go`, not `pop`: this screen is also the first thing a cold
-              // start on a stale deep link renders, and then there is no
-              // history behind it to pop to.
-              onPressed: () => context.go('/home'),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

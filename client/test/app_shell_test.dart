@@ -396,7 +396,7 @@ void main() {
       // showing through, and #638 is precisely the report that it strands the
       // user. The shell now survives, so what this pins is the part #658
       // actually owns: no tab renders the retired Assistant placeholder.
-      expect(find.byKey(const Key('not-found-message')), findsOneWidget);
+      expect(find.byKey(const Key('not-found-body')), findsOneWidget);
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
 
       final nav = tester.widget<NavigationBar>(

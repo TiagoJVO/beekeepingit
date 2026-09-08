@@ -113,13 +113,24 @@ final routerProvider = Provider<GoRouter>((ref) {
     //
     // The attempted location is LOGGED, never rendered: it is diagnostics,
     // and putting an arbitrary untranslated path back on the screen is the
-    // very thing #638 reports.
+    // very thing #638 reports. The PATH only — an inbound link's query and
+    // fragment are the parts that could carry a token, and the path alone is
+    // the whole diagnostic.
     onException: (context, state, router) {
       developer.log(
-        'no route matched ${state.uri} — showing the not-found screen',
+        'router exception at ${state.uri.path} — showing the not-found screen',
         name: 'routing',
         error: state.error,
       );
+      // Every GoException lands here, not just "no routes for location":
+      // go_router also wraps anything thrown out of the `redirect` below. If
+      // that ever happens, re-navigating would throw again on the next parse
+      // and loop unbounded — `redirectLimit` does not help, because each
+      // `go()` starts a fresh parse with a fresh history. Bailing out when we
+      // are already at the destination bounds it at one hop: the worst case
+      // degrades to go_router's own fallback page, which is what shipped
+      // before this route existed, rather than to a spin.
+      if (state.uri.path == '/home/not-found') return;
       router.go('/home/not-found');
     },
     redirect: (context, state) {

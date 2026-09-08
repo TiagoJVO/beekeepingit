@@ -2225,7 +2225,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get toastDetailsCloseAction => 'Fechar';
 
   @override
-  String get notFoundTitle => 'Esta página não existe';
+  String get notFoundTitle => 'Não encontrado';
 
   @override
   String get notFoundMessage =>

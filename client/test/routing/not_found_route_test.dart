@@ -143,7 +143,7 @@ void main() {
     await _goToUnmatched(tester);
 
     expect(
-      find.byKey(const Key('not-found-message')),
+      find.text(AppLocalizationsEnGb().notFoundMessage),
       findsOneWidget,
       reason:
           'an unmatched location must render the app\'s own explanation '
@@ -160,6 +160,43 @@ void main() {
       );
     }
   });
+
+  // The screen's own doc comment claims composing EmptyState is what keeps it
+  // laying out at the 200% text scale D-18 commits to. That claim is only
+  // worth the test under it: the first draft of this screen hand-rolled
+  // EmptyState's icon+message instead of composing it, which silently opted
+  // out of #797's bounded/unbounded fix — and a RenderFlex overflow is a hard
+  // error, so the assertion is simply that nothing threw while laying out.
+  //
+  // Runs at BOTH scales, and on a SHORT viewport: at 1.0 on a tall surface
+  // the message fits with room to spare, so the case would pass without ever
+  // exercising the overflow path it exists to pin.
+  for (final textScale in const [1.0, 2.0]) {
+    testWidgets('lays out inside the shell at ${textScale}x text, without '
+        'overflowing (D-18, FR-AX-1, #797)', (tester) async {
+      useViewport(tester, size: const Size(375, 500));
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await _goToUnmatched(tester);
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason:
+            'the not-found screen overflowed at ${textScale}x inside the '
+            'shell\'s bounded body — the failure #797 fixed for every other '
+            'EmptyState',
+      );
+      // The shell is the point of the fix, so it must still be there at 200%
+      // rather than the screen having escaped its bounded parent.
+      expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
+      expect(find.byKey(const Key('not-found-body')), findsOneWidget);
+    });
+  }
 
   group('the message is localized, not one hard-coded English string', () {
     // Both halves of NFR-I18N-1, split because only together do they mean
@@ -181,10 +218,7 @@ void main() {
 
         await _goToUnmatched(tester);
 
-        final message = tester.widget<Text>(
-          find.byKey(const Key('not-found-message')),
-        );
-        expect(message.data, expected.notFoundMessage);
+        expect(find.text(expected.notFoundMessage), findsOneWidget);
       });
     }
 
