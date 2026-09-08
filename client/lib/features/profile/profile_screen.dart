@@ -77,8 +77,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           .read(profileProvider.notifier)
           .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.profileSaveSuccess);
       final complete = ref.read(profileCompleteProvider);
       if (complete) {
         // Re-fetch the organization state before moving on (#366): for a
@@ -120,8 +119,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         final msg = unrendered.isNotEmpty
             ? unrendered.map((k) => _fieldErrors[k]).join('\n')
             : e.detail;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(appToast(l10n.profileSaveError(msg)));
+        showAppToast(ScaffoldMessenger.of(context), l10n.profileSaveError(msg));
       }
     } on Exception catch (_) {
       // Narrowed to `Exception` (not a bare `catch`, which also matches
@@ -136,10 +134,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       // Fixed copy rather than server text, but bounded all the same: at 200%
       // text on a 375x812 phone this one measured 188 logical pixels in EN and
       // 148 in PT, over the 136 band `BrandDimens.scrollBottomInset` reserves
-      // (#813). It is the only fixed-copy toast in the app that does; the
-      // other 16 all measure 108 and stay on a plain `SnackBar`.
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.profileGenericError));
+      // (#813). Every toast routes through the bounded content since #640, so
+      // the cap covers this one without a special case.
+      showAppToast(ScaffoldMessenger.of(context), l10n.profileGenericError);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

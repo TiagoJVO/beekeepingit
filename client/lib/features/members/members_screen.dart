@@ -58,8 +58,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           .invite(email: _emailController.text.trim());
       if (!mounted) return;
       _emailController.clear();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.membersInviteSuccess);
     } on ApiException catch (e) {
       if (!mounted) return;
       final fieldErrors = {
@@ -68,13 +67,17 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       if (fieldErrors.containsKey('email')) {
         setState(() => _emailError = fieldErrors['email']);
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(appToast(l10n.membersInviteError(e.detail)));
+        showAppToast(
+          ScaffoldMessenger.of(context),
+          l10n.membersInviteError(e.detail),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.membersInviteError('$e')));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _inviting = false);
     }
@@ -86,12 +89,13 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     try {
       await ref.read(membersProvider.notifier).revokeInvitation(invitationId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersRevokeSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.membersRevokeSuccess);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.membersInviteError('$e')));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _revokingIds.remove(invitationId));
     }
@@ -103,8 +107,10 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       await ref.read(membersProvider.notifier).loadMoreMembers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.membersInviteError('$e')));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _loadingMoreMembers = false);
     }
@@ -116,8 +122,10 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       await ref.read(membersProvider.notifier).loadMoreInvitations();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.membersInviteError('$e')));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _loadingMoreInvitations = false);
     }

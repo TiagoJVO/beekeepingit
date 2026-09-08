@@ -491,8 +491,7 @@ class AppShell extends ConsumerWidget {
           .read(notificationPreferencesRepositoryProvider)
           .isEnabled(notificationEventSyncConflict);
       if (!conflictsEnabled) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.syncSupersededNotice));
+      showAppToast(ScaffoldMessenger.of(context), l10n.syncSupersededNotice);
     });
 
     // Todo-due-reminder / sync-result notifications (#82, D-24) queued by
@@ -511,6 +510,17 @@ class AppShell extends ConsumerWidget {
     // notification_check_provider.dart) mean it resolves after this shell
     // has already mounted and registered this listener, for the same
     // reason `AppShell` itself only ever renders post-auth/onboarding.
+    //
+    // The ONE place that deliberately keeps `ScaffoldMessenger`'s queue
+    // (`showSnackBar`, not `showAppToast`): a batch carries several distinct
+    // messages and each has to be readable, so replacing would show only the
+    // last and silently drop the rest — and D-24's "notifies once per
+    // condition change" means a dropped one never re-fires. Unlike a
+    // confirmation, these are not about the screen underneath them: the shell
+    // raises them and the shell is every tab, so a later one landing on
+    // another tab is not the cross-screen leak #640 is about. The remaining
+    // rough edge — a user action's `showAppToast` clearing a batch still
+    // playing — is #821.
     ref.listen(notificationFeedProvider, (previous, next) {
       if (next.isEmpty) return;
       final messenger = ScaffoldMessenger.of(context);
