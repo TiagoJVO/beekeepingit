@@ -329,6 +329,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersRevokeSuccess => 'Invitation revoked.';
 
   @override
+  String memberNameFallback(String id) {
+    return 'Member $id';
+  }
+
+  @override
   String get memberRoleAdmin => 'Admin';
 
   @override
@@ -2208,6 +2213,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toastDetailsCloseAction => 'Close';
+
+  @override
+  String get notFoundTitle => 'Not found';
+
+  @override
+  String get notFoundMessage =>
+      'The link you followed doesn\'t lead anywhere in the app.\n\nIt may be out of date, or whatever it pointed to may have been deleted. Nothing else has changed — carry on from Home, or from any other area.';
+
+  @override
+  String get notFoundHomeAction => 'Go to Home';
 }
 
 /// The translations for English, as used in the United Kingdom (`en_GB`).

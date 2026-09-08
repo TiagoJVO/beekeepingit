@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -159,9 +160,7 @@ class _JourneyQuickCreateSheetState
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeySaveError('$e'))),
-      );
+      showAppToast(messenger, l10n.journeySaveError('$e'));
     }
   }
 

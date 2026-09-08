@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../core/widgets/tap_target.dart';
@@ -118,8 +119,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.journeyLoadError('$e'))));
+      showAppToast(ScaffoldMessenger.of(context), l10n.journeyLoadError('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -173,13 +173,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go('/journeys');
-      messenger.showSnackBar(SnackBar(content: Text(l10n.journeySaveSuccess)));
+      showAppToast(messenger, l10n.journeySaveSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeySaveError('$e'))),
-      );
+      showAppToast(messenger, l10n.journeySaveError('$e'));
     }
   }
 
@@ -198,13 +196,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
         _status = journeyStatusClosed;
         _busy = false;
       });
-      messenger.showSnackBar(SnackBar(content: Text(l10n.journeyCloseSuccess)));
+      showAppToast(messenger, l10n.journeyCloseSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeyCloseError('$e'))),
-      );
+      showAppToast(messenger, l10n.journeyCloseError('$e'));
     }
   }
 
@@ -231,15 +227,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
       if (!mounted) return;
       clearUnsavedChanges();
       context.go('/journeys');
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeyDeleteSuccess)),
-      );
+      showAppToast(messenger, l10n.journeyDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.journeyDeleteError('$e'))),
-      );
+      showAppToast(messenger, l10n.journeyDeleteError('$e'));
     }
   }
 

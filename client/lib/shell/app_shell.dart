@@ -491,8 +491,7 @@ class AppShell extends ConsumerWidget {
           .read(notificationPreferencesRepositoryProvider)
           .isEnabled(notificationEventSyncConflict);
       if (!conflictsEnabled) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.syncSupersededNotice));
+      showAppToast(ScaffoldMessenger.of(context), l10n.syncSupersededNotice);
     });
 
     // Todo-due-reminder / sync-result notifications (#82, D-24) queued by
@@ -511,6 +510,20 @@ class AppShell extends ConsumerWidget {
     // notification_check_provider.dart) mean it resolves after this shell
     // has already mounted and registered this listener, for the same
     // reason `AppShell` itself only ever renders post-auth/onboarding.
+    //
+    // The ONE place that deliberately keeps `ScaffoldMessenger`'s queue
+    // (`showSnackBar`, not `showAppToast`): a batch carries several distinct
+    // messages and each has to be readable, so replacing would show only the
+    // last and silently drop the rest — and D-24's "notifies once per
+    // condition change" means a dropped one never re-fires. Unlike a
+    // confirmation, these are not about the screen underneath them: the shell
+    // raises them and the shell is every tab, so a later one landing on
+    // another tab is not the cross-screen leak #640 is about. The remaining
+    // rough edge — any `showAppToast` clearing a batch still playing — is
+    // #821. That is not only a user action: the superseded-conflict listener
+    // a few lines above now clears too, so a conflict landing mid-batch
+    // discards the un-shown tail, and D-24's once-per-condition-change means
+    // it never re-fires.
     ref.listen(notificationFeedProvider, (previous, next) {
       if (next.isEmpty) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -570,6 +583,10 @@ class AppShell extends ConsumerWidget {
       'todoNew' => l10n.newTodoTitle,
       'todoDetail' => l10n.todoDetailTitle,
       'todoEdit' => l10n.editTodoTitle,
+      // #638: the not-found screen is pushed inside the home branch, so
+      // without this the header would title it "Home" — a small lie on the
+      // one screen whose whole job is to stop lying about where the user is.
+      'notFound' => l10n.notFoundTitle,
       _ => activeTab.label(l10n),
     };
   }

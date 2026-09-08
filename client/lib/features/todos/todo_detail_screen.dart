@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
@@ -69,23 +70,15 @@ class _TodoDetailScreenState extends ConsumerState<TodoDetailScreen> {
         await repo.complete(todo.id);
       }
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            todo.isDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
-          ),
-        ),
+      showAppToast(
+        messenger,
+        todo.isDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            todo.isDone
-                ? l10n.todoReopenError('$e')
-                : l10n.todoCompleteError('$e'),
-          ),
-        ),
+      showAppToast(
+        messenger,
+        todo.isDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

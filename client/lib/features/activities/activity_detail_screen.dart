@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/sync/powersync_schema.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
@@ -80,15 +81,11 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
       await repo.delete(widget.activityId);
       if (!mounted) return;
       context.go('/apiaries/${widget.apiaryId}');
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.activityDeleteSuccess)),
-      );
+      showAppToast(messenger, l10n.activityDeleteSuccess);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.activityDeleteError('$e'))),
-      );
+      showAppToast(messenger, l10n.activityDeleteError('$e'));
     }
   }
 

@@ -330,6 +330,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get membersRevokeSuccess => 'Convite revogado.';
 
   @override
+  String memberNameFallback(String id) {
+    return 'Membro $id';
+  }
+
+  @override
   String get memberRoleAdmin => 'Administrador';
 
   @override
@@ -2223,6 +2228,16 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get toastDetailsCloseAction => 'Fechar';
+
+  @override
+  String get notFoundTitle => 'Não encontrado';
+
+  @override
+  String get notFoundMessage =>
+      'A ligação que seguiu não leva a lado nenhum na aplicação.\n\nPode estar desatualizada ou aquilo para onde apontava pode ter sido eliminado. O resto não mudou — continue a partir do Início ou de qualquer outra área.';
+
+  @override
+  String get notFoundHomeAction => 'Ir para o Início';
 }
 
 /// The translations for Portuguese, as used in Portugal (`pt_PT`).

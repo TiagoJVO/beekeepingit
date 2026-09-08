@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/content_column.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
+import 'member_display.dart';
 import 'members_repository.dart';
 
 /// Admin-only organization members + invitations screen (FR-ONB-3, D-3,
@@ -57,8 +59,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           .invite(email: _emailController.text.trim());
       if (!mounted) return;
       _emailController.clear();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.membersInviteSuccess);
     } on ApiException catch (e) {
       if (!mounted) return;
       final fieldErrors = {
@@ -67,14 +68,17 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       if (fieldErrors.containsKey('email')) {
         setState(() => _emailError = fieldErrors['email']);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.membersInviteError(e.detail))),
+        showAppToast(
+          ScaffoldMessenger.of(context),
+          l10n.membersInviteError(e.detail),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _inviting = false);
     }
@@ -86,12 +90,13 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     try {
       await ref.read(membersProvider.notifier).revokeInvitation(invitationId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersRevokeSuccess)));
+      showAppToast(ScaffoldMessenger.of(context), l10n.membersRevokeSuccess);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _revokingIds.remove(invitationId));
     }
@@ -103,8 +108,10 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       await ref.read(membersProvider.notifier).loadMoreMembers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _loadingMoreMembers = false);
     }
@@ -116,8 +123,10 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       await ref.read(membersProvider.notifier).loadMoreInvitations();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.membersInviteError('$e'))));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.membersInviteError('$e'),
+      );
     } finally {
       if (mounted) setState(() => _loadingMoreInvitations = false);
     }
@@ -127,6 +136,21 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(membersProvider);
+    // The org roster (`user_id -> display name`, #44/FR-TEN-2) that every
+    // other feature already resolves an id against — activities, todos and
+    // history all read it exactly this way. Watched once here and passed
+    // down rather than per row, so one list of N members holds one
+    // subscription, not N.
+    //
+    // `.value ?? {}` on purpose (the same shape activity_list_widgets.dart
+    // and history_section.dart use): the roster is ONLINE-ONLY and
+    // best-effort — loading, offline, and a failed fetch all resolve to an
+    // empty map, and a row then degrades to a short id fragment rather than
+    // blocking or erroring this screen. Its own data (memberships) is a
+    // separate, admin-only fetch that has already succeeded by the time a
+    // row renders.
+    final memberNames =
+        ref.watch(memberNamesProvider).value ?? const <String, String>{};
 
     return Scaffold(
       appBar: AppBar(
@@ -246,7 +270,9 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 if (data.members.isEmpty)
                   Text(l10n.membersEmpty)
                 else
-                  ...data.members.map((m) => _MemberTile(member: m)),
+                  ...data.members.map(
+                    (m) => _MemberTile(member: m, memberNames: memberNames),
+                  ),
                 // Cursor-pagination "load more" (MEDIUM finding: the server
                 // implements limit/cursor/page.next_cursor but the client used
                 // to ignore it, silently hiding anything past the server's
@@ -330,17 +356,35 @@ String _invitationStatusLabel(AppLocalizations l10n, String status) =>
 /// `'admin · active'`) lives in one place and [_MembersScreenState.build]
 /// stays smaller.
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.member});
+  const _MemberTile({required this.member, required this.memberNames});
 
   final Member member;
+
+  /// The caller's org roster (`user_id -> display name`) from
+  /// `memberNamesProvider`, resolved by [memberIdentityLabel]. Empty offline,
+  /// before the first fetch, or after a failed one — see the owning screen's
+  /// own comment.
+  final Map<String, String> memberNames;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return ListTile(
+      // Keyed by the id, titled by the NAME (#582, FR-TEN-2): a widget key
+      // is never read aloud or painted, so it stays the stable, unique id
+      // while the row shows something a person can read.
       key: Key('member-${member.userId}'),
       contentPadding: EdgeInsets.zero,
-      title: Text(member.userId),
+      // Bounded (#582, D-18): the name is authored outside this app and the
+      // server accepts up to 200 characters, so an unbounded title could grow
+      // the row without limit — and at 200% text scale even an ordinary name
+      // needs the ellipsis. Two lines rather than one so a genuinely long name
+      // stays readable at that scale.
+      title: Text(
+        memberIdentityLabel(l10n, member.userId, memberNames),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: Text(
         '${_roleLabel(l10n, member.role)} · '
         '${_memberStatusLabel(l10n, member.status)}',
@@ -374,7 +418,18 @@ class _InvitationTile extends StatelessWidget {
     return ListTile(
       key: Key('invitation-${invitation.id}'),
       contentPadding: EdgeInsets.zero,
-      title: Text(invitation.email),
+      // The invited address stays the row's title (#582): an invitation has
+      // no user account yet, so there is no name to resolve and no id worth
+      // showing — the email IS the invitee's identity, and it reads as a
+      // person's identifier beside a named member rather than as an internal
+      // code. Bounded exactly like [_MemberTile]'s title (D-18, FR-AX-1) so
+      // the two lists degrade the same way at 200% text scale; an address can
+      // be up to 320 octets and would otherwise grow the row without limit.
+      title: Text(
+        invitation.email,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: Text(
         '${_roleLabel(l10n, invitation.role)} · '
         '${_invitationStatusLabel(l10n, invitation.status)}',

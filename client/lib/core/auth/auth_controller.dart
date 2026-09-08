@@ -418,6 +418,13 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // `ref.mounted` guards against the async gap above racing this
     // controller's own disposal (e.g. a test container torn down mid-await;
     // see auth_controller_test.dart) — invalidating a disposed Ref throws.
+    // #664/D-38: invalidate the OWNER classification too, and before the
+    // provider that reads it. `storeOwnerProvider` is not autoDispose, so a
+    // rebuild would otherwise re-run the ownership check against the *stale*
+    // KnownOwner cached from the session that is going away — re-stamping
+    // `bk.local_store_subject` with a subject whose session just ended, which
+    // is exactly the identifier `clearPerUserPrefs` is there to drop.
+    if (ref.mounted) ref.invalidate(storeOwnerProvider);
     if (ref.mounted) ref.invalidate(powerSyncProvider);
 
     // Clear local session state — the redirect below may never complete
@@ -510,16 +517,16 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         // Non-web target: there is no real session storage to clear.
       }
     }
-    final prefs = _localPrefs();
-    prefs.remove(kProfileCacheKey);
-    prefs.remove(kOrganizationCacheKey);
-    prefs.remove(kAutoSyncEnabledKey);
-    prefs.remove(kNotificationsEnabledKey);
-    // #82: the notification engine's per-event preferences and its
-    // "already notified for this condition" dedup state are per-user too —
-    // see kNotificationPreferencesKey/kNotificationDedupStateKey's own docs.
-    prefs.remove(kNotificationPreferencesKey);
-    prefs.remove(kNotificationDedupStateKey);
+    // Every per-user key in one list (`kPerUserPrefsKeys`), shared with #664's
+    // subject-change purge so the two cannot drift apart — the onboarding
+    // snapshots (#390), the device-local sync/notification settings (#81), the
+    // notification engine's preferences and dedup state (#82), and the marker
+    // naming whose OIDC subject the local store was opened for (#664, D-38).
+    // Dropping that last one is safe by construction: a missing marker fails
+    // CLOSED in `ensureLocalStoreBelongsTo`, so the next sign-in purges rather
+    // than trusts — which also covers the case where the best-effort store
+    // wipe above failed.
+    clearPerUserPrefs(_localPrefs());
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when

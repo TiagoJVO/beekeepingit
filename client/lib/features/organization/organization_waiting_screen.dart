@@ -81,8 +81,10 @@ class _OrganizationWaitingScreenState
       // Narrowed to Exception, and a FIXED localized message — the same rule
       // the profile screen follows: a raw exception is never field-user text.
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(appToast(l10n.organizationWaitingCheckError));
+      showAppToast(
+        ScaffoldMessenger.of(context),
+        l10n.organizationWaitingCheckError,
+      );
     } finally {
       if (mounted) setState(() => _checking = false);
     }

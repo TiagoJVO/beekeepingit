@@ -248,6 +248,38 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // #639 (FR-AP-10, FR-UX-2, FR-AX-1): this route is declared OUTSIDE the app
+  // shell, so it carries neither the shell's bottom navigation nor its back
+  // action — and its own AppBar had no `leading`. The screen was a hard dead
+  // end: once here, the only way out was the browser/OS back gesture.
+  //
+  // Mirrors the same guard the members and account screens already carry
+  // (`members-back-button`, `account-back-button`). Where it LANDS is pinned
+  // by the live-router sweep in test/routing/pushed_screen_exit_test.dart;
+  // this harness has no GoRouter, so it only pins presence + a11y label.
+  group('the app bar offers a way back (#639, FR-UX-2)', () {
+    testWidgets('the app bar has a back button', (tester) async {
+      await tester.pumpWidget(_buildScreen(orgRegistrationNumber: 'PT-111'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('stock-declarations-back-button')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the back button has a tooltip/semantic label', (tester) async {
+      await tester.pumpWidget(_buildScreen(orgRegistrationNumber: 'PT-111'));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('stock-declarations-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    });
+  });
 }
 
 /// The record flow (#298): recording asks for the declaration date and an

@@ -13,6 +13,7 @@
 /// worth nothing.
 library;
 
+import 'package:beekeepingit_client/core/widgets/app_toast.dart';
 import 'package:beekeepingit_client/theming/brand_dimens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,16 +84,26 @@ Rect toastRect(WidgetTester tester) => tester.getRect(
       .first,
 );
 
-/// Raises a toast the way every call site does — hand it to the messenger
-/// from whatever screen is up and let the enclosing `Scaffold` place it.
+/// Raises a toast the way every call site does — through [showAppToast], from
+/// the messenger of whatever screen is up, and let the enclosing `Scaffold`
+/// place it.
+///
+/// Goes through the real helper rather than a bare `SnackBar` so these
+/// assertions measure the bar the app actually ships: since `#640` every call
+/// site renders `appToast`'s bounded content, which is *shorter* than an
+/// unbounded `Text` at large scales. A plain bar would keep the band
+/// assertions passing (it is only ever taller) while measuring a shape that
+/// no longer exists.
 ///
 /// [message] has no default on purpose. The band a screen reserves is sized
 /// against the toasts *that screen* raises, and toast height is all message
 /// length: pass the screen's own ARB copy, not a placeholder, or the
 /// assertion measures a message the user will never see.
 Future<void> showToast(WidgetTester tester, {required String message}) async {
-  ScaffoldMessenger.of(tester.element(find.byType(Scaffold).first))
-      .showSnackBar(SnackBar(content: Text(message)));
+  showAppToast(
+    ScaffoldMessenger.of(tester.element(find.byType(Scaffold).first)),
+    message,
+  );
   await tester.pumpAndSettle();
 }
 

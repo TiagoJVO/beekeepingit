@@ -25,12 +25,19 @@ const apiaryVisitRecencyDays = 30;
 /// what [DateTime.parse] of such a string already returns.
 DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-/// Whole days between two calendar days, counted on **UTC** midnights.
+/// Whole days between two calendar days, counted on **UTC** midnights — the
+/// client's one day-difference convention, shared verbatim with
+/// `todo_due.dart`'s own `_daysBetween` and `home_screen.dart`'s `_daysLate`.
 ///
-/// Subtracting local midnights would silently lose (or gain) an hour across a
-/// DST transition, turning a 30-day gap into `inDays == 29` and flipping the
-/// [apiaryVisitRecencyDays] boundary twice a year. These UTC instants are
-/// never stored or displayed — they exist only for this subtraction.
+/// Subtracting local midnights would silently lose an hour across the
+/// spring-forward DST transition, turning a 30-day gap into `inDays == 29` and
+/// flipping the [apiaryVisitRecencyDays] boundary once a year. (Falling back
+/// gains an hour instead, which [Duration.inDays] truncates straight back off —
+/// so only the spring half is a real hazard; #665 measured both.) These UTC
+/// instants are never stored or displayed — they exist only for this
+/// subtraction. The todo due-soon rule shipped with the local-midnight version
+/// of this subtraction until #665 moved it onto this one, so the two now answer
+/// "how many days apart are these dates?" identically.
 int _daysBetween(DateTime from, DateTime to) => DateTime.utc(
   to.year,
   to.month,

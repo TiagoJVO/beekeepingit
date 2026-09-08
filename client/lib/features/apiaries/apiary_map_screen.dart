@@ -172,9 +172,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
       case DeviceLocationAvailable(:final lon, :final lat):
         _mapController.move(ll.LatLng(lat, lon), _streetZoom);
       default:
-        messenger.showSnackBar(
-          appToast(l10n.apiaryMapLocationPermissionDenied),
-        );
+        showAppToast(messenger, l10n.apiaryMapLocationPermissionDenied);
     }
   }
 

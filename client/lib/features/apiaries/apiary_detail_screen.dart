@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/actions_speed_dial.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -505,9 +506,7 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.apiarySaveError('$e'))),
-      );
+      showAppToast(messenger, l10n.apiarySaveError('$e'));
     }
   }
 

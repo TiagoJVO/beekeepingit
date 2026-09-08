@@ -15,6 +15,7 @@ import 'package:beekeepingit_client/features/settings/sync_settings_repository.d
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
+import 'package:beekeepingit_client/theming/brand_dimens.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -1001,5 +1002,98 @@ void main() {
         },
       );
     }
+  });
+
+  // #813 (FR-UX-2, FR-AX-1, D-18): the `_fieldErrors.isEmpty` branch of
+  // `_save()` still built a bare `SnackBar(content: Text(...))` around
+  // `l10n.profileSaveError(e.detail)`. RFC 9457's `detail` is free-text and
+  // server-controlled with no length bound (see the doc comment on
+  // `ApiException.detail` in core/api/api_client.dart), so a realistic
+  // validation sentence from the server could grow that toast arbitrarily
+  // tall — exactly the #790/appToast bound this screen's other toasts
+  // already respect.
+  group('unbounded server detail on the error-path toast (#813, FR-UX-2, '
+      'FR-AX-1, D-18)', () {
+    // FIXTURE standing in for server-controlled copy: RFC 9457 `detail` is
+    // free-text with no length bound, so this is a plausible server
+    // validation message, not real backend copy.
+    const longDetail =
+        'The name must be between 1 and 100 characters and must not '
+        'contain accented or control characters, and the field cannot be '
+        'blank.';
+
+    // The exact shape `app_toast_test.dart` uses — deliberately NOT the
+    // `useFieldPhone` already imported from `support/bottom_chrome.dart`
+    // above, which bakes a 34px safe-area inset into the toast's own
+    // Material (its own doc comment says so). `BrandDimens.scrollBottomInset`
+    // is calibrated against the bare viewport, same as the assertion below.
+    void useBareFieldPhone(WidgetTester tester, {double textScale = 1}) {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    }
+
+    Future<void> pumpAndSave(WidgetTester tester) async {
+      final controller = _FakeProfileController(
+        _profile(),
+        onSubmit: ({name, email, locale}) async {
+          throw const ApiException(
+            statusCode: 422,
+            code: 'validation_failed',
+            detail: longDetail,
+            // Deliberately the default empty fieldErrors: this drives the
+            // `_fieldErrors.isEmpty` branch (the toast), not the per-field
+            // branch #750 already covers above.
+          );
+        },
+      );
+      await tester.pumpWidget(_buildScreen(controller));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('account-save-button')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('stays within the reserved band at 200% text', (tester) async {
+      useBareFieldPhone(tester, textScale: 2);
+
+      await pumpAndSave(tester);
+
+      final height = toastRect(tester).height;
+      expect(
+        height,
+        lessThanOrEqualTo(BrandDimens.scrollBottomInset),
+        reason:
+            'an error toast carrying a server-supplied detail must fit the '
+            'band a scrollable reserves for it '
+            '(${BrandDimens.scrollBottomInset}); it measured $height',
+      );
+    });
+
+    testWidgets(
+      'still makes the full detail reachable via the Details affordance',
+      (tester) async {
+        useBareFieldPhone(tester, textScale: 2);
+
+        await pumpAndSave(tester);
+
+        expect(find.byKey(const Key('toast-details-action')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('toast-details-action')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('toast-details-dialog')), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('toast-details-dialog')),
+            matching: find.textContaining(longDetail),
+          ),
+          findsOneWidget,
+          reason: 'the dialog must show the interpolated message in full',
+        );
+      },
+    );
   });
 }
