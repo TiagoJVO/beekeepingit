@@ -386,9 +386,27 @@ void main() {
           .go('/assistant');
       await tester.pumpAndSettle();
 
-      // No branch matches it any more, so the shell itself is gone (go_router
-      // renders its unknown-route page instead of a tab).
-      expect(find.byKey(const Key('shell-bottom-nav')), findsNothing);
+      // No branch matches it any more, so it is simply an unknown location and
+      // the app answers with the not-found screen (#638).
+      //
+      // This assertion used to read `shell-bottom-nav` findsNothing — the
+      // shell vanished, because go_router's own fallback page is built by the
+      // ROOT navigator. That was never this test's point (#658 retired a tab,
+      // it said nothing about chrome); it was the framework's behaviour
+      // showing through, and #638 is precisely the report that it strands the
+      // user. The shell now survives, so what this pins is the part #658
+      // actually owns: no tab renders the retired Assistant placeholder.
+      expect(find.byKey(const Key('not-found-message')), findsOneWidget);
+      expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
+
+      final nav = tester.widget<NavigationBar>(
+        find.byKey(const Key('shell-bottom-nav')),
+      );
+      expect(
+        nav.destinations.length,
+        5,
+        reason: 'the five tabs D-35 settles on — Assistant is not among them',
+      );
     },
   );
 
