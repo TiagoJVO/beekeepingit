@@ -71,10 +71,8 @@ String journeyDetailLocation({
     : '/journeys/$journeyId';
 
 /// Where an apiary's detail lives for a tap made at [from].
-String apiaryDetailLocation({
-  required String from,
-  required String apiaryId,
-}) => isInHomeBranch(from)
+String apiaryDetailLocation({required String from, required String apiaryId}) =>
+    isInHomeBranch(from)
     ? '$homeBranchRoot/apiaries/$apiaryId'
     : '/apiaries/$apiaryId';
 
@@ -109,10 +107,8 @@ String activityDetailLocation({
 /// [ownerList] is the entity's own list route, which is the right answer
 /// everywhere except a branch-local copy: a record opened from Home that no
 /// longer exists returns the user to Home, not to a tab they never chose.
-String recordGoneLocation({
-  required String from,
-  required String ownerList,
-}) => isInHomeBranch(from) ? homeBranchRoot : ownerList;
+String recordGoneLocation({required String from, required String ownerList}) =>
+    isInHomeBranch(from) ? homeBranchRoot : ownerList;
 
 /// The location of the page calling from [context] — the `from` every
 /// function above takes.
