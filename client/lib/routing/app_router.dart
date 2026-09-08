@@ -101,11 +101,22 @@ const _notFoundLocation = '/home/not-found';
 /// would undo #638's reason for nesting this route under `/home` — the shell's
 /// Back has to pop somewhere real. Only the history entry is replaced.
 ///
+/// WEIGHED, not overlooked: every `GoException` lands in `onException`, not
+/// just an unmatched inbound URL, and when one is raised by an in-app hop (a
+/// stale in-app link, or anything thrown out of `redirect`) the entry being
+/// overwritten is the page the user was ON, not a failed URL — so browser Back
+/// then skips that page. That is the lesser harm: the shell's Back and the
+/// screen's own action both still reach Home, whereas the pushing version
+/// traps Back on a URL that leads nowhere, which is the defect.
+///
 /// The context has to come from the navigator, not from the one `onException`
 /// hands us: that one is the `Router` element itself, which sits ABOVE the
-/// scope [Router.neglect] looks up. On the very first parse of a cold load
-/// there is no navigator yet, and the plain `go()` fallback is correct there
-/// anyway — nothing of this app's is in that tab's history to step back to.
+/// scope [Router.neglect] looks up — passing it would throw on the lookup's
+/// own null assertion. On the very first parse of a cold load there is no
+/// navigator yet; the plain `go()` fallback is correct there because go_router
+/// has not reported anything to the engine yet, and its first report replaces
+/// unconditionally. That is a go_router internal, so the cold-load case is
+/// pinned by its own test rather than left resting on this comment.
 void _goToNotFound(GoRouter router) {
   final navigatorContext = router.routerDelegate.navigatorKey.currentContext;
   if (navigatorContext == null) {

@@ -423,23 +423,68 @@ void main() {
       );
     });
 
-    testWidgets('the shell back control still returns to Home after the '
-        'replace', (tester) async {
+    // The journey the issue actually describes — "a user arriving from a
+    // stale bookmark or a shared link" — is a COLD document load on web, and
+    // it takes the other branch of `_goToNotFound`: there is no navigator yet
+    // on the first parse, so the plain `go()` fallback runs and `Router
+    // .neglect` never gets a say. It replaces anyway, because go_router's
+    // provider has reported nothing to the engine yet — an internal of a
+    // pinned dependency, which is exactly the kind of thing that deserves a
+    // test rather than a comment.
+    testWidgets('a COLD load straight onto the unmatched location replaces '
+        'too, without a navigator to neglect through', (tester) async {
+      tester.platformDispatcher.defaultRouteNameTestValue = _unmatchedLocation;
+      addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+
+      // Installed before the first frame: on this path the app's own cold
+      // start IS the navigation under test, so nothing may be excluded.
+      final historyWrites = _recordHistoryWrites(tester);
+
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      final router = await _goToUnmatched(tester);
+      expect(
+        _locationOf(_routerOf(tester)),
+        '/home/not-found',
+        reason: 'the precondition: the cold load reached the screen',
+      );
+      expect(historyWrites, isNotEmpty, reason: 'the same precondition');
+      expect(
+        historyWrites,
+        everyElement(isTrue),
+        reason:
+            'a cold load has the failed URL as the tab\'s CURRENT entry, with '
+            'the referring page behind it — pushing here is #841 exactly '
+            '(FR-UX-2, D-10)',
+      );
+    });
 
-      await tester.tap(find.byKey(const Key('shell-back-button')));
+    // Not re-asserting "the shell back control returns to Home" — the case of
+    // that name in "there is a way out" above already runs against this fix
+    // and would fail if the replace had flattened the page stack. What it
+    // cannot see is the stack ITSELF, which is the property the "history, not
+    // pages" claim rests on, so that is what this pins.
+    testWidgets('the PAGE stack under the not-found screen is untouched by '
+        'the history replace', (tester) async {
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
+      await _goToUnmatched(tester);
+
       expect(
-        _locationOf(router),
-        '/home',
+        find.byKey(const Key('shell-back-button')),
+        findsOneWidget,
         reason:
-            'replacing the HISTORY entry must not flatten the PAGE stack — '
-            '#638 nested this route under /home precisely so Back pops '
-            'somewhere real',
+            'the shell offers Back only when the branch has something to pop '
+            '— /home still sits under the not-found page (#638)',
+      );
+      expect(
+        tester.state<NavigatorState>(find.byType(Navigator).last).canPop(),
+        isTrue,
+        reason:
+            'replacing the HISTORY entry must not flatten the PAGE stack: '
+            'go_router\'s replace()/pushReplacement() would have dropped '
+            '/home from underneath, which is why the fix stays a go() (#841)',
       );
     });
   });

@@ -13,9 +13,10 @@ i18n en-GB/pt-PT (`lib/l10n/`, D-34), accessibility + gloves-friendly targets. E
 redirect gate:  !auth → /login │ profile incomplete → /profile │ no org → /organization/new
 onException:    any unmatched location → /home/not-found (#638; logs the attempted URI, never
                 renders it — `onException` rather than `errorBuilder` precisely because
-                `errorBuilder` draws outside the shell by construction. The hop runs under
-                `Router.neglect`, so it REPLACES the browser history entry of the URL that
-                failed instead of stacking on it — #841)
+                `errorBuilder` draws outside the shell by construction. The hop REPLACES the
+                browser history entry of the URL that failed instead of stacking on it —
+                under `Router.neglect` once the app is running, and by go_router's own
+                first-report semantics on a cold load — #841)
 /login                     LoginScreen            features/auth
 /profile                   ProfileScreen          features/profile   (onboarding FR-ONB-1)
 /organization/new          OrganizationScreen     features/organization (onboarding FR-ONB-2)
