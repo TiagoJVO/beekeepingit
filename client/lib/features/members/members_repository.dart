@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../organization/organization_repository.dart';
+import 'member_display.dart';
 
 /// An organization member
 /// (contracts/openapi/organizations.openapi.yaml's Member schema, #27).
@@ -120,9 +121,11 @@ class MembersRepository {
   /// `user_id -> display name` map, for resolving per-user attribution (#44,
   /// FR-TEN-2). Unlike [listMembers] (admin-only server-side), the
   /// `/members/names` endpoint is readable by ANY active member, so this
-  /// works for a plain user too. Members whose name is empty (incomplete or
-  /// removed profile) are omitted, so the caller falls back to a short id
-  /// fragment for them rather than showing a blank attribution.
+  /// works for a plain user too. Every name is put through
+  /// [sanitizedMemberName] (#582), and a member left with nothing readable —
+  /// an empty name, a whitespace-only one, or one that was nothing but
+  /// invisible codepoints — is omitted, so the caller falls back to a short
+  /// id fragment rather than showing a blank (or a forged) attribution.
   Future<Map<String, String>> listMemberNames(String orgId) async {
     final names = <String, String>{};
     String? cursor;
@@ -132,7 +135,24 @@ class MembersRepository {
       );
       final page = _page(json, MemberName.fromJson);
       for (final m in page.items) {
-        if (m.name.isNotEmpty) names[m.userId] = m.name;
+        // Sanitized on the way IN (#582, NFR-SEC-1): a name is authored
+        // outside this app, and one that is blank, whitespace-only, or
+        // nothing but invisible codepoints must never reach a caller — every
+        // consumer's "no name available" branch then covers all three the
+        // same way.
+        //
+        // The render sites (activity_display, history_display, todo_display,
+        // todo_assignee_picker_field, member_display's memberIdentityLabel)
+        // sanitize AGAIN, deliberately — not because this call is
+        // insufficient. Each of those is a public function over a
+        // caller-supplied `Map<String, String>`, so it cannot know its
+        // argument came through here; a test, a future second reader of
+        // `/members/names`, or an admin-app port would otherwise get an
+        // unfiltered name with no compile-time warning. `sanitizedMemberName`
+        // is idempotent and cheap, so the second pass costs a rune scan and
+        // buys the guarantee at the boundary that actually renders.
+        final name = sanitizedMemberName(m.name);
+        if (name != null) names[m.userId] = name;
       }
       cursor = page.nextCursor;
     } while (cursor != null);
