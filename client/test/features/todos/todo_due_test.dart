@@ -241,4 +241,187 @@ void main() {
       expect(todoDueBucket(todo, lateToday), TodoDueBucket.dueSoon);
     });
   });
+
+  // #665. Europe/Lisbon — this project's own zone, and the one every date in
+  // this group is chosen for — springs forward on **2026-03-29** and falls
+  // back on **2026-10-25**. `todoDueBucket` used to subtract LOCAL midnights,
+  // which across the spring transition is 23 hours short of the calendar gap:
+  // `Duration.inDays` truncated a real 3-day gap to 2 and bucketed the todo
+  // `dueSoon` (and notified, D-24) a day early. The autumn transition inflates
+  // the same subtraction to 25 hours, which `inDays` truncates straight back
+  // down — so autumn was already correct; it is pinned here so the UTC rule
+  // can't regress it in the other direction.
+  //
+  // Every expectation below is just the plain calendar-day gap against the
+  // priority's own window. That is the point: counting on UTC midnights makes
+  // the answer independent of whichever zone the test process happens to run
+  // in, so these cases read the same in a DST zone and in UTC.
+  //
+  // **These cases only BITE in a DST-observing zone**, and Dart reads the
+  // process's local zone with no way for a test to change it: on a UTC host
+  // every midnight is 24 hours apart, so both conventions agree and the group
+  // passes either way. That is why `flutter test` is invoked with
+  // `TZ=Europe/Lisbon` in build-publish.yml and release-deploy.yml — without a
+  // pinned zone this is documentation, not a regression guard.
+  group('todoDueBucket across a DST transition', () {
+    final cases =
+        <
+          ({
+            String name,
+            String priority,
+            DateTime today,
+            String dueDate,
+            TodoDueBucket? expected,
+          })
+        >[
+          // Spring forward (2026-03-29). Each priority is pinned at both edges
+          // of its own window while the window straddles the transition: one
+          // day too far out (not bucketed) and exactly at the window
+          // (dueSoon). The "too far out" rows are the ones that used to fire a
+          // day early.
+          (
+            name: 'high is not bucketed 4 days out across spring forward',
+            priority: todoPriorityHigh,
+            today: DateTime(2026, 3, 26),
+            dueDate: '2026-03-30',
+            expected: null,
+          ),
+          (
+            name: 'high is dueSoon 3 days out across spring forward',
+            priority: todoPriorityHigh,
+            today: DateTime(2026, 3, 27),
+            dueDate: '2026-03-30',
+            expected: TodoDueBucket.dueSoon,
+          ),
+          (
+            name: 'medium is not bucketed 3 days out across spring forward',
+            priority: todoPriorityMedium,
+            today: DateTime(2026, 3, 27),
+            dueDate: '2026-03-30',
+            expected: null,
+          ),
+          (
+            name: 'medium is dueSoon 2 days out across spring forward',
+            priority: todoPriorityMedium,
+            today: DateTime(2026, 3, 28),
+            dueDate: '2026-03-30',
+            expected: TodoDueBucket.dueSoon,
+          ),
+          (
+            name: 'low is not bucketed 2 days out across spring forward',
+            priority: todoPriorityLow,
+            today: DateTime(2026, 3, 28),
+            dueDate: '2026-03-30',
+            expected: null,
+          ),
+          (
+            name: 'low is dueSoon 1 day out across spring forward',
+            priority: todoPriorityLow,
+            today: DateTime(2026, 3, 29),
+            dueDate: '2026-03-30',
+            expected: TodoDueBucket.dueSoon,
+          ),
+          // Autumn back (2026-10-25), same window edges.
+          (
+            name: 'high is not bucketed 4 days out across autumn back',
+            priority: todoPriorityHigh,
+            today: DateTime(2026, 10, 22),
+            dueDate: '2026-10-26',
+            expected: null,
+          ),
+          (
+            name: 'high is dueSoon 3 days out across autumn back',
+            priority: todoPriorityHigh,
+            today: DateTime(2026, 10, 23),
+            dueDate: '2026-10-26',
+            expected: TodoDueBucket.dueSoon,
+          ),
+          (
+            name: 'medium is not bucketed 3 days out across autumn back',
+            priority: todoPriorityMedium,
+            today: DateTime(2026, 10, 23),
+            dueDate: '2026-10-26',
+            expected: null,
+          ),
+          (
+            name: 'medium is dueSoon 2 days out across autumn back',
+            priority: todoPriorityMedium,
+            today: DateTime(2026, 10, 24),
+            dueDate: '2026-10-26',
+            expected: TodoDueBucket.dueSoon,
+          ),
+          (
+            name: 'low is not bucketed 2 days out across autumn back',
+            priority: todoPriorityLow,
+            today: DateTime(2026, 10, 24),
+            dueDate: '2026-10-26',
+            expected: null,
+          ),
+          (
+            name: 'low is dueSoon 1 day out across autumn back',
+            priority: todoPriorityLow,
+            today: DateTime(2026, 10, 25),
+            dueDate: '2026-10-26',
+            expected: TodoDueBucket.dueSoon,
+          ),
+        ];
+
+    for (final c in cases) {
+      test(c.name, () {
+        final todo = _todo(priority: c.priority, dueDate: c.dueDate);
+
+        expect(todoDueBucket(todo, c.today), c.expected);
+      });
+    }
+
+    test('every day of both transition weeks is bucketed by the true '
+        'calendar-day gap', () {
+      // The expected gap, stated as a UTC day number rather than reused from
+      // the code under test. It is the same rule restated, not an independent
+      // derivation — what it buys is breadth: every day of both transition
+      // weeks against every priority, where hand-written rows cover six.
+      int dayNumber(DateTime d) =>
+          DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/
+          Duration.millisecondsPerDay;
+
+      for (final transition in [
+        DateTime(2026, 3, 29),
+        DateTime(2026, 10, 25),
+      ]) {
+        for (var todayOffset = -4; todayOffset <= 4; todayOffset++) {
+          final today = DateTime(
+            transition.year,
+            transition.month,
+            transition.day + todayOffset,
+          );
+          for (var dueOffset = 0; dueOffset <= 5; dueOffset++) {
+            final due = DateTime(
+              today.year,
+              today.month,
+              today.day + dueOffset,
+            );
+            final gap = dayNumber(due) - dayNumber(today);
+            for (final priority in const [
+              todoPriorityLow,
+              todoPriorityMedium,
+              todoPriorityHigh,
+            ]) {
+              final todo = _todo(priority: priority, dueDate: _isoDate(due));
+              final expected = gap <= dueSoonWindowDays(priority)
+                  ? TodoDueBucket.dueSoon
+                  : null;
+
+              expect(
+                todoDueBucket(todo, today),
+                expected,
+                reason:
+                    'priority=$priority today=${_isoDate(today)} '
+                    'due=${_isoDate(due)} is a $gap-day gap',
+              );
+            }
+          }
+        }
+      }
+    });
+  });
 }
