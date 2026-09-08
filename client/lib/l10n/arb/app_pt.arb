@@ -81,6 +81,14 @@
   "invitationsEmpty": "Ainda não há convites.",
   "membersRevokeButton": "Revogar convite",
   "membersRevokeSuccess": "Convite revogado.",
+  "memberNameFallback": "Membro {id}",
+  "@memberNameFallback": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "memberRoleAdmin": "Administrador",
   "memberRoleUser": "Membro",
   "memberStatusActive": "Ativo",

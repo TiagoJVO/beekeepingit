@@ -128,13 +128,25 @@ class _ThrowingMembersController extends MembersController {
   }
 }
 
-Widget _buildScreen(MembersController controller) {
+Widget _buildScreen(
+  MembersController controller, {
+  Map<String, String> memberNames = const {},
+  Locale? locale,
+}) {
   return ProviderScope(
-    overrides: [membersProvider.overrideWith(() => controller)],
-    child: const MaterialApp(
+    overrides: [
+      membersProvider.overrideWith(() => controller),
+      // The screen watches `memberNamesProvider` (#582) to resolve a member
+      // id to a real name; the real provider would attempt a network fetch
+      // this widget test never wires up — same override convention as
+      // todo_detail_screen_test.dart / history_section_test.dart.
+      memberNamesProvider.overrideWith((ref) async => memberNames),
+    ],
+    child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: kSupportedLocales,
-      home: MembersScreen(),
+      locale: locale,
+      home: const MembersScreen(),
     ),
   );
 }
@@ -215,6 +227,155 @@ void main() {
     expect(find.byKey(const Key('member-admin-1')), findsOneWidget);
     expect(find.byKey(const Key('invitation-inv-1')), findsOneWidget);
     expect(find.text('invitee@example.com'), findsOneWidget);
+  });
+
+  // #582 (FR-TEN-2, FR-ONB-1, NFR-I18N-1, FR-AX-1, D-18): the members list
+  // printed the raw 36-character user UUID as a row's title and never read
+  // the org roster at all — while every other feature (activities, todos,
+  // history) resolves the SAME roster to a real display name and falls back
+  // to a short id fragment, never the full id.
+  group('member identity display (#582, FR-TEN-2)', () {
+    const uuid = '3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+
+    Future<void> pumpMembers(
+      WidgetTester tester, {
+      Map<String, String> memberNames = const {},
+      List<Invitation> invitations = const [],
+      Locale? locale,
+    }) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeMembersController(
+            MembersState(
+              members: [_member(userId: uuid, role: 'admin')],
+              invitations: invitations,
+            ),
+          ),
+          memberNames: memberNames,
+          locale: locale,
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a member in the roster renders their real display name, and the raw '
+      'UUID appears nowhere on screen',
+      (tester) async {
+        await pumpMembers(tester, memberNames: const {uuid: 'Ana Silva'});
+
+        expect(find.text('Ana Silva'), findsOneWidget);
+        expect(find.text(uuid), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the row keeps its localized role/status subtitle beside the name',
+      (tester) async {
+        await pumpMembers(tester, memberNames: const {uuid: 'Ana Silva'});
+
+        expect(find.text('Admin · Active'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a member with no roster entry — an account predating profile seeding '
+      '(#572), a provider emitting no name claim, or offline / '
+      'pre-first-fetch — degrades to a short id fragment, not the full id',
+      (tester) async {
+        await pumpMembers(tester);
+
+        expect(find.text('Member 2a3b4c5d'), findsOneWidget);
+        expect(find.text(uuid), findsNothing);
+      },
+    );
+
+    testWidgets('a blank roster name degrades the same way', (tester) async {
+      await pumpMembers(tester, memberNames: const {uuid: '   '});
+
+      expect(find.text('Member 2a3b4c5d'), findsOneWidget);
+      expect(find.text(uuid), findsNothing);
+    });
+
+    testWidgets('the fallback is localized in PT (NFR-I18N-1)', (tester) async {
+      await pumpMembers(tester, locale: const Locale('pt', 'PT'));
+
+      expect(find.text('Membro 2a3b4c5d'), findsOneWidget);
+      expect(find.text(uuid), findsNothing);
+    });
+
+    // FR-AX-1 / D-18: a screen reader reads the semantics tree, not the
+    // painted glyphs — a name that only reached the pixels would still
+    // announce a 36-character id, one character at a time.
+    testWidgets('the screen reader announces the name, never the raw id', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpMembers(tester, memberNames: const {uuid: 'Ana Silva'});
+
+      // A ListTile merges its title and subtitle into ONE node, so the
+      // accessible name is the whole row — matched by pattern, not equality.
+      final label = tester
+          .getSemantics(find.byKey(const Key('member-$uuid')))
+          .label;
+      expect(label, contains('Ana Silva'));
+      expect(label, isNot(contains(uuid)));
+      handle.dispose();
+    });
+
+    // NFR-SEC-1 (security-review HIGH on #582): the roster name is authored
+    // outside this app — seeded from the IdP claim, then writable by the
+    // account owner through `PATCH /v1/profile`, which today only trims and
+    // length-bounds it. The row must not render it verbatim. Full rule
+    // coverage lives in member_display_test.dart; this pins the WIRING —
+    // that the members list actually goes through the filter.
+    testWidgets('a name carrying a bidi override renders sanitized', (
+      tester,
+    ) async {
+      await pumpMembers(tester, memberNames: const {uuid: '\u202EAna Silva'});
+
+      expect(find.text('Ana Silva'), findsOneWidget);
+      expect(find.text('\u202EAna Silva'), findsNothing);
+    });
+
+    // The other half of #582's scope: an invitation has no user account yet,
+    // so the invited address IS its only identity — it must keep reading as
+    // a person's identifier beside a named member, not regress to an id.
+    testWidgets(
+      'an invitation still shows the invited email beside a named member',
+      (tester) async {
+        await pumpMembers(
+          tester,
+          memberNames: const {uuid: 'Ana Silva'},
+          invitations: [_invitation()],
+        );
+
+        expect(find.text('Ana Silva'), findsOneWidget);
+        expect(find.text('invitee@example.com'), findsOneWidget);
+        expect(find.text('Member · Pending'), findsOneWidget);
+      },
+    );
+
+    // D-18 / FR-AX-1: both lists carry outside-authored text as their row
+    // title — a display name (up to 200 runes) and an email address (up to
+    // 320 octets). Neither may grow its row without limit, and at 200% text
+    // scale even an ordinary value needs the ellipsis. The two must agree, or
+    // one list wraps while the other truncates on the same screen.
+    testWidgets('both row titles are bounded identically (#582, D-18)', (
+      tester,
+    ) async {
+      await pumpMembers(
+        tester,
+        memberNames: const {uuid: 'Ana Silva'},
+        invitations: [_invitation()],
+      );
+
+      for (final text in const ['Ana Silva', 'invitee@example.com']) {
+        final widget = tester.widget<Text>(find.text(text));
+        expect(widget.maxLines, 2, reason: '"$text" is unbounded');
+        expect(widget.overflow, TextOverflow.ellipsis, reason: text);
+      }
+    });
   });
 
   testWidgets('shows empty states when there are no members/invitations', (

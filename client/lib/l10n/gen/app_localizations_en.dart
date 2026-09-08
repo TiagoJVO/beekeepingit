@@ -329,6 +329,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersRevokeSuccess => 'Invitation revoked.';
 
   @override
+  String memberNameFallback(String id) {
+    return 'Member $id';
+  }
+
+  @override
   String get memberRoleAdmin => 'Admin';
 
   @override

@@ -70,6 +70,41 @@ void main() {
       );
     });
 
+    // #582 (NFR-SEC-1): the roster name is authored outside this app, so it
+    // goes through `sanitizedMemberName` rather than being rendered verbatim
+    // — an audit trail is exactly where a forged actor name would do the most
+    // damage. The rules themselves are covered in member_display_test.dart;
+    // these two pin that THIS caller is wired to them.
+    //
+    // Invisible codepoints are written by code point on purpose: spelled
+    // literally they are unreviewable in a diff, and an editor or a formatter
+    // could silently drop them.
+    test('an actor name carrying a bidi override renders sanitized', () {
+      final rlo = String.fromCharCode(0x202E); // right-to-left OVERRIDE
+      final text = historyActorText(
+        _l10n,
+        'user-1',
+        'me',
+        memberNames: {'user-1': '${rlo}Ana Silva'},
+      );
+      expect(text, 'Ana Silva');
+      expect(text.contains(rlo), isFalse);
+    });
+
+    test('an actor name with nothing readable left falls back to the short '
+        'id', () {
+      final zwsp = String.fromCharCode(0x200B); // zero-width space
+      expect(
+        historyActorText(
+          _l10n,
+          'abcdef0123456789',
+          'me',
+          memberNames: {'abcdef0123456789': ' $zwsp '},
+        ),
+        'Member 23456789',
+      );
+    });
+
     test('"You" wins over a roster name for the current user', () {
       expect(
         historyActorText(
