@@ -211,41 +211,68 @@ entries:
       # staging/prod: the real Ingress host, no port) — rendered via `tpl` in
       # templates/blueprint-configmap.yaml, not a plain file include.
       redirect_uris:
-        # Local dev origins (`flutter run -d chrome`, `vite dev`). This is an
-        # AUTHORIZATION entry — `redirect_uri_type` defaults to
-        # `RedirectURIType.AUTHORIZATION` (providers/oauth2/models.py @ 2026.5.4)
-        # — i.e. a place authentik will hand a `?code=` to, matched with
-        # `re.fullmatch` (`views/authorize.py::check_redirect_uri`). The pattern
-        # IS the trust boundary, so every character of it is load-bearing (#822,
-        # NFR-SEC-1):
-        #   * `[0-9]+`, never `.*`. `fullmatch("http://localhost:.*",
-        #     "http://localhost:@evil.example")` PASSES, and a browser resolves
-        #     that URL to host evil.example with `localhost:` as USERINFO. PKCE
-        #     is not mandatory here (`check_code_challenge` validates only the
-        #     method) and both providers are `client_type: public` (no secret at
-        #     /token), so a code leaked that way was directly redeemable for an
-        #     access token and a 30-day refresh token. Requiring a DIGIT
-        #     immediately after `:` makes userinfo inexpressible.
-        #   * `[0-9]`, never `\d`: `\d` also matches unicode digits, so
-        #     `http://localhost:٤٥` would pass while resolving to nothing like a
-        #     port.
-        #   * `(/.*)?` is safe — an `@` after the first `/` is PATH, never
-        #     userinfo — and OPTIONAL, because the PWA sends its BARE ORIGIN as
-        #     the `redirect_uri` (`auth_platform_web.dart`), while the admin app
-        #     sends `http://localhost:5174`. A query with no path
-        #     (`http://localhost:5174?next=x`) no longer matches; nothing here
-        #     sends that shape.
-        #   * It also stops 500ing CORS: `cors_allow` (providers/oauth2/utils.py)
-        #     compares scheme, then hostname, then `urlparse(entry).port`, and
-        #     `urlparse("http://localhost:.*").port` RAISES ValueError while
-        #     scheme+hostname match first for ANY localhost `Origin` — so a
-        #     localhost origin turned /token and /userinfo into a 500. It does
-        #     NOT start granting localhost CORS: `urlparse` reads `[0-9]+(` as a
-        #     bracketed host, so this entry now simply does not match an Origin
-        #     (a clean denial). Real localhost CORS would need its own STRICT
-        #     entry, like the appOrigin/adminOrigin ones below.
-        # Guarded by scripts/check-authorization-redirect-posture.sh.
-        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
+        # Local dev origins, as STRICT literals — one entry per dev port
+        # actually in use (owner decision on #822, 2026-09-08). These are
+        # AUTHORIZATION entries: `redirect_uri_type` defaults to
+        # `RedirectURIType.AUTHORIZATION` (providers/oauth2/models.py @
+        # 2026.5.4), i.e. a place authentik will hand a `?code=` to, so the
+        # entry IS the trust boundary (#822, NFR-SEC-1). PKCE is not mandatory
+        # (`check_code_challenge` validates only the METHOD) and both providers
+        # are `client_type: public` (no secret at /token), so anything that
+        # widens this is directly redeemable for an access token and a 30-day
+        # refresh token.
+        #
+        # WHY STRICT, NOT A REGEX. `.*` after `localhost:` was the original
+        # account-takeover defect — `fullmatch("http://localhost:.*",
+        # "http://localhost:@evil.example")` PASSES and a browser resolves that
+        # to host evil.example with `localhost:` as USERINFO. But BOTH narrower
+        # regexes proposed to replace it are unsafe on their own axis, each
+        # verified by running Python's own `re`/`urlparse` rather than by
+        # reading the pattern:
+        #   * `http://localhost:\d+(/.*)?` — `\d` matches UNICODE decimal
+        #     digits, so `http://localhost:٤٥` (Arabic-Indic 45) fullmatches
+        #     and is allow-listed while resolving to nothing like a port.
+        #     `[0-9]` rejects it. Worse, `urlparse` of that pattern yields
+        #     hostname `localhost` and then RAISES on `.port` (`ValueError:
+        #     Port could not be cast to integer value as '\d+('`) — and
+        #     `cors_allow` (providers/oauth2/utils.py) compares scheme, then
+        #     hostname, then `.port`, so it reproduces the exact 500-on-any-
+        #     localhost-Origin bug that `.*` caused.
+        #   * `http://localhost:[0-9]+(/.*)?` — a BRACKETED host. On Python
+        #     3.11.0 `urlparse` reads the hostname as `0-9` with `.port` None
+        #     (harmless, but it also grants no localhost CORS); later CPython
+        #     validates bracketed netlocs harder and the authentik image
+        #     reportedly raises `ValueError: Invalid IPv6 URL`, which 500s the
+        #     discovery document for any request carrying an `Origin` header.
+        #     That is what cost PR #823 a 30-minute k3d run.
+        # A strict literal contains no regex metacharacter at all: it parses
+        # identically on every Python version, has no unicode-digit surface,
+        # and `urlparse` returns a real hostname + port — which is also the
+        # only way a localhost origin gets CORS on /token and /userinfo, since
+        # `token.py` builds that allow-list from ALL `redirect_uris`,
+        # unfiltered. The cost is that each dev port must be listed here
+        # deliberately. That is the point: the list is reviewable by reading it.
+        #
+        # The ports, and the evidence for each:
+        #   * 5175 — the Flutter client's dev server. `flutter run -d chrome`
+        #     binds a RANDOM ephemeral port unless told otherwise, and no
+        #     strict entry can cover a random port, so `client/README.md` now
+        #     pins `--web-port 5175` as the dev contract. The PWA sends its
+        #     BARE ORIGIN as the `redirect_uri` (`auth_platform_web.dart` falls
+        #     back to `window.location.origin`), so no path form is needed.
+        #   * 5174 — the admin app's Vite dev server (`admin/vite.config.ts`
+        #     pins `server.port: 5174`; `admin/.env.example`, `admin/README.md`).
+        #     It is on THIS provider for the same reason as the strict
+        #     `adminOrigin` entry below (#460): the admin app is pointed at the
+        #     beekeepingit ISSUER, so it fetches THIS application's discovery +
+        #     JWKS cross-origin, and authentik gates that with CORS derived
+        #     from THIS provider's redirect_uris. The old bracketed regex
+        #     matched no `Origin` at all, so that fetch was a clean denial in
+        #     localhost dev; a strict entry is what actually grants it.
+        # Guarded by scripts/check-authorization-redirect-posture.sh, which
+        # rejects `[`, `]` and `\d` in ANY redirect URI on either provider.
+        - { matching_mode: strict, url: "http://localhost:5175" }
+        - { matching_mode: strict, url: "http://localhost:5174" }
         - { matching_mode: regex, url: '{{ .Values.global.appOrigin | replace "." "\\." }}/.*' }
         # The PWA sends the bare origin (no path) as its redirect_uri, and Authentik derives
         # CORS-allowed origins from redirect_uris — an Origin has no path, so the regex above
@@ -449,18 +476,29 @@ entries:
       grant_types: [authorization_code, refresh_token]
       # Admin host by convention mirrors the PWA's app host: admin.beekeepingit.local:8443 in
       # dev, {{ .Values.global.adminOrigin }} per environment. Same three-entry shape as the
-      # PWA: localhost for Vite dev, a host regex, and a STRICT bare-origin so Authentik's
-      # redirect_uris-derived CORS allows the admin origin (an Origin has no path, so the
-      # `…/.*` regex never matches it).
+      # PWA: a STRICT localhost dev origin, a host regex, and a STRICT bare-origin so
+      # Authentik's redirect_uris-derived CORS allows the admin origin (an Origin has no
+      # path, so the `…/.*` regex never matches it).
       redirect_uris:
-        # Numeric-port localhost, for the same reasons spelled out on the PWA
-        # provider's entry above: `.*` after `localhost:` fullmatches
-        # `http://localhost:@evil.example`, which a browser resolves to
-        # evil.example with `localhost:` as userinfo, leaking the `?code=` — and
-        # it made `urlparse(...).port` raise inside `cors_allow`, 500ing any
-        # localhost Origin (#822, NFR-SEC-1). Guarded by
-        # scripts/check-authorization-redirect-posture.sh.
-        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }
+        # STRICT literal, one per dev port in use — the same owner decision and
+        # the same two disqualified regexes spelled out on the PWA provider's
+        # entry above (#822, NFR-SEC-1). In short: `.*` after `localhost:`
+        # fullmatches `http://localhost:@evil.example`, which a browser resolves
+        # to evil.example with `localhost:` as userinfo, leaking the `?code=`;
+        # `\d+` allow-lists unicode digits (`http://localhost:٤٥`) AND raises in
+        # `urlparse(...).port`, 500ing any localhost `Origin` through
+        # `cors_allow`; and `[0-9]+` is a bracketed host whose `urlparse`
+        # behaviour is Python-version-dependent (`Invalid IPv6 URL` in the
+        # authentik image). A strict literal has no metacharacters, so it is
+        # immune to all three.
+        #
+        # 5174 only: this provider is used exclusively by the admin app, whose
+        # Vite dev server pins `server.port: 5174` (`admin/vite.config.ts`,
+        # `admin/.env.example`, `admin/README.md`). The Flutter client never
+        # authenticates here — its dev port (5175) is on the PWA provider.
+        # Guarded by scripts/check-authorization-redirect-posture.sh, which
+        # rejects `[`, `]` and `\d` in ANY redirect URI on either provider.
+        - { matching_mode: strict, url: "http://localhost:5174" }
         - { matching_mode: regex, url: '{{ .Values.global.adminOrigin | replace "." "\\." }}/.*' }
         - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
       property_mappings:

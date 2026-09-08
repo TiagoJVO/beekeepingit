@@ -27,8 +27,11 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
 # The line both providers carry today, matched by exact string so the fixtures
-# never depend on this script getting a regex right.
-orig='        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }'
+# never depend on this script getting a regex right. Since the owner decision on
+# #822 the localhost dev origins are STRICT literals, one per real dev port, so
+# the shared line is the admin dev server's — the only one both providers carry
+# (the pwa provider also carries 5175, the Flutter dev server).
+orig='        - { matching_mode: strict, url: "http://localhost:5174" }'
 evil='        - { matching_mode: regex, url: "https://evil.example/.*" }'
 
 failures=0
@@ -68,18 +71,49 @@ expect 0 clean
 insert_after_first logout-entries-compose '        - matching_mode: strict
           url: "{{ .Values.global.appOrigin }}"
           redirect_uri_type: logout
-        - matching_mode: regex
-          url: "http://localhost:[0-9]+"
+        - matching_mode: strict
+          url: "http://localhost:5174"
           redirect_uri_type: logout'
 expect 0 logout-entries-compose
 
 # --- the defect itself, and its near neighbours ------------------------------
 sub_all loose-wildcard '        - { matching_mode: regex, url: "http://localhost:.*" }'
 expect 1 loose-wildcard
-sub_all unicode-digit-class '        - { matching_mode: regex, url: "http://localhost:\\d+(/.*)?" }'
-expect 1 unicode-digit-class
 sub_all empty-port-allowed '        - { matching_mode: regex, url: "http://localhost:[0-9]*(/.*)?" }'
 expect 1 empty-port-allowed
+
+# --- the two regexes the owner decision disqualified, one case per hazard ----
+#
+# HAZARD 1 — `\d` matches UNICODE decimal digits, so the pattern allow-lists a
+# URL that is not a port at all, and `urlparse(...).port` still raises (hostname
+# parses as `localhost`, so `cors_allow` reaches the port comparison and 500s
+# every localhost `Origin`). Verified on Python 3.11.0:
+#   re.fullmatch(r"http://localhost:\d+(/.*)?", "http://localhost:٤٥") -> True
+#   urlparse(r"http://localhost:\d+(/.*)?").port
+#     -> ValueError: Port could not be cast to integer value as '\d+('
+sub_all unicode-digit-shorthand '        - { matching_mode: regex, url: "http://localhost:\\d+(/.*)?" }'
+expect 1 unicode-digit-shorthand
+sub_all unicode-digit-shorthand-pathless '        - { matching_mode: regex, url: "http://localhost:\\d+" }'
+expect 1 unicode-digit-shorthand-pathless
+
+# HAZARD 2 — a BRACKETED host. `urlparse` treats a bracketed netloc as an IPv6
+# literal: on Python 3.11.0 the hostname is `0-9` (so the entry grants no
+# localhost CORS at all), and later CPython raises `ValueError: Invalid IPv6
+# URL`, which 500s the discovery document for any request with an `Origin`
+# header — the failure that cost PR #823 a 30-minute k3d run.
+sub_all bracketed-host '        - { matching_mode: regex, url: "http://localhost:[0-9]+(/.*)?" }'
+expect 1 bracketed-host
+sub_all bracketed-host-pathless '        - { matching_mode: regex, url: "http://localhost:[0-9]+" }'
+expect 1 bracketed-host-pathless
+# Neither hazard is about the localhost host specifically — the ban is on the
+# characters, in any redirect URI, so it cannot be sidestepped by using them in
+# a rendered-origin entry.
+sub_all bracketed-char-class-in-host-regex "        - { matching_mode: regex, url: '{{ .Values.global.appOrigin | replace \".\" \"\\\\.\" }}/[a-z].*' }"
+expect 1 bracketed-char-class-in-host-regex
+
+# --- an unlisted dev port is a deliberate edit, not something a pattern covers
+sub_all unlisted-dev-port '        - { matching_mode: strict, url: "http://localhost:3000" }'
+expect 1 unlisted-dev-port
 
 # --- a new origin, of any redirect type (token.py CORS derivation is unfiltered)
 sub_all new-origin "${evil}"
@@ -100,15 +134,18 @@ sub_all template-printf-alternation "        - { matching_mode: regex, url: '{{ 
 expect 1 template-printf-alternation
 sub_all unknown-values-key '        - { matching_mode: strict, url: "{{ .Values.global.someOtherHost }}" }'
 expect 1 unknown-values-key
-sub_all localhost-as-strict '        - { matching_mode: strict, url: "http://localhost:[0-9]+(/.*)?" }'
-expect 1 localhost-as-strict
+# The MODE is half of the allow-list key: a literal dev origin declared `regex`
+# is a different trust boundary (every `.` in it becomes a wildcard) and must
+# not inherit the strict entry's approval.
+sub_all localhost-literal-as-regex '        - { matching_mode: regex, url: "http://localhost:5174" }'
+expect 1 localhost-literal-as-regex
 
 # --- things the guard must refuse to read rather than skip -------------------
-sub_all unquoted-url '        - { matching_mode: regex, url: http://localhost:[0-9]+ }'
+sub_all unquoted-url '        - { matching_mode: strict, url: http://localhost:5174 }'
 expect 1 unquoted-url
-sub_all duplicate-url-key '        - { matching_mode: regex, url: "http://localhost:[0-9]+", url: "https://evil.example/.*" }'
+sub_all duplicate-url-key '        - { matching_mode: strict, url: "http://localhost:5174", url: "https://evil.example/.*" }'
 expect 1 duplicate-url-key
-sub_all missing-matching-mode '        - { url: "http://localhost:[0-9]+(/.*)?" }'
+sub_all missing-matching-mode '        - { url: "http://localhost:5174" }'
 expect 1 missing-matching-mode
 insert_after_first blank-line-then-new-origin "
 ${evil}"
