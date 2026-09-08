@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/sync/powersync_schema.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
@@ -86,9 +87,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.activityDeleteError('$e'))),
-      );
+      messenger.showSnackBar(appToast(l10n.activityDeleteError('$e')));
     }
   }
 

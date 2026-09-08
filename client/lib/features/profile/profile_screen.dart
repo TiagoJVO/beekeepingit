@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/config/app_config.dart';
 import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/field_error.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -120,7 +121,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ? unrendered.map((k) => _fieldErrors[k]).join('\n')
             : e.detail;
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.profileSaveError(msg))));
+            .showSnackBar(appToast(l10n.profileSaveError(msg)));
       }
     } on Exception catch (_) {
       // Narrowed to `Exception` (not a bare `catch`, which also matches
@@ -132,8 +133,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       // `ApiException.detail`/field messages above are structured enough to
       // show to the user verbatim.
       if (!mounted) return;
+      // Fixed copy rather than server text, but bounded all the same: at 200%
+      // text on a 375x812 phone this one measured 188 logical pixels in EN and
+      // 148 in PT, over the 136 band `BrandDimens.scrollBottomInset` reserves
+      // (#813). It is the only fixed-copy toast in the app that does; the
+      // other 16 all measure 108 and stay on a plain `SnackBar`.
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.profileGenericError)));
+          .showSnackBar(appToast(l10n.profileGenericError));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

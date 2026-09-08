@@ -101,6 +101,21 @@ blocked. An error rendered **outside** a field's decoration (the apiary location
   window, and past anything `scrollBottomInset` can reserve. Do **not** "fix"
   that by clamping the toast's own text scale: that withdraws the large text
   from the reader who asked for it, which is the opposite of `FR-AX-1`.
+
+  **Any message that interpolates an exception or a server-supplied string
+  MUST use `appToast`, whatever the app copy around it looks like** (`#813`).
+  The length of `l10n.apiarySaveError('$e')` is not the app's to know: RFC 9457
+  `detail` is free-text server prose with no bound (`ApiException.detail`'s own
+  doc comment says so) and `ApiNetworkException.toString()` carries a raw
+  `SocketException`. Driven through the account screen's save with a realistic
+  server validation sentence, that toast measured **708px** at 200% text before
+  the migration. "It looks short in English" is not a measurement — reading the
+  ARB template tells you nothing about what lands in `{error}`.
+
+  A plain `SnackBar` is still right for **fixed** copy short enough to fit. All
+  17 such strings were measured in EN and PT at 200% text on 375x812: 16 render
+  at 108px and stay on the plain path; `profileGenericError` rendered 188px
+  (EN) / 148px (PT), over the 136px band, and was migrated too.
   `appToast` deliberately takes no `BuildContext` — a save awaits its API
   first, so the call site captures its messenger before the gap and must not
   reach across it. The shell puts a `BrandDimens.gapToastNav` gutter inside

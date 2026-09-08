@@ -39,8 +39,7 @@
       "Bash(git reset --hard*)",
       "Bash(git commit*--no-verify*)",
       "Bash(git commit*-n *)"
-    ],
-    "ask": ["Edit(.github/workflows)", "Write(.github/workflows)"]
+    ]
   },
   "hooks": {
     "SessionStart": [
