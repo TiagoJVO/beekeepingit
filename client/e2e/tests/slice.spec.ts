@@ -1,5 +1,11 @@
 import { test, expect, Locator, Page } from "@playwright/test";
-import { enableSemantics, readIdTokenClaims, submitIdpCredentials } from "./helpers";
+import {
+  APP_ORIGIN_RE,
+  AUTH_ORIGIN_RE,
+  enableSemantics,
+  readIdTokenClaims,
+  submitIdpCredentials,
+} from "./helpers";
 
 /**
  * The M0 walking-skeleton end-to-end test (#23 §7.3):
@@ -448,23 +454,23 @@ test("reload keeps the session and converges (#236: offline_access → refresh t
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 });
 
-// Blocked on a real, separate walking-skeleton bug — NOT an e2e-harness issue,
-// so skipped (test.fixme) rather than loosened, and kept intact to unskip once
-// the bug is fixed. Evidence (Playwright trace + failure screenshot on this
-// branch's CI run): after Sign out, the app performs its front-channel
-// RP-initiated logout to Authentik's end_session_endpoint, but Authentik then
-// shows its own "You've logged out of BeekeepingIT" confirmation interstitial
-// ("Go back to overview / Log out / Log back into BeekeepingIT") instead of
-// auto-redirecting to the app's post_logout_redirect_uri — so the browser never
-// returns to the app's /login and `waitForURL(/\/login/)` times out. The app-
-// side logout (local state cleared, #125) happens; the round trip just doesn't
-// come back on its own. Fix is on the Authentik/logout-flow side (e.g. the
-// provider needs to honor the post_logout_redirect_uri without the interstitial,
-// or the flow must be configured to skip it). Tracked in #237.
-// auth_controller_test.dart already covers the client end-session request shape
-// at the unit level; this e2e is the only place the live round trip is
-// exercised, so it stays here as the guard — unskip once #237 lands.
-test.fixme("logout revokes the session — a reload does not silently re-authenticate (#24) [blocked by #237: Authentik shows a logout-confirmation interstitial instead of redirecting back to the app]", async ({
+// The live guard for BOTH halves of #237 — it was `test.fixme`'d while the
+// provider dead-ended Sign out on Authentik's "You've logged out of
+// BeekeepingIT" interstitial, and un-skipped (and extended) when the blueprint
+// started (a) allow-listing `post_logout_redirect_uri` as a logout-typed
+// redirect URI, so the browser comes straight back, and (b) binding a
+// `user_logout` stage into the provider invalidation flow, so the SSO session
+// behind it actually ends (infra/helm/beekeepingit/charts/authentik/files/
+// beekeepingit.blueprint.yaml, auth.md §8.18).
+//
+// (b) is the half a reload can never prove: a reload only shows that no LOCAL
+// credential survived. The provider session lives in a cookie on the auth
+// host, so the only way to observe it is to START A NEW SIGN-IN and see
+// whether the IdP asks for a password or hands the app a session back with no
+// challenge at all. That is the last block below, and it is the reason this
+// test exists on top of auth_controller_test.dart's request-shape unit tests
+// (which stub the network and can only assert what the client SENDS).
+test("logout revokes the session — no local credential survives, and the IdP asks again (#24, #237)", async ({
   page,
 }) => {
   // The most faithful check of the real OIDC end-session round trip
@@ -482,20 +488,31 @@ test.fixme("logout revokes the session — a reload does not silently re-authent
   await enableSemantics(page);
   await page.getByRole("button", { name: "Sign out" }).click();
 
-  // The app-side session is cleared and (after the end-session round trip
-  // returns to the app origin) the router sends us back to /login.
-  await page.waitForURL(/\/login/);
+  // (a) The app-side session is cleared and the end-session round trip returns
+  // to the app origin on its own — no interstitial, no click — so the router
+  // lands us back on /login.
+  await page.waitForURL(/\/login/, { timeout: 60_000 });
   await enableSemantics(page);
   await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
 
   // A fresh reload must NOT silently restore the session (no refresh token
-  // survives logout, and the provider SSO cookie/session was ended
-  // server-side, not just locally forgotten) — still on /login, not bounced
-  // back into the app.
+  // survives logout) — still on /login, not bounced back into the app.
   await page.reload();
   await enableSemantics(page);
   await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
   expect(page.url()).toMatch(/\/login/);
+
+  // (b) NFR-SEC-1: the SERVER-SIDE SSO session was ended too, not just the
+  // local token cache. Start a new sign-in: with the provider session gone the
+  // browser is held at the IdP's own credential form. If the session had
+  // survived, this authorize request would be answered from the SSO cookie and
+  // the browser would be back on the app origin, signed in, without ever
+  // rendering a username field — which is exactly the re-entry defect #237
+  // reported.
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForURL(AUTH_ORIGIN_RE, { timeout: 60_000 });
+  await expect(page.getByLabel(/username|email/i).first()).toBeVisible({ timeout: 30_000 });
+  expect(page.url()).not.toMatch(APP_ORIGIN_RE);
 });
 
 // The server's view of the (uniquely-named) apiary, via the same list

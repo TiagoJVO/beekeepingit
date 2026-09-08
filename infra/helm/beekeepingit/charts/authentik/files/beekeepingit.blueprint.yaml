@@ -101,7 +101,9 @@ entries:
   #
   # These three entries declare nothing. Each is IDENTIFIERS-ONLY and names an
   # object authentik itself creates. Their whole job is to turn a silent null
-  # into a reported, retried error.
+  # into a reported, retried error. (#237 later hung a stage BINDING off the
+  # invalidation pin — see the block below the certificate. A binding is its own
+  # entry; it changes nothing about these three, which stay identifiers-only.)
   #
   # THE DEFECT THEY CLOSE. Until #599 the providers below reached
   # `authorization_flow`, `invalidation_flow` and `signing_key` with `!Find`.
@@ -185,6 +187,70 @@ entries:
     id: cert-authentik-self-signed
     identifiers: { name: "authentik Self-signed Certificate" }
 
+  # --- #237: make Sign out actually END the provider session ------------------
+  # Upstream's `default-provider-invalidation-flow` (pinned just above, and the
+  # `invalidation_flow` of BOTH our providers) is a flow with NO STAGE BINDINGS
+  # AT ALL — its whole body upstream is `designation: invalidation`, a name, a
+  # title and `authentication: none` (blueprints/default/flow-default-provider-
+  # invalidation.yaml @ 2026.5.4). That is deliberate upstream: an RP-initiated
+  # logout ends the RELYING PARTY's session, and authentik does not assume you
+  # also want to end the authentik SSO session behind it.
+  #
+  # For this deployment that assumption is wrong, and #237 is what it looks
+  # like. `EndSessionView.get` (providers/oauth2/views/end_session.py) deletes
+  # the provider's AccessTokens and then runs this flow with an in-memory
+  # `SessionEndStage` appended LAST. With no stages of its own the flow ends
+  # the moment it starts, `request.user.is_authenticated` is still True at
+  # `SessionEndStage.get_challenge` (flows/stage.py), and the user gets the
+  # `ak-stage-session-end` interstitial ("You've logged out of BeekeepingIT",
+  # with Go-back-to-overview / Log-out / Log-back-in links). The authentik
+  # session cookie is untouched, so "Sign in" from the app then completes with
+  # NO password — the exact re-entry defect #237 reports, and the security half
+  # of it (NFR-SEC-1: auth.md §7 promises logout revokes the SERVER-SIDE SSO
+  # session, not just the client's token cache).
+  #
+  # The upstream-documented remedy is to bind a User Logout stage into the
+  # provider invalidation flow, which is what these two entries do. Ordering is
+  # what makes it safe: `FlowPlanner.plan` builds the flow's OWN bindings first
+  # and `EndSessionView` appends `SessionEndStage` after them, so the logout
+  # stage always runs BEFORE the stage that decides where to send the browser.
+  # `UserLogoutStageView.dispatch` calls Django's `logout()` (which flushes the
+  # session) and then `executor.stage_ok()`, which re-writes the remaining plan
+  # into the NEW session (flows/views/executor.py) — so the flow survives its
+  # own session flush and `SessionEndStage` still runs.
+  #
+  # WHY SPLICE INTO UPSTREAM'S FLOW INSTEAD OF OWNING A NEW ONE. Owning a
+  # `designation: invalidation` flow would re-arm the second-order trap spelled
+  # out in the pin block above: with `brand.flow_invalidation` unpinned,
+  # `ToDefaultFlow.get_flow` scans invalidation flows ORDERED BY SLUG and any
+  # `beekeepingit-*` slug sorts ahead of `default-invalidation-flow`, so the
+  # authentik UI's own logout would silently start running our flow. A stage
+  # binding adds no flow, so no designation ordering changes and no new brand
+  # pin is needed — the same trade #599 made, and the same "splice a stage into
+  # an existing flow" shape as the #361 email-verification bindings and the
+  # #363 idp-hint binding further down.
+  #
+  # The stage itself is OWNED (not `!Find`-ed at upstream's
+  # `default-invalidation-logout`, which belongs to the BRAND flow): a
+  # `UserLogoutStage` declares nothing but a name, so owning it costs nothing
+  # and cannot race another blueprint file's apply.
+  #
+  # Guarded offline by scripts/check-logout-invalidation-posture.sh and live by
+  # the logout e2e in client/e2e/tests/slice.spec.ts, which re-opens sign-in
+  # after Sign out and fails unless the IdP asks for credentials again.
+  # Written up in docs/architecture/auth.md §8.18.
+  - model: authentik_stages_user_logout.userlogoutstage
+    id: stage-provider-invalidation-logout
+    identifiers: { name: beekeepingit-provider-invalidation-logout }
+    attrs:
+      name: beekeepingit-provider-invalidation-logout
+  - model: authentik_flows.flowstagebinding
+    id: binding-provider-invalidation-logout
+    identifiers:
+      target: !KeyOf flow-default-provider-invalidation
+      stage: !KeyOf stage-provider-invalidation-logout
+      order: 10
+
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
     identifiers: { name: beekeepingit-pwa }
@@ -234,6 +300,61 @@ entries:
         # app we already serve is not a new trust surface (same redirect+CORS duality as the
         # appOrigin entry above). Does NOT touch OIDC_AUDIENCE / the frozen token contract.
         - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
+        # --- #237: the RP-initiated-logout ALLOW-LIST -------------------------
+        # `post_logout_redirect_uris` is not a field of its own at 2026.5.4 — it
+        # is a PROPERTY over this same list, filtered to
+        # `redirect_uri_type: logout` (providers/oauth2/models.py), and the
+        # authorize view matches against the complementary
+        # `authorization_redirect_uris`. So these entries are the logout
+        # allow-list and NOTHING ELSE: they widen no authorization target.
+        #
+        # THE DEFECT THEY CLOSE (#237, cosmetic half). `EndSessionView.validate`
+        # only looks at the client's `post_logout_redirect_uri` when
+        # `provider.post_logout_redirect_uris` is NON-EMPTY. With no
+        # logout-typed entry the parameter our PWA and admin app both send was
+        # silently dropped, the plan carried no
+        # `PLAN_CONTEXT_POST_LOGOUT_REDIRECT_URI`, and `SessionEndStage` fell
+        # through to its interstitial instead of redirecting home.
+        #
+        # OPEN-REDIRECT POSTURE. Declaring them switches authentik from
+        # "ignore" to STRICT validation, done by authentik itself, fail-closed:
+        # a `post_logout_redirect_uri` that matches none of these is a 400
+        # `invalid_request`, never a redirect (the OIDC-certification behaviour
+        # in `EndSessionView.validate`), an `id_token_hint` is then REQUIRED,
+        # and `FORBIDDEN_URI_SCHEMES` is rejected outright. Nothing here is
+        # user-supplied: both origins are the per-environment
+        # `global.appOrigin`/`global.adminOrigin` this chart already renders, so
+        # every environment overlay allow-lists exactly its own hosts.
+        #
+        # It is also why declaring them is ALL-OR-NOTHING: any origin that
+        # legitimately signs out through THIS application must be listed, or it
+        # regresses from #237's interstitial to a 400. Three do:
+        #   * `appOrigin` — the PWA (`auth_controller.dart` sends
+        #     `platform.redirectUri`, i.e. `window.location.origin`, no path).
+        #   * `adminOrigin` — the admin app signs out through THIS application's
+        #     `end_session_endpoint`, not its own: it is pointed at the
+        #     beekeepingit ISSUER (§3.1/#460), so oidc-client-ts discovers the
+        #     endpoint under /application/o/beekeepingit/ and `application_slug`
+        #     resolves to the PWA provider. Its `id_token_hint` verifies here
+        #     because `scope-admin-audience` already rewrites admin tokens to
+        #     this issuer + `beekeepingit-pwa` audience — the same two values
+        #     `EndSessionView.validate` decodes the hint against.
+        #   * localhost — a `flutter run` / `vite dev` origin, the logout
+        #     counterpart of the localhost authorization entry above. Written
+        #     `[0-9]+` rather than reusing that entry's `.*`: matching is
+        #     `fullmatch`, and `http://localhost:.*` also accepts
+        #     `http://localhost:@evil.example`, which a browser resolves to
+        #     evil.example with `localhost:` as userinfo. Tightening the
+        #     AUTHORIZATION entry the same way is #822 (pre-existing).
+        - matching_mode: strict
+          url: "{{ .Values.global.appOrigin }}"
+          redirect_uri_type: logout
+        - matching_mode: strict
+          url: "{{ .Values.global.adminOrigin }}"
+          redirect_uri_type: logout
+        - matching_mode: regex
+          url: "http://localhost:[0-9]+"
+          redirect_uri_type: logout
       property_mappings:
         - !Find [
             authentik_providers_oauth2.scopemapping,
@@ -422,6 +543,18 @@ entries:
         - { matching_mode: regex, url: "http://localhost:.*" }
         - { matching_mode: regex, url: '{{ .Values.global.adminOrigin | replace "." "\\." }}/.*' }
         - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
+        # #237's logout allow-list, admin side. The admin app signs out through
+        # the PWA application's end_session_endpoint today (it discovers from
+        # the beekeepingit issuer — see that provider's entry), so these cover
+        # the OTHER door: anything that reaches
+        # /application/o/beekeepingit-admin/end-session/ directly. Same
+        # posture, same fail-closed validation, admin origins only.
+        - matching_mode: strict
+          url: "{{ .Values.global.adminOrigin }}"
+          redirect_uri_type: logout
+        - matching_mode: regex
+          url: "http://localhost:[0-9]+"
+          redirect_uri_type: logout
       property_mappings:
         - !Find [
             authentik_providers_oauth2.scopemapping,
