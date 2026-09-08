@@ -72,7 +72,9 @@ jobs:
     # client/nginx.conf) and three stubbed probe fetches against a document
     # Playwright fulfills itself, so no third-party request leaves the runner.
     # Budgeted at 180s in the spec itself, like the compression one.
-    timeout-minutes: 60
+    # TEMPORARY (#237) 60 -> 80: the x5 logout repeat step below adds ~15 full
+    # OIDC logins. Reverted with that step.
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -720,6 +722,24 @@ jobs:
           # assumed, alongside the other two above.
           E2E_AUTH_ORIGIN: https://auth.beekeepingit.local:8443
         run: npm test
+
+      # TEMPORARY (#237) — DELETE BEFORE MERGE. The logout round-trip assertion
+      # was `test.fixme`'d for months and its unskip is the point of this PR, so
+      # one green run is not evidence: #836 measured the pre-fix tap succeeding
+      # 2 times in 10. This runs the two logout specs five times each with
+      # retries OFF, so every repetition is an independent verdict rather than a
+      # retry-masked one. Removed in the same PR once the count is recorded.
+      - name: "TEMPORARY: logout specs x5, no retries (#237)"
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        env:
+          E2E_MAILPIT_URL: http://localhost:8025
+          E2E_ADMIN_ORIGIN: https://admin.beekeepingit.local:8443
+          E2E_AUTH_ORIGIN: https://auth.beekeepingit.local:8443
+        run: >-
+          npx playwright test tests/slice.spec.ts tests/logout-tap.spec.ts
+          --grep "logout revokes the session|tapping Sign out actually starts sign-out"
+          --repeat-each=5 --retries=0
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:
       # trace: on-first-retry, screenshot: only-on-failure) — the fastest way to
