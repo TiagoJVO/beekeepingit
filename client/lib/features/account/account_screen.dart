@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/diagnostics_836.dart';
 import '../../core/l10n/supported_locales.dart';
 import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/app_toast.dart';
@@ -377,8 +378,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       label: l10n.logout,
                       icon: Icons.logout,
                       destructive: true,
-                      onPressed: () =>
-                          ref.read(authControllerProvider.notifier).logout(),
+                      onPressed: () {
+                        bk836('account:signOut:onPressed');
+                        ref.read(authControllerProvider.notifier).logout();
+                      },
                     ),
                   ],
                 ),

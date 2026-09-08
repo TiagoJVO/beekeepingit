@@ -437,6 +437,38 @@ export async function countMessagesTo(
 // (exactly the #366 registration e2e's squatter symptom).
 export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
 
+/**
+ * `page.waitForURL`, but settled on **commit** rather than on `load` (#836).
+ *
+ * Playwright's default `waitUntil: "load"` waits for the `load` event of the
+ * document the matching navigation commits — i.e. for every subresource of the
+ * Flutter bundle. That is a stricter condition than "the browser is now on this
+ * URL", and this app has already been observed not to meet it: one attempt of
+ * the #237 logout e2e failed `waitForURL(/\/login/)` with `waiting for
+ * navigation until "load"` while its own failure screenshot showed the app
+ * **already on its login screen**, with a freshly bootstrapped Flutter view.
+ * The wait, not the app, was what failed there.
+ *
+ * `gotoAppRoot` above already avoids `load` for the same reason (it navigates
+ * with `waitUntil: "domcontentloaded"`); this is that convention applied to the
+ * waits. `commit` is the weakest useful condition — the response arrived and
+ * the document began loading — so it asserts exactly the thing the caller
+ * cares about and nothing else. Callers still assert what must be *rendered*
+ * afterwards (`enableSemantics` + a visible-element expectation), which is the
+ * check that actually has meaning for a Flutter canvas app.
+ *
+ * Use this for any wait that follows a **full page load** — the OIDC callback,
+ * the post-logout return. In-app route changes (`pushState`) need no lifecycle
+ * wait at all, so plain `waitForURL` is fine there.
+ */
+export async function waitForUrlCommitted(
+  page: Page,
+  url: RegExp,
+  timeout = 60_000,
+): Promise<void> {
+  await page.waitForURL(url, { waitUntil: "commit", timeout });
+}
+
 // A login that completed lands the user back on the app origin — the
 // onboarding gate then routes by profile/org state (/profile for a fresh
 // user, /home — the Home tab, D-35/#658 — once onboarded/joined). Anything

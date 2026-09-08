@@ -29,14 +29,14 @@ void bk836(String step) {
 /// last step reached. Self-cancels after 90s.
 Timer bk836Heartbeat(String tag) {
   var ticks = 0;
-  final timer = Timer.periodic(const Duration(milliseconds: 200), (t) {
+  final timer = Timer.periodic(const Duration(milliseconds: 500), (t) {
     ticks++;
     // ignore: avoid_print
     print(
       '[bk836] HEARTBEAT $tag #$ticks t=${_sw.elapsedMilliseconds}ms '
       'last=$lastStep',
     );
-    if (ticks >= 450) t.cancel();
+    if (ticks >= 1500) t.cancel();
   });
   return timer;
 }

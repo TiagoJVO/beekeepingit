@@ -5,8 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'core/diagnostics_836.dart';
 
 void main() {
+  // TEMP #836: a heartbeat armed at app start, so "is the main thread alive"
+  // is an observation rather than an inference.
+  bk836('main:enter');
+  bk836Heartbeat('app');
   configureGlobalErrorHandlers();
   runApp(
     ProviderScope(

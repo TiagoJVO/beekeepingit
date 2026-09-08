@@ -1,5 +1,10 @@
 import { test, expect, Locator, Page } from "@playwright/test";
-import { enableSemantics, readIdTokenClaims, submitIdpCredentials } from "./helpers";
+import {
+  enableSemantics,
+  readIdTokenClaims,
+  submitIdpCredentials,
+  waitForUrlCommitted,
+} from "./helpers";
 
 /**
  * The M0 walking-skeleton end-to-end test (#23 §7.3):
@@ -484,7 +489,14 @@ test.fixme("logout revokes the session — a reload does not silently re-authent
 
   // The app-side session is cleared and (after the end-session round trip
   // returns to the app origin) the router sends us back to /login.
-  await page.waitForURL(/\/login/);
+  //
+  // Settled on **commit**, not on `load` (#836): one attempt of this test's CI
+  // run failed here with `waiting for navigation until "load"` while its own
+  // failure screenshot showed the app already on its login screen with a
+  // freshly bootstrapped Flutter view — sign-out had fully worked and the wait
+  // was what failed. See `waitForUrlCommitted`'s doc for why `load` is the
+  // wrong condition for this app.
+  await waitForUrlCommitted(page, /\/login/);
   await enableSemantics(page);
   await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
 
