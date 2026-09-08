@@ -57,6 +57,18 @@
 #      product name, and that the retired single `from:` key has not come back anywhere in
 #      this repo's values, where it would be silently ignored by the template.
 #
+#   7. THE BRAND'S IMAGE FIELDS CARRY A VALUE THE SERIALIZER ACCEPTS. `branding_logo`,
+#      `branding_favicon` and `branding_default_flow_background` are
+#      `authentik.admin.files.fields.FileField` — a `TextField` whose
+#      `default_validators = [validate_file_name]` (authentik/admin/files/validation.py, read
+#      at the pinned 2026.5.4). Getting one wrong does not merely lose an icon: the
+#      blueprint's `Importer.apply` is ATOMIC, so a rejected value rolls the WHOLE file back —
+#      no OAuth2 provider, no application, no login, on every environment that reconciles it.
+#      #648 left the three fields at their defaults for exactly that reason and #859 decides
+#      what they should carry; this check makes the day one of them IS set a change the lint
+#      gate can judge, instead of one only a live cluster can. It asserts nothing about
+#      WHETHER they are set.
+#
 # Deterministic and offline: asserts over the chart SOURCE, no cluster, and no YAML parser
 # (the blueprint carries custom `!KeyOf`/`!Find`/`!Env` tags and Go template expressions
 # that a plain parser rejects). Same engine style as
@@ -232,8 +244,20 @@ grep -qE '^[[:space:]]*AUTHENTIK_EMAIL__TEMPLATE_DIR:' "${config_secret}" || fai
   "config-secret.yaml no longer renders AUTHENTIK_EMAIL__TEMPLATE_DIR." \
   "Without it Django never searches the mounted directory, the branded template is inert," \
   "and authentik's own account-confirmation mail goes out with nothing to show for it."
-grep -qE '^[[:space:]]*templateDir:' "${chart_values}" || fail \
-  "authentik.email.templateDir is gone from values.yaml (see AUTHENTIK_EMAIL__TEMPLATE_DIR)."
+# The VALUE, not just the key. `/templates` is half of a CROSS-REPO contract: the Authentik
+# workload is an external Flux HelmRelease in beekeepingit-gitops (ADR-0012/ADR-0016), and
+# since #858 that release mounts `beekeepingit-authentik-email-templates` at
+# `/templates/email` — one directory BELOW this value, because Django resolves the template
+# by the name the email stage asks for (`email/account_confirmation.html`) and a ConfigMap
+# key cannot contain `/`. Move this value on its own and the mount lands somewhere Django
+# never searches: Authentik's built-in template renders, the mail still goes out, and
+# nothing in EITHER repo says so. Changing it needs a paired PR against beekeepingit-gitops.
+grep -qE '^[[:space:]]*templateDir:[[:space:]]*/templates[[:space:]]*$' "${chart_values}" || fail \
+  "authentik.email.templateDir is not \`/templates\` (or is gone) — see AUTHENTIK_EMAIL__TEMPLATE_DIR." \
+  "That path is half of a cross-repo contract: beekeepingit-gitops mounts the" \
+  "beekeepingit-authentik-email-templates ConfigMap at \`/templates/email\` on the Authentik" \
+  "server and worker (#858). Changing it here without the paired change there silently" \
+  "un-brands the mail — Django falls back to Authentik's own template and still sends."
 
 # Byte-for-byte against the msgids in authentik's own template, which is what keeps the
 # pt_PT catalogue matching. Any rewording here ships untranslated English to a pt-PT user.
@@ -296,5 +320,72 @@ legacy="$(grep -rlnE '^[[:space:]]*from:[[:space:]]*[^[:space:]#]+@' \
 [ -z "${legacy}" ] || fail \
   "a retired \`from: <address>\` key is back in: ${legacy}" \
   "The chart template rejects it outright at render time; use fromName + fromAddress."
+
+# --- (7) the brand's image fields carry a value the serializer accepts ---------------------
+# Mirrors `validate_file_name` (authentik/admin/files/validation.py @ 2026.5.4), which accepts
+# a value in exactly three shapes and rejects everything else:
+#
+#   /static…                      -> StaticBackend  (served from the pod's web/dist)
+#   http:… | https://… | fa://…   -> PassthroughBackend (returned to the browser verbatim)
+#   otherwise a RELATIVE upload name -> the media file backend, i.e. a file that has to exist
+#     in Authentik's own storage: `^[a-zA-Z0-9._/-]+$` (after `%(theme)s` is folded to a word),
+#     no `//`, no `..` component, not absolute, not starting with `.`
+#
+# So a `data:` URI is rejected — the charset alone kills the `:` and `;` — and so is an
+# absolute pod path such as `/templates/email/favicon.png`. Both are the plausible guesses,
+# and both would take the whole blueprint down with them. This check is deliberately silent
+# when the fields are absent (their default is the shipped `/static/...` icon), so it costs
+# nothing until #859 lands a value.
+for key in branding_logo branding_favicon branding_default_flow_background; do
+  line="$(printf '%s\n' "${brand_block}" | grep -E "^[[:space:]]*${key}:" || true)"
+  [ -n "${line}" ] || continue
+
+  n="$(printf '%s\n' "${line}" | wc -l | tr -d '[:space:]')"
+  [ "${n}" = "1" ] || fail "brand entry sets \`${key}\` ${n} times; expected at most 1." \
+    "Duplicate keys are last-wins in PyYAML and raise nothing."
+
+  # Strip the key, surrounding whitespace and one layer of YAML quoting.
+  value="$(printf '%s\n' "${line}" \
+    | sed -E "s/^[[:space:]]*${key}:[[:space:]]*//; s/[[:space:]]*\$//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/")"
+
+  case "${value}" in
+    *'{{'*) fail "\`${key}\` is a Helm expression, not a literal: ${value}" \
+        "This guard cannot evaluate one, and an unevaluatable value here is exactly the case" \
+        "that only a live cluster can judge — which is what makes it dangerous: a value" \
+        "Authentik's serializer rejects fails the WHOLE blueprint atomically (no provider, no" \
+        "application, no login), not just this icon. Use a literal." ;;
+    "" | "|" | ">" | "|-" | ">-") fail "\`${key}\` is empty or a block scalar: ${value}" \
+        "\`validate_file_name\` rejects an empty name outright, and a multi-line value is not" \
+        "a file name. That failure takes the whole blueprint down with it." ;;
+  esac
+
+  # Shape 1 + 2: the two prefix families the validator short-circuits on.
+  case "${value}" in
+    /static* | http:* | https://* | fa://*) continue ;;
+  esac
+
+  # Shape 3: a relative upload name. `%(theme)s` is folded to a plain word first, exactly as
+  # the validator does, so a themed name is not rejected for its parentheses.
+  probe="$(printf '%s' "${value}" | sed 's/%(theme)s/theme/g')"
+  bad=""
+  printf '%s' "${probe}" | grep -qE '^[A-Za-z0-9._/-]+$' \
+    || bad="only letters, digits, '.', '-', '_', '/' and the %(theme)s placeholder are allowed"
+  case "${value}" in
+    *//*) bad="a duplicate '/' is rejected" ;;
+  esac
+  case "${probe}" in
+    /*) bad="an absolute path is rejected — the pod's own filesystem is NOT reachable this way" ;;
+    .*) bad="a name starting with '.' is rejected" ;;
+    ..|../*|*/..|*/../*) bad="a '..' component is rejected" ;;
+  esac
+  [ -z "${bad}" ] || fail \
+    "\`${key}: ${value}\` is not a value Authentik's serializer accepts — ${bad}." \
+    "\`FileField\`'s validate_file_name takes only: a \`/static…\` path, an" \
+    "\`http:\`/\`https://\`/\`fa://\` URL, or a RELATIVE media file name" \
+    "(^[a-zA-Z0-9._/-]+\$, no //, no .., not absolute, not leading '.'). A \`data:\` URI and an" \
+    "absolute pod path are both rejected. And a rejected value does not merely lose the icon:" \
+    "Importer.apply is atomic, so the WHOLE blueprint rolls back — no OAuth2 provider, no" \
+    "application, no login. See #859 and docs/architecture/auth.md §8.19."
+done
 
 printf '✓ [authentik-brand] flow pages + confirmation email carry BeekeepingIT branding, every hex is a brand token, sender stays split for #417\n'

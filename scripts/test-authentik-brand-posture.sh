@@ -48,6 +48,8 @@ seed_tree() {
 
 killed=0
 survived=0
+accepted=0
+false_positives=0
 
 # expect_reject <description> <mutation shell snippet, with $R as the tree root>
 expect_reject() {
@@ -65,6 +67,30 @@ expect_reject() {
     survived=$((survived + 1))
   else
     killed=$((killed + 1))
+  fi
+}
+
+# expect_accept <description> <mutation shell snippet, with $R as the tree root>
+# The mirror of expect_reject, for edits that are LEGITIMATE. A guard whose only test is
+# "does it reject" drifts towards rejecting everything, and here that would be a real cost:
+# these are the values #859 has to be free to choose from, so the guard has to stay a
+# gatekeeper and not become the blocker.
+expect_accept() {
+  local desc="$1" mutation="$2"
+  local root="${work}/case"
+  seed_tree "${root}"
+  R="${root}" BP="${root}/${chart_rel}/files/beekeepingit.blueprint.yaml" \
+    CV="${root}/${chart_rel}/values.yaml" \
+    CS="${root}/${chart_rel}/templates/config-secret.yaml" \
+    ET="${root}/${chart_rel}/files/email/account_confirmation.html" \
+    MK="${root}/${chart_rel}/files/beekeepingit-mark.png" \
+    bash -c "${mutation}"
+  if "${guard}" "${root}" >/dev/null 2>&1; then
+    accepted=$((accepted + 1))
+  else
+    printf '✗ [authentik-brand/test] FALSE POSITIVE (a legitimate value was rejected): %s\n' "${desc}" >&2
+    "${guard}" "${root}" >&2 || true
+    false_positives=$((false_positives + 1))
   fi
 }
 
@@ -121,6 +147,8 @@ expect_reject "AUTHENTIK_EMAIL__TEMPLATE_DIR dropped (branded template goes iner
   'sed -i "/AUTHENTIK_EMAIL__TEMPLATE_DIR/d" "$CS"'
 expect_reject "templateDir dropped from chart values" \
   'sed -i "/^  templateDir:/d" "$CV"'
+expect_reject "templateDir moved off /templates (breaks the gitops mount, #858)" \
+  'sed -i "s|^  templateDir: /templates\$|  templateDir: /srv/templates|" "$CV"'
 expect_reject "email msgid reworded into plain English (untranslated for pt-PT)" \
   "sed -i \"s/{% trans 'Welcome!' %}/Welcome to BeekeepingIT!/\" \"\$ET\""
 expect_reject "blocktrans link msgid reworded" \
@@ -140,6 +168,34 @@ expect_reject "retired from: key reintroduced in an environment overlay" \
 expect_reject "AUTHENTIK_EMAIL__FROM no longer composed from name + address" \
   'sed -i "s|^  AUTHENTIK_EMAIL__FROM:.*|  AUTHENTIK_EMAIL__FROM: {{ .fromAddress \| quote }}|" "$CS"'
 
+# --- the brand's image FileFields (#859) -------------------------------------------------------------
+# Every one of these is a value someone could reasonably reach for to brand the browser-tab
+# favicon, and every one of them fails Authentik's `validate_file_name` — which does not lose
+# an icon, it rolls the WHOLE blueprint back (Importer.apply is atomic: no provider, no
+# application, no login). The guard has to be the thing that says so, because on a feature
+# branch nothing else can.
+expect_reject "branding_favicon as a data: URI (the guess #648's comment warned about)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: data:image/png;base64,AAAA\n      branding_title: BeekeepingIT|" "$BP"'
+expect_reject "branding_favicon as an absolute pod path (rides the #858 mount)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: /templates/email/favicon.png\n      branding_title: BeekeepingIT|" "$BP"'
+expect_reject "branding_logo as a Helm expression the guard cannot evaluate" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_logo: \"{{ .Values.global.appOrigin }}/icons/Icon-192.png\"\n      branding_title: BeekeepingIT|" "$BP"'
+expect_reject "branding_default_flow_background emptied" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_default_flow_background: \"\"\n      branding_title: BeekeepingIT|" "$BP"'
+expect_reject "branding_favicon with a parent-directory escape" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: ../etc/passwd\n      branding_title: BeekeepingIT|" "$BP"'
+
+# ...and the three shapes the serializer DOES accept must not be rejected — a guard that says
+# no to everything would just move #859's blocker from the cluster to the lint gate.
+expect_accept "branding_favicon as a /static path (StaticBackend)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: /static/dist/assets/icons/icon.png\n      branding_title: BeekeepingIT|" "$BP"'
+expect_accept "branding_favicon as a relative media name (FileBackend)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: beekeepingit-favicon.png\n      branding_title: BeekeepingIT|" "$BP"'
+expect_accept "branding_logo as an https URL (PassthroughBackend)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_logo: https://example.test/logo.svg\n      branding_title: BeekeepingIT|" "$BP"'
+expect_accept "branding_favicon as a themed media name (%(theme)s is folded before the charset check)" \
+  'sed -i "s|^      branding_title: BeekeepingIT\$|      branding_favicon: icons/favicon-%(theme)s.png\n      branding_title: BeekeepingIT|" "$BP"'
+
 # --- and the clean tree must PASS ------------------------------------------------------------------
 clean="${work}/clean"
 seed_tree "${clean}"
@@ -149,9 +205,11 @@ if ! "${guard}" "${clean}" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ "${survived}" -ne 0 ]; then
-  printf '✗ [authentik-brand/test] %s of %s mutants survived\n' \
-    "${survived}" "$((killed + survived))" >&2
+if [ "${survived}" -ne 0 ] || [ "${false_positives}" -ne 0 ]; then
+  printf '✗ [authentik-brand/test] %s of %s mutants survived; %s of %s legitimate values rejected\n' \
+    "${survived}" "$((killed + survived))" \
+    "${false_positives}" "$((accepted + false_positives))" >&2
   exit 1
 fi
-printf '✓ [authentik-brand/test] %s mutants rejected, clean tree accepted\n' "${killed}"
+printf '✓ [authentik-brand/test] %s mutants rejected, %s legitimate values accepted, clean tree accepted\n' \
+  "${killed}" "${accepted}"
