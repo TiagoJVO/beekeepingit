@@ -10,8 +10,21 @@ notes. See [`docs/architecture/walking-skeleton.md`](../docs/architecture/walkin
 
 ```sh
 flutter pub get
-flutter run -d chrome --no-web-resources-cdn
+flutter run -d chrome --no-web-resources-cdn --web-port 5175
 ```
+
+**`--web-port 5175` is required to log in.** Without it `flutter run -d chrome` binds a
+**random** ephemeral port, and the app sends its own origin as the OIDC `redirect_uri`
+(`lib/core/auth/auth_platform_web.dart` falls back to `window.location.origin` when
+`OIDC_REDIRECT_URI` is unset) — so the redirect URI changes every run. The IdP allow-lists
+localhost dev origins as **strict literals, one per port** rather than a port wildcard
+([#822](https://github.com/TiagoJVO/beekeepingit/issues/822): every wildcard form that was
+tried is unsafe — see
+[`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md) §3.1), so
+`http://localhost:5175` is the port the Authentik blueprint trusts. On any other port login
+fails at the provider with a redirect-URI mismatch. Changing it means editing
+`infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml` **and**
+`scripts/check-authorization-redirect-posture.sh` together.
 
 `--no-web-resources-cdn` bundles the **CanvasKit engine payload** locally instead of fetching it
 from Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
@@ -26,7 +39,7 @@ To point at a gateway host other than the local k3d dev mapping
 (`https://app.beekeepingit.local:8443`, see `infra/README.md`), pass:
 
 ```sh
-flutter run -d chrome --no-web-resources-cdn --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
+flutter run -d chrome --no-web-resources-cdn --web-port 5175 --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
 ```
 
 `flutter build web` produces the installable PWA bundle (`build/web/`): the web app manifest,

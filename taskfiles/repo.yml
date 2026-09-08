@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + app-shell precache + service-worker routes + web image hardening + repo map"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + redirect URIs + app-shell precache + service-worker routes + web image hardening + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -17,6 +17,7 @@ tasks:
       - task: admin-audience-mapping
       - task: platform-operator-mapping
       - task: federation-source-posture
+      - task: authorization-redirect-posture
       - task: app-shell-precache
       - task: service-worker-routes
       - task: web-image-hardening
@@ -83,6 +84,15 @@ tasks:
     desc: "Verify federation sources stay subject-matched + !Env-credentialed, enrollment-open only via the guarded flow (#363/#365, NFR-SEC-1)"
     cmds:
       - ./scripts/check-federation-source-posture.sh
+
+  authorization-redirect-posture:
+    desc: "Verify no provider allow-lists a redirect URI outside the rendered origins + the strict localhost dev ports, and that none uses `[`, `]` or `\\d` (#822, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-authorization-redirect-posture.sh
+      # The guard is the whole regression control for an account-takeover-grade
+      # finding, and a textual guard can stop looking without saying so — so its
+      # negative cases run with it, not on trust.
+      - ./scripts/test-authorization-redirect-posture.sh
 
   app-shell-precache:
     # The description deliberately avoids naming the build command verbatim:

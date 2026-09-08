@@ -35,6 +35,23 @@ int dueSoonWindowDays(String priority) => switch (priority) {
   _ => 1,
 };
 
+/// Whole days between two calendar days, counted on **UTC** midnights — the
+/// client's one day-difference convention, shared verbatim with
+/// `apiary_visit_recency.dart`'s `_daysBetween` and `home_screen.dart`'s
+/// `_daysLate`.
+///
+/// Subtracting LOCAL midnights instead would silently lose an hour across a
+/// spring-forward DST transition, and [Duration.inDays] truncates that 23-hour
+/// day straight off the count: a real 3-day gap read as 2, bucketing a todo
+/// [TodoDueBucket.dueSoon] — and firing its D-24 reminder — a day early
+/// (#665). These UTC instants are never stored or displayed; they exist only
+/// for this subtraction.
+int _daysBetween(DateTime from, DateTime to) => DateTime.utc(
+  to.year,
+  to.month,
+  to.day,
+).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+
 /// The due-date bucket [todo] currently falls in relative to [today], or
 /// null when it isn't due-soon/overdue at all (no due date, already done, or
 /// due further out than its own priority's window). Reuses
@@ -51,9 +68,7 @@ TodoDueBucket? todoDueBucket(Todo todo, DateTime today) {
   if (isOverdue(todo, today)) return TodoDueBucket.overdue;
 
   final due = DateTime.parse(dueDate);
-  final dueOnly = DateTime(due.year, due.month, due.day);
-  final todayOnly = DateTime(today.year, today.month, today.day);
-  final daysUntilDue = dueOnly.difference(todayOnly).inDays;
+  final daysUntilDue = _daysBetween(today, due);
   if (daysUntilDue >= 0 && daysUntilDue <= dueSoonWindowDays(todo.priority)) {
     return TodoDueBucket.dueSoon;
   }
