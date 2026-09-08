@@ -763,6 +763,51 @@ void main() {
       _expectStatusChipSelected(tester, 'overdue');
     });
 
+    // #661: the preset Home's "view all" link opens — the UNION of overdue
+    // and due-soon, which no combination of the other controls can express.
+    // `upcoming` is due tomorrow at low priority, inside that priority's own
+    // one-day lead time, so it belongs to the set exactly as `todoDueBucket`
+    // decides it does.
+    testWidgets('?status=needsAttention renders the overdue AND the due-soon '
+        'rows, and nothing else', (tester) async {
+      final farOff = _todo(
+        'far',
+        title: 'Due next month',
+        dueDate: _isoDate(_today.add(const Duration(days: 30))),
+      );
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed, farOff],
+        location: '/todos?status=needsAttention',
+      );
+
+      expect(find.byKey(const Key('todo-od')), findsOneWidget);
+      expect(find.byKey(const Key('todo-up')), findsOneWidget);
+      expect(find.byKey(const Key('todo-dn')), findsNothing);
+      expect(find.byKey(const Key('todo-far')), findsNothing);
+      _expectStatusChipSelected(tester, 'needsAttention');
+    });
+
+    testWidgets('the needs-attention preset clears like any other filter', (
+      tester,
+    ) async {
+      await openAt(
+        tester,
+        todos: [overdue, upcoming, completed],
+        location: '/todos?status=needsAttention',
+      );
+
+      // The clear affordance is offered at all — it appears only while a
+      // filter is active, so this is also the assertion that the preset
+      // counts as one.
+      expect(find.byKey(const Key('todo-filter-clear-button')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('todo-filter-clear-button')));
+      await tester.pumpAndSettle();
+
+      _expectStatusChipSelected(tester, 'all');
+      expect(find.byKey(const Key('todo-dn')), findsOneWidget);
+    });
+
     testWidgets('?due= seeds the due-date filter too, combining with '
         '?status=', (tester) async {
       final dueToday = _todo(
