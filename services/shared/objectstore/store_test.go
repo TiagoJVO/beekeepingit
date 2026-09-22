@@ -29,7 +29,7 @@ func newTestStore(t *testing.T) *objectstore.Store {
 	// the S3 API answers "Server not initialized yet, please try again". Override with
 	// the /minio/health/ready (readiness) endpoint, which only returns 200 once the
 	// server can actually serve requests.
-	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-08T15-41-24Z",
+	container, err := tcminio.Run(ctx, "quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z",
 		testcontainers.WithWaitStrategy(
 			wait.ForHTTP("/minio/health/ready").
 				WithPort("9000/tcp").
