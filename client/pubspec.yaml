@@ -20,7 +20,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^3.4.1
-  go_router: ^17.2.3
+  go_router: ^18.0.1
   # EXACT, not a caret range, and never bumpable on its own: flutter_localizations
   # from the pinned Flutter SDK depends on one exact intl version, so any other
   # value fails `flutter pub get` outright — "version solving failed", no build,
